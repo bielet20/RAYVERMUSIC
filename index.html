@@ -17,6 +17,7 @@
         <ul class="nav-links">
             <li><a href="#home">Inicio</a></li>
             <li><a href="#music">Música</a></li>
+            <li><a href="#playlists">Listas</a></li>
             <li><a href="#youtube">Videos</a></li>
             <li><a href="#about">Sobre Mí</a></li>
             <li><a href="#contact">Contacto</a></li>
@@ -123,6 +124,25 @@
                 </div>
             </div>
         </section>
+        
+        <!-- =================== PLAYLISTS SECTION =================== -->
+        <section id="playlists" class="section playlists-section">
+            <h2 class="section-title">Playlists <span>Curadas</span></h2>
+            <p class="section-subtitle">Selección de los mejores tracks elegidos por RAYVER</p>
+
+            <div class="playlists-container-single">
+                <!-- Playlist: RAYVER Playlist -->
+                <div class="playlist-card glass highlight-card">
+                    <div class="playlist-info">
+                        <i class="fab fa-spotify spotify-color"></i>
+                        <h3>RAYVER Selection</h3>
+                    </div>
+                    <div class="player-placeholder">
+                        <iframe style="border-radius:12px" src="https://open.spotify.com/embed/playlist/2cbTGuXBfOdV8IMtQWU9Zm?utm_source=generator&theme=0" width="100%" height="450" frameBorder="0" allowfullscreen="" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe>
+                    </div>
+                </div>
+            </div>
+        </section>
 
         <!-- =================== OTHER PLATFORMS =================== -->
         <section id="platforms" class="section platforms-section">
@@ -172,9 +192,9 @@
 
             <div class="youtube-container glass">
                 <div class="youtube-player">
-                    <iframe width="100%" height="100%" src="https://www.youtube.com/embed/_5ay8vh1SJk?start=7" title="RAYVER - Video Musical" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
+                    <iframe width="100%" height="100%" src="https://www.youtube.com/embed/5su6w2batKA?start=36" title="RAYVER - Video Musical" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
                 </div>
-                <a href="https://youtu.be/_5ay8vh1SJk?si=k14SAxIqPJg2hqXs&t=7" target="_blank" class="btn youtube-btn">
+                <a href="https://youtu.be/5su6w2batKA?si=z6O7N9t8mmV97l0z&t=36" target="_blank" class="btn youtube-btn">
                     <i class="fab fa-youtube"></i> Ver en YouTube
                 </a>
             </div>
@@ -195,15 +215,15 @@
         <section id="contact" class="section contact-section">
             <h2 class="section-title">Trabajemos <span>Juntos</span></h2>
             <div class="contact-container glass">
-                <form id="contact-form" class="contact-form">
+                <form id="contact-form" class="contact-form" action="https://formspree.io/f/xbjnqjpn" method="POST">
                     <div class="form-group">
-                        <input type="text" id="name" placeholder="Tu Nombre" required>
+                        <input type="text" name="name" id="name" placeholder="Tu Nombre" required>
                     </div>
                     <div class="form-group">
-                        <input type="email" id="email" placeholder="Tu Email" required>
+                        <input type="email" name="email" id="email" placeholder="Tu Email" required>
                     </div>
                     <div class="form-group">
-                        <textarea id="message" rows="5" placeholder="¿En qué puedo ayudarte?" required></textarea>
+                        <textarea name="message" id="message" rows="5" placeholder="¿En qué puedo ayudarte?" required></textarea>
                     </div>
                     <button type="submit" class="btn primary-btn btn-block">Enviar Mensaje</button>
                 </form>

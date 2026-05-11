@@ -43,7 +43,7 @@ body {
     position: fixed;
     top: 0;
     width: 100%;
-    padding: 1.5rem 5%;
+    padding: 1rem 5%;
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -54,7 +54,7 @@ body {
 .navbar.scrolled {
     background: rgba(7, 7, 10, 0.8);
     backdrop-filter: blur(10px);
-    padding: 1rem 5%;
+    padding: 0.5rem 5%;
     border-bottom: 1px solid var(--glass-border);
 }
 
@@ -65,11 +65,15 @@ body {
 }
 
 .logo-img {
-    height: 80px;
+    height: 140px;
     width: auto;
     object-fit: contain;
-    transition: transform 0.3s ease;
-    border-radius: 6px;
+    transition: all 0.3s ease;
+    border-radius: 8px;
+}
+
+.navbar.scrolled .logo-img {
+    height: 100px;
 }
 
 .logo-img:hover {
@@ -509,7 +513,7 @@ footer {
 }
 
 .footer-logo {
-    height: 40px;
+    height: 60px;
     width: auto;
     object-fit: contain;
     margin-bottom: 15px;
@@ -552,6 +556,60 @@ footer {
 .scroll-reveal.active {
     opacity: 1;
     transform: translateY(0);
+}
+
+/* Playlists Section */
+.playlists-section {
+    background: linear-gradient(180deg, var(--bg-dark), var(--bg-dark-2));
+}
+
+.playlists-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 25px;
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+.playlists-container-single {
+    display: flex;
+    justify-content: center;
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+.highlight-card {
+    width: 100%;
+    border: 1px solid var(--spotify);
+    box-shadow: 0 0 30px rgba(29, 185, 84, 0.15);
+}
+
+.playlist-card {
+    padding: 20px;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.playlist-card:hover {
+    transform: scale(1.02);
+    border-color: var(--spotify);
+    box-shadow: 0 15px 35px rgba(29, 185, 84, 0.1);
+}
+
+.playlist-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 15px;
+}
+
+.playlist-info i {
+    font-size: 1.5rem;
+}
+
+.playlist-info h3 {
+    font-size: 1.2rem;
+    font-weight: 600;
 }
 
 /* =================== RESPONSIVE =================== */
@@ -613,6 +671,15 @@ footer {
 
     .spotify-grid {
         grid-template-columns: 1fr;
+    }
+
+    .playlists-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .playlists-container-single {
+        max-width: 100%;
+        padding: 0 10px;
     }
 
     .platforms-container {

@@ -37,7 +37,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Scroll Reveal Animation
     const revealElements = document.querySelectorAll(
-        '.platform-card, .about-content, .contact-container, .youtube-container'
+        '.platform-card, .playlist-card, .about-content, .contact-container, .youtube-container'
     );
     
     revealElements.forEach(el => {
@@ -70,19 +70,49 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // Form Submission (mock)
+    // Form Submission with Formspree
     const form = document.getElementById('contact-form');
-    form.addEventListener('submit', (e) => {
+    form.addEventListener('submit', async (e) => {
         e.preventDefault();
         const btn = form.querySelector('button');
         const originalHTML = btn.innerHTML;
-        btn.innerHTML = '<i class="fas fa-check"></i> ¡Enviado!';
-        btn.style.background = '#1DB954';
         
+        // Form data
+        const formData = new FormData(form);
+        
+        // Visual feedback (Loading)
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Enviando...';
+        btn.disabled = true;
+
+        try {
+            const response = await fetch(form.action, {
+                method: form.method,
+                body: formData,
+                headers: {
+                    'Accept': 'application/json'
+                }
+            });
+
+            if (response.ok) {
+                // Success
+                btn.innerHTML = '<i class="fas fa-check"></i> ¡Enviado con éxito!';
+                btn.style.background = '#1DB954'; // Spotify green
+                form.reset();
+            } else {
+                // Error from server
+                throw new Error('Error en el servidor');
+            }
+        } catch (error) {
+            // Network error
+            btn.innerHTML = '<i class="fas fa-times"></i> Error al enviar';
+            btn.style.background = '#ff4d4d';
+        }
+
+        // Reset button after 4 seconds
         setTimeout(() => {
             btn.innerHTML = originalHTML;
             btn.style.background = '';
-            form.reset();
-        }, 3000);
+            btn.disabled = false;
+        }, 4000);
     });
 });

@@ -70,47 +70,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // Form Submission with FormSubmit.co
-    const form = document.getElementById('contact-form');
-    form.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const btn = form.querySelector('button[type="submit"]');
-        const originalHTML = btn.innerHTML;
+    // Form — handled natively by FormSubmit (redirect to gracias.html)
 
-        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Enviando...';
-        btn.disabled = true;
-
-        try {
-            const response = await fetch(form.action, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-                body: JSON.stringify({
-                    name: document.getElementById('name').value,
-                    email: document.getElementById('email').value,
-                    message: document.getElementById('message').value,
-                    _subject: 'Nuevo mensaje desde RAYVERMUSIC.com',
-                    _captcha: 'false'
-                })
-            });
-
-            const data = await response.json();
-
-            if (data.success === 'true' || data.success === true) {
-                btn.innerHTML = '<i class="fas fa-check"></i> ¡Enviado con éxito!';
-                btn.style.background = 'linear-gradient(45deg, #1DB954, #17a044)';
-                form.reset();
-            } else {
-                throw new Error('Error');
-            }
-        } catch (err) {
-            btn.innerHTML = '<i class="fas fa-times"></i> Error al enviar';
-            btn.style.background = 'linear-gradient(45deg, #e74c3c, #c0392b)';
-        }
-
-        setTimeout(() => {
-            btn.innerHTML = originalHTML;
-            btn.style.background = '';
-            btn.disabled = false;
-        }, 4000);
-    });
 });

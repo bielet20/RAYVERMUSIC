@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mensaje Enviado | RAYVER</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { display: flex; flex-direction: column; min-height: 100vh; justify-content: center; align-items: center; }
+        .thanks-box {
+            text-align: center;
+            padding: 60px 40px;
+            max-width: 600px;
+            width: 90%;
+        }
+        .check-icon {
+            font-size: 5rem;
+            color: #1DB954;
+            margin-bottom: 20px;
+            animation: popIn 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+        @keyframes popIn {
+            from { transform: scale(0); opacity: 0; }
+            to   { transform: scale(1); opacity: 1; }
+        }
+        .thanks-box h1 {
+            font-size: 2.5rem;
+            margin-bottom: 15px;
+            background: linear-gradient(45deg, #8a2be2, #00d4ff);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .thanks-box p {
+            color: #a0a0a0;
+            font-size: 1.1rem;
+            margin-bottom: 30px;
+        }
+        .countdown { color: #666; font-size: 0.9rem; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <div class="thanks-box glass">
+        <div class="check-icon"><i class="fas fa-check-circle"></i></div>
+        <h1>¡Mensaje Enviado!</h1>
+        <p>Gracias por escribirme. Te responderé lo antes posible a tu correo.</p>
+        <a href="/" class="btn primary-btn"><i class="fas fa-arrow-left"></i> Volver a la web</a>
+        <p class="countdown" id="countdown">Redirigiendo en <span id="secs">5</span>s...</p>
+    </div>
+    <script>
+        let s = 5;
+        const el = document.getElementById('secs');
+        const t = setInterval(() => {
+            el.textContent = --s;
+            if (s <= 0) { clearInterval(t); window.location.href = '/'; }
+        }, 1000);
+    </script>
+</body>
+</html>

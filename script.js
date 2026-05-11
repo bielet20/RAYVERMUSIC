@@ -70,45 +70,43 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // Form Submission with Formspree
+    // Form Submission with FormSubmit.co
     const form = document.getElementById('contact-form');
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const btn = form.querySelector('button');
+        const btn = form.querySelector('button[type="submit"]');
         const originalHTML = btn.innerHTML;
-        
-        // Form data
-        const formData = new FormData(form);
-        
-        // Visual feedback (Loading)
+
         btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Enviando...';
         btn.disabled = true;
 
         try {
             const response = await fetch(form.action, {
-                method: form.method,
-                body: formData,
-                headers: {
-                    'Accept': 'application/json'
-                }
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                body: JSON.stringify({
+                    name: document.getElementById('name').value,
+                    email: document.getElementById('email').value,
+                    message: document.getElementById('message').value,
+                    _subject: 'Nuevo mensaje desde RAYVERMUSIC.com',
+                    _captcha: 'false'
+                })
             });
 
-            if (response.ok) {
-                // Success
+            const data = await response.json();
+
+            if (data.success === 'true' || data.success === true) {
                 btn.innerHTML = '<i class="fas fa-check"></i> ¡Enviado con éxito!';
-                btn.style.background = '#1DB954'; // Spotify green
+                btn.style.background = 'linear-gradient(45deg, #1DB954, #17a044)';
                 form.reset();
             } else {
-                // Error from server
-                throw new Error('Error en el servidor');
+                throw new Error('Error');
             }
-        } catch (error) {
-            // Network error
+        } catch (err) {
             btn.innerHTML = '<i class="fas fa-times"></i> Error al enviar';
-            btn.style.background = '#ff4d4d';
+            btn.style.background = 'linear-gradient(45deg, #e74c3c, #c0392b)';
         }
 
-        // Reset button after 4 seconds
         setTimeout(() => {
             btn.innerHTML = originalHTML;
             btn.style.background = '';

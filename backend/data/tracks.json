@@ -1,0 +1,57 @@
+[
+  {
+    "id": "summum",
+    "title": "Summum",
+    "artist": "RAYVER",
+    "genre": "Trance",
+    "soundcloudUrl": "https://soundcloud.com/biel-rivero-sampol/summum",
+    "spotifyUrl": "https://open.spotify.com/artist/5nSppopCQHlvoqzITdo0D5",
+    "coverUrl": null,
+    "releaseDate": "2024-01-01",
+    "featured": true
+  },
+  {
+    "id": "shine-together",
+    "title": "Shine Together",
+    "artist": "RAYVER",
+    "genre": "Celtic Trance",
+    "soundcloudUrl": "https://soundcloud.com/biel-rivero-sampol/shine-together",
+    "spotifyUrl": "https://open.spotify.com/artist/5nSppopCQHlvoqzITdo0D5",
+    "coverUrl": null,
+    "releaseDate": "2024-02-01",
+    "featured": true
+  },
+  {
+    "id": "hearts-in-motion",
+    "title": "Hearts in Motion",
+    "artist": "RAYVER",
+    "genre": "Uplifting",
+    "soundcloudUrl": "https://soundcloud.com/biel-rivero-sampol/hearts-in-motion",
+    "spotifyUrl": "https://open.spotify.com/artist/5GzN9yf1adZZKKUBFHArg5",
+    "coverUrl": null,
+    "releaseDate": "2024-03-01",
+    "featured": true
+  },
+  {
+    "id": "eternal-frequencies",
+    "title": "Eternal Frequencies",
+    "artist": "RAYVER",
+    "genre": "Electronic",
+    "soundcloudUrl": "https://soundcloud.com/biel-rivero-sampol/eternal-frequencies",
+    "spotifyUrl": "https://open.spotify.com/artist/0GmwWh84e70RNGNkYOwE6d",
+    "coverUrl": null,
+    "releaseDate": "2024-04-01",
+    "featured": false
+  },
+  {
+    "id": "its-not-just-another-summer",
+    "title": "It's Not Just Another Summer",
+    "artist": "RAYVER",
+    "genre": "Electronic",
+    "soundcloudUrl": "https://soundcloud.com/biel-rivero-sampol/its-not-just-another-summer",
+    "spotifyUrl": "https://open.spotify.com/artist/0GmwWh84e70RNGNkYOwE6d",
+    "coverUrl": null,
+    "releaseDate": "2024-05-01",
+    "featured": false
+  }
+]

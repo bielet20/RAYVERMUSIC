@@ -72,4 +72,52 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Form — handled natively by FormSubmit (redirect to gracias.html)
 
+    // ── Dynamic content from backend API ──────────────────────────────────────
+    const API = '/api';
+
+    // Latest release banner
+    async function loadLatestRelease() {
+      const banner = document.getElementById('latest-release-banner');
+      if (!banner) return;
+      try {
+        const res = await fetch(`${API}/latest-release`);
+        if (!res.ok) return;
+        const release = await res.json();
+        if (!release) return;
+        const date = new Date(release.releaseDate).toLocaleDateString('es-ES', {
+          year: 'numeric', month: 'long', day: 'numeric',
+        });
+        banner.innerHTML = `
+          <div class="latest-inner">
+            ${release.imageUrl ? `<img src="${release.imageUrl}" alt="${release.name}" class="latest-cover">` : ''}
+            <div class="latest-text">
+              <span class="latest-tag">✨ Nuevo Lanzamiento</span>
+              <h3 class="latest-title">${release.name}</h3>
+              <span class="latest-meta">${release.artistLabel} · ${release.artistGenre} · ${date}</span>
+            </div>
+            <a href="${release.externalUrl}" target="_blank" rel="noopener" class="btn primary-btn latest-btn">
+              <i class="fab fa-spotify"></i> Escuchar
+            </a>
+          </div>`;
+        banner.style.display = 'block';
+      } catch { /* API not available — banner stays hidden */ }
+    }
+
+    // Update follower counts from Spotify API
+    async function loadArtistStats() {
+      try {
+        const res = await fetch(`${API}/artists`);
+        if (!res.ok) return;
+        const artists = await res.json();
+        artists.forEach(a => {
+          const el = document.querySelector(`[data-artist-id="${a.id}"] .listeners`);
+          if (el && a.followers) {
+            el.textContent = `${a.followers.toLocaleString('es-ES')} seguidores`;
+          }
+        });
+      } catch { /* Silently fail — static values remain */ }
+    }
+
+    loadLatestRelease();
+    loadArtistStats();
 });

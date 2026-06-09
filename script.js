@@ -120,4 +120,88 @@ document.addEventListener('DOMContentLoaded', () => {
 
     loadLatestRelease();
     loadArtistStats();
+    loadYoutube();
 });
+
+// ── YouTube dynamic section ────────────────────────────────────────────────────
+async function loadYoutube() {
+    try {
+        const [videosRes, channelsRes] = await Promise.all([
+            fetch(`${API}/youtube/videos?limit=7`),
+            fetch(`${API}/youtube/channels`),
+        ]);
+        if (!videosRes.ok) return;
+
+        const videos   = await videosRes.json();
+        const channels = channelsRes.ok ? await channelsRes.json() : [];
+
+        if (!videos.length) return;
+
+        // Update featured video (latest)
+        const featured = videos[0];
+        const isNew = isWithinDays(featured.published_at, 7);
+
+        const iframe = document.getElementById('yt-featured-iframe');
+        const titleEl  = document.getElementById('yt-featured-title');
+        const dateEl   = document.getElementById('yt-featured-date');
+        const linkEl   = document.getElementById('yt-featured-link');
+        const badgeEl  = document.getElementById('yt-new-badge');
+
+        if (iframe) iframe.src = `${featured.embed_url}?rel=0&modestbranding=1`;
+        if (titleEl) titleEl.textContent = featured.title;
+        if (dateEl)  dateEl.textContent  = fmtDate(featured.published_at);
+        if (linkEl)  linkEl.href         = featured.watch_url;
+        if (badgeEl) badgeEl.style.display = isNew ? 'inline-flex' : 'none';
+
+        // Render grid (remaining videos)
+        const grid = document.getElementById('yt-grid');
+        if (grid && videos.length > 1) {
+            grid.innerHTML = videos.slice(1).map(v => `
+                <a href="${v.watch_url}" target="_blank" rel="noopener" class="yt-card glass">
+                    <div class="yt-card-thumb">
+                        <img src="${v.thumbnail_url}" alt="${escHtml(v.title)}" loading="lazy">
+                        <span class="yt-play-icon"><i class="fas fa-play"></i></span>
+                        ${isWithinDays(v.published_at, 7) ? '<span class="yt-card-badge">NUEVO</span>' : ''}
+                    </div>
+                    <div class="yt-card-info">
+                        <span class="yt-card-title">${escHtml(v.title)}</span>
+                        <span class="yt-card-date">${fmtDate(v.published_at)}</span>
+                    </div>
+                </a>
+            `).join('');
+        }
+
+        // Render channel stats bar
+        const bar = document.getElementById('yt-channels-bar');
+        if (bar && channels.length) {
+            bar.innerHTML = channels.map(ch => `
+                <div class="yt-channel-stat">
+                    ${ch.thumbnail_url ? `<img src="${ch.thumbnail_url}" alt="${escHtml(ch.title)}" class="yt-ch-thumb">` : ''}
+                    <div class="yt-ch-info">
+                        <span class="yt-ch-name">${escHtml(ch.title)}</span>
+                        <span class="yt-ch-subs">${fmtNum(ch.subscriber_count)} suscriptores · ${fmtNum(ch.video_count)} vídeos</span>
+                    </div>
+                </div>
+            `).join('');
+            bar.style.display = 'flex';
+        }
+
+    } catch { /* API not available — static fallback stays */ }
+}
+
+function fmtDate(iso) {
+    if (!iso) return '';
+    return new Date(iso).toLocaleDateString('es-ES', { year:'numeric', month:'long', day:'numeric' });
+}
+function fmtNum(n) {
+    if (!n) return '0';
+    return n >= 1000 ? (n / 1000).toFixed(1) + 'K' : String(n);
+}
+function isWithinDays(iso, days) {
+    if (!iso) return false;
+    return (Date.now() - new Date(iso).getTime()) < days * 86400000;
+}
+function escHtml(str) {
+    return String(str).replace(/[&<>"']/g, c =>
+        ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}

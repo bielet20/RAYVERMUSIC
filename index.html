@@ -279,16 +279,35 @@
         <!-- =================== YOUTUBE SECTION =================== -->
         <section id="youtube" class="section youtube-section">
             <h2 class="section-title">Videos en <span>YouTube</span></h2>
-            <p class="section-subtitle">Visuales y videos musicales</p>
+            <p class="section-subtitle">Últimos estrenos y visuales musicales — actualizado automáticamente</p>
 
-            <div class="youtube-container glass">
-                <div class="youtube-player">
-                    <iframe width="100%" height="100%" src="https://www.youtube.com/embed/5su6w2batKA?start=36" title="RAYVER - Video Musical" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
+            <!-- Channel stats bar -->
+            <div id="yt-channels-bar" class="yt-channels-bar" style="display:none"></div>
+
+            <!-- Featured latest video -->
+            <div id="yt-featured" class="yt-featured glass">
+                <!-- Fallback static while API loads -->
+                <div class="yt-featured-player">
+                    <iframe id="yt-featured-iframe"
+                        width="100%" height="100%"
+                        src="https://www.youtube.com/embed/5su6w2batKA?start=36"
+                        title="RAYVER - Video Musical"
+                        frameborder="0"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                        allowfullscreen loading="lazy"></iframe>
                 </div>
-                <a href="https://youtu.be/5su6w2batKA?si=z6O7N9t8mmV97l0z&t=36" target="_blank" class="btn youtube-btn">
-                    <i class="fab fa-youtube"></i> Ver en YouTube
-                </a>
+                <div id="yt-featured-info" class="yt-featured-info">
+                    <span class="yt-new-badge" id="yt-new-badge" style="display:none">🔴 NUEVO</span>
+                    <h3 id="yt-featured-title" class="yt-featured-title">RAYVER - Video Musical</h3>
+                    <span id="yt-featured-date" class="yt-featured-date"></span>
+                    <a id="yt-featured-link" href="https://youtu.be/5su6w2batKA" target="_blank" rel="noopener" class="btn youtube-btn">
+                        <i class="fab fa-youtube"></i> Ver en YouTube
+                    </a>
+                </div>
             </div>
+
+            <!-- Video grid — loaded dynamically -->
+            <div id="yt-grid" class="yt-grid"></div>
         </section>
 
         <!-- =================== ABOUT SECTION =================== -->

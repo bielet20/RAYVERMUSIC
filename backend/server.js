@@ -6,6 +6,7 @@ const path    = require('path');
 const fs      = require('fs');
 const Database = require('better-sqlite3');
 const spotify  = require('./services/spotify');
+const youtube  = require('./services/youtube');
 
 const app  = express();
 const PORT = process.env.BACKEND_PORT || 3001;
@@ -15,6 +16,29 @@ const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'data', 'rayver.db')
 const db = new Database(DB_PATH);
 
 db.exec(`
+  CREATE TABLE IF NOT EXISTS yt_channels (
+    id TEXT PRIMARY KEY,
+    title TEXT,
+    description TEXT,
+    custom_url TEXT,
+    thumbnail_url TEXT,
+    subscriber_count INTEGER DEFAULT 0,
+    video_count INTEGER DEFAULT 0,
+    view_count INTEGER DEFAULT 0,
+    updated_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE TABLE IF NOT EXISTS yt_videos (
+    id TEXT PRIMARY KEY,
+    title TEXT,
+    description TEXT,
+    published_at TEXT,
+    channel_id TEXT,
+    channel_title TEXT,
+    thumbnail_url TEXT,
+    embed_url TEXT,
+    watch_url TEXT,
+    updated_at TEXT DEFAULT (datetime('now'))
+  );
   CREATE TABLE IF NOT EXISTS artists (
     id TEXT PRIMARY KEY,
     label TEXT,
@@ -73,6 +97,56 @@ function upsertArtists(artists) {
   insertMany(artists);
 }
 
+// ── YouTube helpers ───────────────────────────────────────────────────────────
+function upsertYoutube({ channels, videos }) {
+  const chStmt = db.prepare(`
+    INSERT INTO yt_channels (id, title, description, custom_url, thumbnail_url,
+      subscriber_count, video_count, view_count, updated_at)
+    VALUES (@id,@title,@description,@customUrl,@thumbnailUrl,
+      @subscriberCount,@videoCount,@viewCount,datetime('now'))
+    ON CONFLICT(id) DO UPDATE SET
+      title=excluded.title, description=excluded.description,
+      custom_url=excluded.custom_url, thumbnail_url=excluded.thumbnail_url,
+      subscriber_count=excluded.subscriber_count, video_count=excluded.video_count,
+      view_count=excluded.view_count, updated_at=excluded.updated_at
+  `);
+  const vidStmt = db.prepare(`
+    INSERT INTO yt_videos (id,title,description,published_at,channel_id,channel_title,
+      thumbnail_url,embed_url,watch_url,updated_at)
+    VALUES (@id,@title,@description,@publishedAt,@channelId,@channelTitle,
+      @thumbnailUrl,@embedUrl,@watchUrl,datetime('now'))
+    ON CONFLICT(id) DO UPDATE SET
+      title=excluded.title, description=excluded.description,
+      thumbnail_url=excluded.thumbnail_url, embed_url=excluded.embed_url,
+      watch_url=excluded.watch_url, updated_at=excluded.updated_at
+  `);
+  db.transaction(() => {
+    channels.forEach(c => chStmt.run(c));
+    videos.forEach(v => vidStmt.run(v));
+  })();
+}
+
+function getYtVideos(limit = 12) {
+  return db.prepare('SELECT * FROM yt_videos ORDER BY published_at DESC LIMIT ?').all(limit);
+}
+function getYtChannels() {
+  return db.prepare('SELECT * FROM yt_channels').all();
+}
+
+// ── YouTube sync ──────────────────────────────────────────────────────────────
+async function runYoutubeSync() {
+  console.log('[Sync] Starting YouTube sync…');
+  try {
+    const data = await youtube.syncAll();
+    if (data) {
+      upsertYoutube(data);
+      console.log(`[Sync] YouTube: ${data.channels.length} channels, ${data.videos.length} videos`);
+    }
+  } catch (err) {
+    console.error('[Sync] YouTube error:', err.message);
+  }
+}
+
 // ── Spotify sync ──────────────────────────────────────────────────────────────
 async function runSpotifySync() {
   console.log('[Sync] Starting Spotify sync…');
@@ -91,7 +165,8 @@ async function runSpotifySync() {
 
 // Run immediately on start, then every hour
 runSpotifySync();
-cron.schedule('0 * * * *', runSpotifySync);
+runYoutubeSync();
+cron.schedule('0 * * * *', () => { runSpotifySync(); runYoutubeSync(); });
 
 // ── Middleware ────────────────────────────────────────────────────────────────
 app.use(cors({ origin: process.env.FRONTEND_ORIGIN || '*' }));
@@ -134,6 +209,24 @@ app.get('/api/latest-release', (_req, res) => {
 // GET /api/tracks — radio playlist from tracks.json
 app.get('/api/tracks', (_req, res) => {
   res.json(getTracks());
+});
+
+// GET /api/youtube/videos — latest videos across all channels
+app.get('/api/youtube/videos', (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit || '12', 10), 50);
+  const videos = getYtVideos(limit);
+  res.json(videos);
+});
+
+// GET /api/youtube/latest — single most recent video
+app.get('/api/youtube/latest', (_req, res) => {
+  const video = db.prepare('SELECT * FROM yt_videos ORDER BY published_at DESC LIMIT 1').get();
+  res.json(video || null);
+});
+
+// GET /api/youtube/channels — channel stats
+app.get('/api/youtube/channels', (_req, res) => {
+  res.json(getYtChannels());
 });
 
 // GET /api/stats — quick dashboard stats

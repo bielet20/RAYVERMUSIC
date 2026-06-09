@@ -1,4 +1,7 @@
-require('dotenv').config();
+// dotenv solo activo en desarrollo local — en producción las vars vienen del entorno (Coolify)
+if (process.env.NODE_ENV !== 'production') {
+  try { require('dotenv').config(); } catch { /* dotenv opcional */ }
+}
 const express = require('express');
 const cors    = require('cors');
 const cron    = require('node-cron');

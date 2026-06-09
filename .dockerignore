@@ -1,6 +1,11 @@
+backend
+node_modules
+.env
+.env.*
 .git
 .gitignore
 .dockerignore
 Dockerfile
 README.md
 *.md
+LICENSE

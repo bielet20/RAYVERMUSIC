@@ -47,6 +47,7 @@
             <li><a href="#music">Música</a></li>
             <li><a href="#playlists">Listas</a></li>
             <li><a href="#youtube">Videos</a></li>
+            <li><a href="#beats" class="nav-beats"><i class="fas fa-tag"></i> Beats</a></li>
             <li><a href="#about">Sobre Mí</a></li>
             <li><a href="#contact">Contacto</a></li>
         </ul>
@@ -311,6 +312,157 @@
         </section>
 
         <!-- =================== ABOUT SECTION =================== -->
+        <!-- =================== BEATS & LICENCIAS =================== -->
+        <section id="beats" class="section beats-section">
+            <h2 class="section-title">Beats <span>&amp; Licencias</span></h2>
+            <p class="section-subtitle">Producciones originales · Sin intermediarios · Entrega en 24&nbsp;h</p>
+
+            <!-- Filtros -->
+            <div class="beats-filters">
+                <button class="beats-filter active" data-filter="all">Todos</button>
+                <button class="beats-filter" data-filter="trance">Trance</button>
+                <button class="beats-filter" data-filter="electronica">Electrónica</button>
+                <button class="beats-filter" data-filter="orquestal">Orquestal</button>
+                <button class="beats-filter" data-filter="pop">Pop / Balada</button>
+            </div>
+
+            <!-- Grid de beats -->
+            <div class="beats-grid">
+                <div class="beat-card glass" data-genre="trance">
+                    <div class="beat-cover beat-trance"><span class="beat-genre-tag">Trance</span></div>
+                    <div class="beat-body">
+                        <div class="beat-title">Hearts In Motion</div>
+                        <div class="beat-meta">128 BPM · Am · Stems incluidos</div>
+                        <div class="beat-footer">
+                            <span class="beat-price">desde <strong>49€</strong></span>
+                            <a href="#contact" class="btn beats-btn" onclick="setMotivo('Licencia de beat — Hearts In Motion')">Licenciar</a>
+                        </div>
+                    </div>
+                </div>
+                <div class="beat-card glass" data-genre="orquestal">
+                    <div class="beat-cover beat-orquestal"><span class="beat-genre-tag">Orquestal</span></div>
+                    <div class="beat-body">
+                        <div class="beat-title">Eternal Frequencies</div>
+                        <div class="beat-meta">120 BPM · Dm · Ideal para sync</div>
+                        <div class="beat-footer">
+                            <span class="beat-price">desde <strong>49€</strong></span>
+                            <a href="#contact" class="btn beats-btn" onclick="setMotivo('Licencia de beat — Eternal Frequencies')">Licenciar</a>
+                        </div>
+                    </div>
+                </div>
+                <div class="beat-card glass" data-genre="electronica">
+                    <div class="beat-cover beat-electronic"><span class="beat-genre-tag">Electrónica</span></div>
+                    <div class="beat-body">
+                        <div class="beat-title">Summum</div>
+                        <div class="beat-meta">124 BPM · Gm · Dark &amp; Deep</div>
+                        <div class="beat-footer">
+                            <span class="beat-price">desde <strong>49€</strong></span>
+                            <a href="#contact" class="btn beats-btn" onclick="setMotivo('Licencia de beat — Summum')">Licenciar</a>
+                        </div>
+                    </div>
+                </div>
+                <div class="beat-card glass" data-genre="electronica">
+                    <div class="beat-cover beat-electronic2"><span class="beat-genre-tag">Electrónica</span></div>
+                    <div class="beat-body">
+                        <div class="beat-title">Shine Together</div>
+                        <div class="beat-meta">130 BPM · Em · Uplifting</div>
+                        <div class="beat-footer">
+                            <span class="beat-price">desde <strong>49€</strong></span>
+                            <a href="#contact" class="btn beats-btn" onclick="setMotivo('Licencia de beat — Shine Together')">Licenciar</a>
+                        </div>
+                    </div>
+                </div>
+                <div class="beat-card glass" data-genre="pop">
+                    <div class="beat-cover beat-pop"><span class="beat-genre-tag">Pop</span></div>
+                    <div class="beat-body">
+                        <div class="beat-title">Vuelven las Emociones</div>
+                        <div class="beat-meta">118 BPM · C · Emotivo</div>
+                        <div class="beat-footer">
+                            <span class="beat-price">desde <strong>39€</strong></span>
+                            <a href="#contact" class="btn beats-btn" onclick="setMotivo('Licencia de beat — Vuelven las Emociones')">Licenciar</a>
+                        </div>
+                    </div>
+                </div>
+                <div class="beat-card glass" data-genre="orquestal">
+                    <div class="beat-cover beat-orquestal2"><span class="beat-genre-tag">Orquestal</span></div>
+                    <div class="beat-body">
+                        <div class="beat-title">Classic Essence</div>
+                        <div class="beat-meta">80 BPM · Fm · Cinematográfico</div>
+                        <div class="beat-footer">
+                            <span class="beat-price">desde <strong>69€</strong></span>
+                            <a href="#contact" class="btn beats-btn" onclick="setMotivo('Licencia de beat — Classic Essence')">Licenciar</a>
+                        </div>
+                    </div>
+                </div>
+                <div class="beat-card glass" data-genre="pop">
+                    <div class="beat-cover beat-pop2"><span class="beat-genre-tag">Balada</span></div>
+                    <div class="beat-body">
+                        <div class="beat-title">Cuando el Silencio Grita</div>
+                        <div class="beat-meta">90 BPM · Am · Íntimo</div>
+                        <div class="beat-footer">
+                            <span class="beat-price">desde <strong>39€</strong></span>
+                            <a href="#contact" class="btn beats-btn" onclick="setMotivo('Licencia de beat — Cuando el Silencio Grita')">Licenciar</a>
+                        </div>
+                    </div>
+                </div>
+                <div class="beat-card glass" data-genre="trance">
+                    <div class="beat-cover beat-trance2"><span class="beat-genre-tag">Trance</span></div>
+                    <div class="beat-body">
+                        <div class="beat-title">DEEPBRAVE</div>
+                        <div class="beat-meta">138 BPM · Bm · Hypnótico</div>
+                        <div class="beat-footer">
+                            <span class="beat-price">desde <strong>49€</strong></span>
+                            <a href="#contact" class="btn beats-btn" onclick="setMotivo('Licencia de beat — DEEPBRAVE')">Licenciar</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Licencias -->
+            <div class="license-grid">
+                <div class="license-card glass">
+                    <div class="license-name">BÁSICA</div>
+                    <div class="license-price">49€</div>
+                    <ul class="license-features">
+                        <li class="ok">MP3 320 kbps</li>
+                        <li class="ok">YouTube &amp; redes sociales</li>
+                        <li class="ok">Hasta 100.000 streams</li>
+                        <li class="ok">Crédito al productor</li>
+                        <li class="no">WAV / Stems</li>
+                        <li class="no">Uso comercial amplio</li>
+                    </ul>
+                    <a href="#contact" class="btn secondary-btn btn-block" onclick="setMotivo('Licencia Básica (49€)')">Contratar</a>
+                </div>
+                <div class="license-card glass license-featured">
+                    <div class="license-badge">MÁS POPULAR</div>
+                    <div class="license-name">PREMIUM</div>
+                    <div class="license-price">149€</div>
+                    <ul class="license-features">
+                        <li class="ok">WAV sin comprimir</li>
+                        <li class="ok">Stems separados</li>
+                        <li class="ok">Streams ilimitados</li>
+                        <li class="ok">Uso comercial completo</li>
+                        <li class="ok">Radio y TV local</li>
+                        <li class="no">Derechos exclusivos</li>
+                    </ul>
+                    <a href="#contact" class="btn primary-btn btn-block" onclick="setMotivo('Licencia Premium (149€)')">Contratar</a>
+                </div>
+                <div class="license-card glass">
+                    <div class="license-name">EXCLUSIVA</div>
+                    <div class="license-price">Consultar</div>
+                    <ul class="license-features">
+                        <li class="ok">Derechos exclusivos totales</li>
+                        <li class="ok">WAV + Stems + Proyecto DAW</li>
+                        <li class="ok">Sync: cine, TV, publicidad</li>
+                        <li class="ok">Beat retirado del catálogo</li>
+                        <li class="ok">Streams ilimitados</li>
+                        <li class="ok">Sesión de producción incluida</li>
+                    </ul>
+                    <a href="#contact" class="btn secondary-btn btn-block" onclick="setMotivo('Licencia Exclusiva (consultar precio)')">Consultar precio</a>
+                </div>
+            </div>
+        </section>
+
         <section id="about" class="section about-section">
             <div class="about-content glass">
                 <div class="about-text">
@@ -335,6 +487,16 @@
                     </div>
                     <div class="form-group">
                         <input type="email" name="Email" id="email" placeholder="Tu Email" required>
+                    </div>
+                    <div class="form-group">
+                        <select name="Motivo" id="motivo">
+                            <option value="Licencia de beat">🎵 Licencia de beat</option>
+                            <option value="Sync / Publicidad">🎬 Sync / Publicidad</option>
+                            <option value="Booking / Actuación">🎤 Booking / Actuación</option>
+                            <option value="Colaboración musical">🤝 Colaboración musical</option>
+                            <option value="Prensa / Media">📰 Prensa / Media</option>
+                            <option value="Otro">💬 Otro</option>
+                        </select>
                     </div>
                     <div class="form-group">
                         <textarea name="Mensaje" id="message" rows="5" placeholder="¿En qué puedo ayudarte?" required></textarea>

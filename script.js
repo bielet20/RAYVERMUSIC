@@ -205,3 +205,40 @@ function escHtml(str) {
     return String(str).replace(/[&<>"']/g, c =>
         ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
+
+
+/* ═══════════════════════════════════════════
+   BEATS — filtros + prellenar contacto
+═══════════════════════════════════════════ */
+document.querySelectorAll('.beats-filter').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.beats-filter').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const f = btn.dataset.filter;
+        document.querySelectorAll('.beat-card').forEach(card => {
+            card.classList.toggle('hidden', f !== 'all' && card.dataset.genre !== f);
+        });
+    });
+});
+
+function setMotivo(texto) {
+    const sel = document.getElementById('motivo');
+    if (!sel) return;
+    // Busca la opción más cercana o la primera
+    let found = false;
+    for (const opt of sel.options) {
+        if (texto.toLowerCase().includes(opt.value.toLowerCase().split(' ')[0].toLowerCase())) {
+            sel.value = opt.value;
+            found = true;
+            break;
+        }
+    }
+    if (!found) sel.value = 'Licencia de beat';
+
+    // Añade el beat al mensaje si está vacío
+    const msg = document.getElementById('message');
+    if (msg && !msg.value) {
+        const beat = texto.replace('Licencia de beat — ', '').replace('Licencia ', '').replace(/\s*\(.*\)/, '');
+        msg.placeholder = `Hola! Me interesa "${beat}". ¿Podemos hablar sobre la licencia?`;
+    }
+}

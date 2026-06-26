@@ -1,28 +1,28 @@
-# ── Stage 1: instalar dependencias del backend ────────────────────────────────
+# Stage 1: dependencias Node
 FROM node:20-alpine AS backend-deps
 WORKDIR /backend
 COPY backend/package*.json ./
 RUN npm install --omit=dev
 
-# ── Stage 2: imagen final con nginx + node ────────────────────────────────────
+# Stage 2: contenedor único nginx + node
 FROM nginx:alpine
+RUN apk add --no-cache nodejs
 
-# Instalar Node.js en la imagen nginx-alpine
-RUN apk add --no-cache nodejs npm
-
-# Copiar frontend estático
+# Frontend estático
 COPY index.html gracias.html styles.css script.js radio.js \
-     robots.txt sitemap.xml nginx.conf \
-     logo.jpg hero_bg.png /usr/share/nginx/html/
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+     robots.txt sitemap.xml logo.jpg hero_bg.png \
+     /usr/share/nginx/html/
 
-# Copiar backend
+# nginx.conf apuntando a localhost (contenedor único)
+COPY nginx-single.conf /etc/nginx/conf.d/default.conf
+
+# Backend Node
 WORKDIR /app/backend
 COPY backend/ ./
 COPY --from=backend-deps /backend/node_modules ./node_modules
 RUN mkdir -p /app/data
 
-# Script de arranque: lanza node en background y nginx en foreground
+# Script de arranque
 COPY start.sh /start.sh
 RUN chmod +x /start.sh
 

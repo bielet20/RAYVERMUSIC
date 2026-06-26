@@ -1,5 +1,4 @@
 services:
-
   frontend:
     build:
       context: .
@@ -8,7 +7,10 @@ services:
     ports:
       - "80:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    networks:
+      - app_net
 
   backend:
     build:
@@ -24,6 +26,18 @@ services:
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-*}
     volumes:
       - backend_data:/app/data
+    networks:
+      - app_net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+networks:
+  app_net:
+    driver: bridge
 
 volumes:
   backend_data:

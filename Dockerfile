@@ -8,8 +8,8 @@ RUN npm install --omit=dev
 FROM nginx:alpine
 RUN apk add --no-cache nodejs
 
-# Frontend estático
-COPY index.html gracias.html styles.css script.js radio.js \
+# Frontend estático — todos los archivos html y assets
+COPY index.html gracias.html admin.html styles.css script.js radio.js \
      robots.txt sitemap.xml logo.jpg hero_bg.png \
      /usr/share/nginx/html/
 

@@ -1,9 +1,8 @@
 FROM node:20-alpine
 WORKDIR /app
-COPY package.json package-lock.json* ./
-RUN npm install --omit=dev
+COPY package*.json ./
+RUN npm ci --omit=dev
 COPY . .
-RUN mkdir -p data
-# No .env file needed — env vars injected by Coolify/Docker Compose
+RUN mkdir -p /app/data
 EXPOSE 3001
-CMD ["node", "server.js"]
+CMD ["node", "index.js"]

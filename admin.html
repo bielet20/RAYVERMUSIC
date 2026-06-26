@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RAYVER | Admin</title>
+<meta name="robots" content="noindex, nofollow">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0a0a0f;--bg2:#111118;--glass:rgba(255,255,255,.05);--gb:rgba(255,255,255,.10);
+  --purple:#a78bfa;--pd:#7c3aed;--pink:#f472b6;--green:#1DB954;--red:#ef4444;--amber:#f59e0b;
+  --text:#f0f0f5;--muted:rgba(240,240,245,.45);--r:14px;
+}
+body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;font-size:15px}
+
+/* LOGIN */
+#login-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;
+  background:radial-gradient(ellipse at 50% 30%,#1a0a2e 0%,var(--bg) 70%)}
+.lcard{background:var(--glass);border:1px solid var(--gb);backdrop-filter:blur(20px);
+  border-radius:20px;padding:48px 40px;width:100%;max-width:380px;text-align:center}
+.llogo{font-size:28px;font-weight:800;letter-spacing:-1px;
+  background:linear-gradient(135deg,var(--purple),var(--pink));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:6px}
+.lsub{color:var(--muted);font-size:13px;margin-bottom:32px}
+.lcard input[type=password]{width:100%;padding:13px 16px;background:rgba(255,255,255,.07);
+  border:1px solid var(--gb);border-radius:10px;color:var(--text);font-family:inherit;
+  font-size:15px;outline:none;margin-bottom:12px;transition:border-color .2s}
+.lcard input[type=password]:focus{border-color:var(--purple)}
+.btn-login{width:100%;padding:13px;background:linear-gradient(135deg,var(--pd),#9333ea);
+  border:none;border-radius:10px;color:#fff;font-family:inherit;font-size:15px;
+  font-weight:600;cursor:pointer;transition:opacity .2s}
+.btn-login:hover{opacity:.85}
+.lerr{color:var(--red);font-size:13px;margin-top:10px;display:none}
+
+/* APP */
+#app{display:none;min-height:100vh}
+.layout{display:flex;min-height:100vh}
+.sidebar{width:220px;flex-shrink:0;background:var(--bg2);border-right:1px solid var(--gb);
+  padding:24px 0;position:sticky;top:0;height:100vh;display:flex;flex-direction:column}
+.slogo{padding:0 20px 24px;font-size:18px;font-weight:800;letter-spacing:-.5px;
+  background:linear-gradient(135deg,var(--purple),var(--pink));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+  border-bottom:1px solid var(--gb)}
+.slogo span{display:block;font-size:10px;font-weight:400;color:var(--muted);
+  -webkit-text-fill-color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-top:2px}
+.sidebar nav{padding:20px 12px;flex:1}
+.ni{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;
+  color:var(--muted);cursor:pointer;font-size:14px;font-weight:500;transition:all .15s;
+  border:none;background:none;width:100%;text-align:left;font-family:inherit;margin-bottom:2px;text-decoration:none}
+.ni:hover{background:var(--glass);color:var(--text)}
+.ni.active{background:rgba(124,58,237,.2);color:var(--purple)}
+.ni i{width:18px;text-align:center}
+.sbot{padding:12px;border-top:1px solid var(--gb)}
+.btn-logout{display:flex;align-items:center;gap:8px;padding:9px 12px;border-radius:10px;
+  color:var(--muted);cursor:pointer;font-size:13px;font-family:inherit;background:none;
+  border:none;width:100%;transition:color .15s}
+.btn-logout:hover{color:var(--red)}
+
+/* MAIN */
+.main{flex:1;padding:32px 36px;overflow-y:auto}
+.page{display:none}.page.active{display:block}
+.ph{display:flex;align-items:center;justify-content:space-between;margin-bottom:28px}
+.ptitle{font-size:22px;font-weight:800}
+.psub{font-size:13px;color:var(--muted);margin-top:3px}
+
+/* STATS */
+.srow{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:14px;margin-bottom:28px}
+.sc{background:var(--glass);border:1px solid var(--gb);border-radius:var(--r);padding:18px 20px}
+.slabel{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px}
+.sval{font-size:26px;font-weight:800}
+.sval.p{color:var(--purple)}.sval.g{color:var(--green)}.sval.k{color:var(--pink)}.sval.a{color:var(--amber)}
+
+/* CARD */
+.gc{background:var(--glass);border:1px solid var(--gb);border-radius:var(--r);overflow:hidden;margin-bottom:24px}
+.ch{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--gb)}
+.ct{font-size:13px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+
+/* BUTTONS */
+.btn{display:inline-flex;align-items:center;gap:7px;padding:9px 18px;border-radius:10px;
+  font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;border:none;transition:all .15s}
+.btn-p{background:linear-gradient(135deg,var(--pd),#9333ea);color:#fff}
+.btn-p:hover{opacity:.85}
+.btn-g{background:var(--glass);border:1px solid var(--gb);color:var(--muted)}
+.btn-g:hover{color:var(--text);border-color:rgba(255,255,255,.2)}
+.btn-sm{padding:6px 10px;font-size:12px}
+.ib{background:transparent;border:none;color:var(--muted);cursor:pointer;font-size:14px;
+  padding:6px 8px;border-radius:8px;transition:all .15s}
+.ib:hover{background:rgba(167,139,250,.15);color:var(--purple)}
+.db{background:transparent;border:none;color:var(--muted);cursor:pointer;font-size:14px;
+  padding:6px 8px;border-radius:8px;transition:all .15s}
+.db:hover{background:rgba(239,68,68,.15);color:var(--red)}
+
+/* TRACK LIST */
+.tlist{list-style:none}
+.trow{display:flex;align-items:center;gap:14px;padding:14px 20px;
+  border-bottom:1px solid var(--gb);transition:background .1s}
+.trow:last-child{border-bottom:none}
+.trow:hover{background:rgba(255,255,255,.03)}
+.tcov{width:46px;height:46px;border-radius:8px;background:linear-gradient(135deg,var(--pd),#9333ea);
+  flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:18px;overflow:hidden}
+.tcov img{width:100%;height:100%;object-fit:cover}
+.tinfo{flex:1;min-width:0}
+.tname{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tmeta{font-size:12px;color:var(--muted);margin-top:2px}
+.tplats{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ptag{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:20px;
+  font-size:11px;font-weight:600;text-decoration:none;cursor:pointer;transition:opacity .15s}
+.ptag:hover{opacity:.7}
+.ts{background:rgba(29,185,84,.15);color:#1DB954}
+.ta{background:rgba(252,60,68,.15);color:#FC3C44}
+.ty{background:rgba(255,0,0,.15);color:#ff4444}
+.tt{background:rgba(0,200,200,.15);color:#00cccc}
+.tam{background:rgba(255,153,0,.15);color:#ff9900}
+.tsc{background:rgba(255,85,0,.15);color:#ff5500}
+.tdz{background:rgba(239,84,102,.15);color:#ef5466}
+.tad{background:rgba(167,139,250,.1);color:var(--purple);border:1px dashed rgba(167,139,250,.4)}
+.tact{display:flex;gap:2px;flex-shrink:0}
+
+/* VIDEO LIST */
+.vrow{display:flex;align-items:center;gap:14px;padding:14px 20px;
+  border-bottom:1px solid var(--gb);transition:background .1s}
+.vrow:last-child{border-bottom:none}
+.vrow:hover{background:rgba(255,255,255,.03)}
+.vthumb{width:80px;height:46px;border-radius:8px;background:#1a1a2e;
+  flex-shrink:0;overflow:hidden;display:flex;align-items:center;justify-content:center}
+.vthumb img{width:100%;height:100%;object-fit:cover}
+.vthumb .noimg{color:var(--muted);font-size:20px}
+.vinfo{flex:1;min-width:0}
+.vtitle{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vmeta{font-size:12px;color:var(--muted);margin-top:2px}
+.vbadge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:600;margin-top:6px}
+.vfeat{background:rgba(245,158,11,.15);color:var(--amber)}
+.vnorm{background:rgba(167,139,250,.1);color:var(--purple)}
+
+/* ALBUM GRID */
+.agrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:16px;padding:20px}
+.acard{border-radius:12px;overflow:hidden;border:1px solid var(--gb);background:var(--glass);transition:transform .2s,border-color .2s}
+.acard:hover{transform:translateY(-3px);border-color:rgba(167,139,250,.4)}
+.aart{aspect-ratio:1;background:linear-gradient(135deg,#1a0a2e,#4c1d95);display:flex;align-items:center;
+  justify-content:center;font-size:42px;position:relative}
+.aact{position:absolute;top:6px;right:6px;display:flex;gap:4px}
+.aact button{background:rgba(0,0,0,.5);border:none;color:#fff;border-radius:6px;
+  width:28px;height:28px;cursor:pointer;font-size:12px;transition:background .15s}
+.aact button:hover{background:rgba(239,68,68,.7)}
+.ainfo{padding:12px 14px}
+.aname{font-size:13px;font-weight:600}
+.asub{font-size:11px;color:var(--muted);margin-top:2px}
+.alink{font-size:11px;color:var(--purple);text-decoration:none;display:inline-block;margin-top:6px}
+.alink:hover{text-decoration:underline}
+
+/* EMPTY */
+.empty{text-align:center;padding:48px 20px;color:var(--muted)}
+.empty i{font-size:40px;margin-bottom:12px;display:block}
+.empty p{font-size:14px}
+
+/* MODAL */
+.mbg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);
+  z-index:100;align-items:center;justify-content:center;padding:20px}
+.mbg.open{display:flex}
+.modal{background:#16161f;border:1px solid var(--gb);border-radius:18px;width:100%;
+  max-width:540px;max-height:90vh;overflow-y:auto;animation:su .2s ease}
+@keyframes su{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}
+.mh{display:flex;align-items:center;justify-content:space-between;padding:20px 24px;border-bottom:1px solid var(--gb)}
+.mt{font-size:17px;font-weight:700}
+.mc{background:none;border:none;color:var(--muted);cursor:pointer;font-size:18px;
+  padding:4px 8px;border-radius:8px;transition:color .15s}
+.mc:hover{color:var(--text)}
+.mb{padding:24px}
+.mf{display:flex;justify-content:flex-end;gap:10px;padding:16px 24px;border-top:1px solid var(--gb)}
+.field{margin-bottom:18px}
+.field label{display:block;font-size:11px;font-weight:600;color:var(--muted);
+  text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px}
+.field input,.field select,.field textarea{width:100%;padding:11px 14px;
+  background:rgba(255,255,255,.06);border:1px solid var(--gb);border-radius:10px;
+  color:var(--text);font-family:inherit;font-size:14px;outline:none;transition:border-color .2s}
+.field input:focus,.field select:focus,.field textarea:focus{border-color:var(--purple)}
+.field select option{background:#1a1a2e}
+.pgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.pi{display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.06);
+  border:1px solid var(--gb);border-radius:10px;padding:9px 12px;transition:border-color .2s}
+.pi:focus-within{border-color:var(--purple)}
+.pi-icon{width:22px;height:22px;border-radius:5px;display:flex;align-items:center;
+  justify-content:center;font-size:12px;flex-shrink:0;font-weight:700}
+.pi input{flex:1;background:transparent;border:none;outline:none;color:var(--text);
+  font-family:inherit;font-size:12px;padding:0;min-width:0}
+.pi input::placeholder{color:var(--muted)}
+.cov-row{display:flex;gap:16px;align-items:flex-start;margin-bottom:18px}
+.cov-upload{width:88px;height:88px;border-radius:10px;border:2px dashed var(--gb);display:flex;
+  flex-direction:column;align-items:center;justify-content:center;cursor:pointer;transition:all .2s;
+  background:var(--glass);flex-shrink:0;position:relative;overflow:hidden}
+.cov-upload:hover{border-color:var(--purple)}
+.cov-upload img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:8px}
+.cu-icon{font-size:22px;color:var(--muted)}.cu-text{font-size:10px;color:var(--muted);margin-top:4px}
+.helper{font-size:12px;color:var(--muted);margin-top:6px}
+.pwd-section{background:rgba(255,255,255,.03);border:1px solid var(--gb);border-radius:12px;padding:20px}
+.pwd-title{font-size:14px;font-weight:600;margin-bottom:16px;display:flex;align-items:center;gap:8px}
+.pwd-title i{color:var(--amber)}
+
+/* TOAST */
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);
+  background:#16161f;border:1px solid var(--gb);border-radius:12px;padding:12px 20px;
+  font-size:14px;font-weight:500;z-index:500;transition:transform .25s cubic-bezier(.34,1.56,.64,1);white-space:nowrap}
+.toast.show{transform:translateX(-50%) translateY(0)}
+.toast.ok{color:var(--green);border-color:rgba(29,185,84,.3)}
+.toast.err{color:var(--red);border-color:rgba(239,68,68,.3)}
+.toast.warn{color:var(--amber);border-color:rgba(245,158,11,.3)}
+
+/* LOADING */
+.loading{display:flex;align-items:center;justify-content:center;padding:40px;color:var(--muted);gap:10px}
+.spin{animation:spin 1s linear infinite;display:inline-block}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+@media(max-width:700px){.sidebar{display:none}.main{padding:20px 16px}.pgrid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login-screen">
+  <div class="lcard">
+    <div class="llogo">RAYVER</div>
+    <div class="lsub">Panel de administración</div>
+    <input type="password" id="pwd" placeholder="Contraseña" onkeydown="if(event.key==='Enter')doLogin()">
+    <button class="btn-login" onclick="doLogin()">Entrar</button>
+    <div class="lerr" id="lerr"></div>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app">
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="slogo">RAYVER <span>Admin</span></div>
+      <nav>
+        <button class="ni active" onclick="showPage('tracks')"><i class="fas fa-music"></i> Canciones</button>
+        <button class="ni" onclick="showPage('albums')"><i class="fas fa-compact-disc"></i> Álbumes</button>
+        <button class="ni" onclick="showPage('videos')"><i class="fab fa-youtube"></i> Videos</button>
+        <button class="ni" onclick="showPage('settings')"><i class="fas fa-cog"></i> Ajustes</button>
+        <a href="/" class="ni"><i class="fas fa-globe"></i> Ver web</a>
+      </nav>
+      <div class="sbot">
+        <button class="btn-logout" onclick="doLogout()"><i class="fas fa-sign-out-alt"></i> Cerrar sesión</button>
+      </div>
+    </aside>
+
+    <main class="main">
+
+      <!-- CANCIONES -->
+      <div id="page-tracks" class="page active">
+        <div class="ph">
+          <div><div class="ptitle">Catálogo</div><div class="psub">Canciones y sus links de distribución</div></div>
+          <button class="btn btn-p" onclick="openTrackModal()"><i class="fas fa-plus"></i> Añadir canción</button>
+        </div>
+        <div class="srow" id="stats-area"></div>
+        <div class="gc">
+          <div class="ch"><span class="ct">Todas las canciones</span></div>
+          <ul class="tlist" id="track-list"><li class="loading"><i class="fas fa-circle-notch spin"></i> Cargando…</li></ul>
+        </div>
+      </div>
+
+      <!-- ÁLBUMES -->
+      <div id="page-albums" class="page">
+        <div class="ph">
+          <div><div class="ptitle">Álbumes y EPs</div><div class="psub">Proyectos completos</div></div>
+          <button class="btn btn-p" onclick="openAlbumModal()"><i class="fas fa-plus"></i> Nuevo álbum</button>
+        </div>
+        <div class="gc">
+          <div class="ch"><span class="ct">Catálogo</span></div>
+          <div class="agrid" id="album-grid"><div class="loading"><i class="fas fa-circle-notch spin"></i> Cargando…</div></div>
+        </div>
+      </div>
+
+      <!-- VIDEOS -->
+      <div id="page-videos" class="page">
+        <div class="ph">
+          <div><div class="ptitle">Videos de YouTube</div><div class="psub">Se muestran en la sección de tu web</div></div>
+          <button class="btn btn-p" onclick="openVideoModal()"><i class="fas fa-plus"></i> Añadir video</button>
+        </div>
+        <div class="gc">
+          <div class="ch"><span class="ct">Videos</span><span style="font-size:12px;color:var(--muted)">El primero marcado como destacado aparece en grande</span></div>
+          <ul class="tlist" id="video-list"><li class="loading"><i class="fas fa-circle-notch spin"></i> Cargando…</li></ul>
+        </div>
+      </div>
+
+      <!-- AJUSTES -->
+      <div id="page-settings" class="page">
+        <div class="ph"><div><div class="ptitle">Ajustes</div><div class="psub">Configuración de seguridad</div></div></div>
+        <div class="gc">
+          <div class="ch"><span class="ct">Seguridad</span></div>
+          <div style="padding:24px">
+            <div class="pwd-section">
+              <div class="pwd-title"><i class="fas fa-lock"></i> Cambiar contraseña</div>
+              <div class="field">
+                <label>Contraseña actual</label>
+                <input type="password" id="pwd-cur" placeholder="••••••••">
+              </div>
+              <div class="field">
+                <label>Nueva contraseña</label>
+                <input type="password" id="pwd-new" placeholder="Mínimo 8 caracteres">
+              </div>
+              <div class="field" style="margin-bottom:20px">
+                <label>Confirmar nueva contraseña</label>
+                <input type="password" id="pwd-confirm" placeholder="Repite la nueva contraseña">
+              </div>
+              <button class="btn btn-p" onclick="changePassword()"><i class="fas fa-key"></i> Actualizar contraseña</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<!-- MODAL CANCIÓN -->
+<div class="mbg" id="modal-track">
+  <div class="modal">
+    <div class="mh"><span class="mt" id="mt-title">Nueva canción</span><button class="mc" onclick="closeModal('modal-track')"><i class="fas fa-times"></i></button></div>
+    <div class="mb">
+      <div class="cov-row">
+        <div class="cov-upload" id="cov-box" onclick="document.getElementById('cov-file').click()">
+          <input type="file" id="cov-file" accept="image/*" style="display:none" onchange="handleCover(this)">
+          <i class="fas fa-image cu-icon"></i><span class="cu-text">Portada</span>
+        </div>
+        <div style="flex:1">
+          <div class="field"><label>Título *</label><input type="text" id="f-title" placeholder="Nombre de la canción"></div>
+          <div class="field" style="margin-bottom:0"><label>Álbum / EP</label><input type="text" id="f-album" placeholder="Opcional"></div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="field"><label>Tipo</label><select id="f-type"><option>Single</option><option>EP</option><option>Álbum</option><option>Colaboración</option></select></div>
+        <div class="field"><label>Año</label><input type="number" id="f-year" placeholder="2025" min="2000" max="2099"></div>
+      </div>
+      <div class="field">
+        <label>Links de plataformas</label>
+        <div class="pgrid">
+          <div class="pi"><div class="pi-icon" style="background:rgba(29,185,84,.2);color:#1DB954">S</div><input type="url" id="p-spotify" placeholder="Spotify URL"></div>
+          <div class="pi"><div class="pi-icon" style="background:rgba(252,60,68,.2);color:#FC3C44">A</div><input type="url" id="p-apple" placeholder="Apple Music URL"></div>
+          <div class="pi"><div class="pi-icon" style="background:rgba(255,0,0,.2);color:#ff4444">Y</div><input type="url" id="p-youtube" placeholder="YouTube Music URL"></div>
+          <div class="pi"><div class="pi-icon" style="background:rgba(0,200,200,.2);color:#00cccc">T</div><input type="url" id="p-tidal" placeholder="Tidal URL"></div>
+          <div class="pi"><div class="pi-icon" style="background:rgba(255,153,0,.2);color:#ff9900">Am</div><input type="url" id="p-amazon" placeholder="Amazon Music URL"></div>
+          <div class="pi"><div class="pi-icon" style="background:rgba(255,85,0,.2);color:#ff5500">Sc</div><input type="url" id="p-soundcloud" placeholder="SoundCloud URL"></div>
+          <div class="pi"><div class="pi-icon" style="background:rgba(239,84,102,.2);color:#ef5466">Dz</div><input type="url" id="p-deezer" placeholder="Deezer URL"></div>
+          <div class="pi"><div class="pi-icon" style="background:rgba(167,139,250,.2);color:#a78bfa">+</div><input type="url" id="p-distrokid" placeholder="Otro / DistroKid"></div>
+        </div>
+      </div>
+    </div>
+    <div class="mf">
+      <button class="btn btn-g" onclick="closeModal('modal-track')">Cancelar</button>
+      <button class="btn btn-p" onclick="saveTrack()"><i class="fas fa-check"></i> Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL ÁLBUM -->
+<div class="mbg" id="modal-album">
+  <div class="modal">
+    <div class="mh"><span class="mt">Álbum / EP</span><button class="mc" onclick="closeModal('modal-album')"><i class="fas fa-times"></i></button></div>
+    <div class="mb">
+      <div class="field"><label>Nombre *</label><input type="text" id="al-name" placeholder="Nombre del álbum o EP"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="field"><label>Tipo</label><select id="al-type"><option>Álbum</option><option>EP</option><option>Mixtape</option><option>Single pack</option></select></div>
+        <div class="field"><label>Año</label><input type="number" id="al-year" placeholder="2025"></div>
+      </div>
+      <div class="field"><label>Emoji / ícono</label><input type="text" id="al-emoji" placeholder="🎵" maxlength="2"></div>
+      <div class="field"><label>Link principal de distribución</label><input type="url" id="al-link" placeholder="https://distrokid.com/hyperfollow/..."></div>
+      <div class="field"><label>Notas internas</label><textarea id="al-notes" rows="2" placeholder="Solo tú lo ves..."></textarea></div>
+    </div>
+    <div class="mf">
+      <button class="btn btn-g" onclick="closeModal('modal-album')">Cancelar</button>
+      <button class="btn btn-p" onclick="saveAlbum()"><i class="fas fa-check"></i> Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL VIDEO -->
+<div class="mbg" id="modal-video">
+  <div class="modal">
+    <div class="mh"><span class="mt" id="mv-title">Nuevo video</span><button class="mc" onclick="closeModal('modal-video')"><i class="fas fa-times"></i></button></div>
+    <div class="mb">
+      <div class="field">
+        <label>URL de YouTube *</label>
+        <input type="url" id="v-url" placeholder="https://youtu.be/... o https://www.youtube.com/watch?v=...">
+        <div class="helper">Pega la URL del video y el ID se extrae automáticamente</div>
+      </div>
+      <div class="field"><label>Título</label><input type="text" id="v-title" placeholder="Título del video (opcional, se muestra debajo)"></div>
+      <div class="field"><label>Descripción breve</label><input type="text" id="v-desc" placeholder="Ej: Videoclip oficial — 2025"></div>
+      <div class="field" style="margin-bottom:0">
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;text-transform:none;font-size:14px">
+          <input type="checkbox" id="v-featured" style="width:16px;height:16px;accent-color:var(--amber)">
+          Destacado — aparece en grande al inicio de la sección
+        </label>
+      </div>
+    </div>
+    <div class="mf">
+      <button class="btn btn-g" onclick="closeModal('modal-video')">Cancelar</button>
+      <button class="btn btn-p" onclick="saveVideo()"><i class="fas fa-check"></i> Guardar</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API = '/api';
+let TOKEN = sessionStorage.getItem('rvm_token') || '';
+let editTrackId = null, editAlbumId = null, editVideoId = null, coverData = null;
+let tracks = [], albums = [], videos = [];
+
+// ── AUTH ──────────────────────────────────────────────────────────────────────
+async function doLogin() {
+  const pwd = document.getElementById('pwd').value;
+  const err = document.getElementById('lerr');
+  err.style.display = 'none';
+  try {
+    const r = await fetch(`${API}/auth/login`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: pwd })
+    });
+    const d = await r.json();
+    if (!r.ok) { err.textContent = d.error || 'Error'; err.style.display = 'block'; return; }
+    TOKEN = d.token;
+    sessionStorage.setItem('rvm_token', TOKEN);
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('app').style.display = 'block';
+    loadAll();
+  } catch { err.textContent = 'No se pudo conectar al servidor'; err.style.display = 'block'; }
+}
+
+document.getElementById('pwd').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+
+function doLogout() {
+  sessionStorage.removeItem('rvm_token');
+  TOKEN = '';
+  location.reload();
+}
+
+async function changePassword() {
+  const cur = document.getElementById('pwd-cur').value;
+  const nw  = document.getElementById('pwd-new').value;
+  const cnf = document.getElementById('pwd-confirm').value;
+  if (!cur || !nw || !cnf) { toast('Rellena todos los campos', 'warn'); return; }
+  if (nw !== cnf) { toast('Las contraseñas no coinciden', 'err'); return; }
+  if (nw.length < 8) { toast('Mínimo 8 caracteres', 'warn'); return; }
+  const r = await apiFetch('POST', '/auth/change-password', { currentPassword: cur, newPassword: nw });
+  if (r.ok) {
+    toast('Contraseña actualizada ✓');
+    ['pwd-cur','pwd-new','pwd-confirm'].forEach(id => document.getElementById(id).value = '');
+  } else {
+    toast(r.data?.error || 'Error', 'err');
+  }
+}
+
+// ── API HELPER ────────────────────────────────────────────────────────────────
+async function apiFetch(method, path, body) {
+  try {
+    const r = await fetch(API + path, {
+      method,
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TOKEN },
+      body: body ? JSON.stringify(body) : undefined
+    });
+    if (r.status === 401) { doLogout(); return { ok: false, data: {} }; }
+    const data = await r.json();
+    return { ok: r.ok, data };
+  } catch { toast('Error de red', 'err'); return { ok: false, data: {} }; }
+}
+
+// ── LOAD ──────────────────────────────────────────────────────────────────────
+async function loadAll() {
+  const [rt, ra, rv] = await Promise.all([
+    apiFetch('GET', '/tracks'),
+    apiFetch('GET', '/albums'),
+    apiFetch('GET', '/videos')
+  ]);
+  if (rt.ok) tracks = rt.data;
+  if (ra.ok) albums = ra.data;
+  if (rv.ok) videos = rv.data;
+  render();
+}
+
+// ── NAVIGATION ────────────────────────────────────────────────────────────────
+function showPage(p) {
+  document.querySelectorAll('.page').forEach(el => el.classList.remove('active'));
+  document.getElementById('page-' + p).classList.add('active');
+  document.querySelectorAll('.ni').forEach((el, i) => {
+    const pages = ['tracks','albums','videos','settings'];
+    el.classList.toggle('active', el.textContent.trim().toLowerCase().startsWith(pages[i]?.charAt(0) || ''));
+  });
+  // Simple active matching
+  document.querySelectorAll('.ni').forEach(el => {
+    const onclick = el.getAttribute('onclick') || '';
+    el.classList.toggle('active', onclick.includes("'"+p+"'"));
+  });
+}
+
+// ── RENDER ────────────────────────────────────────────────────────────────────
+const PLATS = {
+  spotify:{l:'Spotify',c:'ts',i:'fab fa-spotify'},apple:{l:'Apple Music',c:'ta',i:'fab fa-apple'},
+  youtube:{l:'YouTube',c:'ty',i:'fab fa-youtube'},tidal:{l:'Tidal',c:'tt',i:'fas fa-water'},
+  amazon:{l:'Amazon',c:'tam',i:'fab fa-amazon'},soundcloud:{l:'SoundCloud',c:'tsc',i:'fab fa-soundcloud'},
+  deezer:{l:'Deezer',c:'tdz',i:'fas fa-music'},distrokid:{l:'Link',c:'tad',i:'fas fa-link'}
+};
+const GRADS=['linear-gradient(135deg,#4c1d95,#7c3aed)','linear-gradient(135deg,#1e1b4b,#4338ca)',
+  'linear-gradient(135deg,#7c3aed,#db2777)','linear-gradient(135deg,#0f172a,#1d4ed8)',
+  'linear-gradient(135deg,#14532d,#4c1d95)','linear-gradient(135deg,#831843,#7c3aed)'];
+
+function render() {
+  renderStats(); renderTracks(); renderAlbums(); renderVideos();
+}
+
+function renderStats() {
+  let links = 0; const plats = new Set();
+  tracks.forEach(t => Object.entries(t.platforms||{}).forEach(([k,v])=>{ if(v){links++;plats.add(k);} }));
+  document.getElementById('stats-area').innerHTML = `
+    <div class="sc"><div class="slabel">Canciones</div><div class="sval p">${tracks.length}</div></div>
+    <div class="sc"><div class="slabel">Álbumes</div><div class="sval k">${albums.length}</div></div>
+    <div class="sc"><div class="slabel">Videos</div><div class="sval a">${videos.length}</div></div>
+    <div class="sc"><div class="slabel">Links activos</div><div class="sval g">${links}</div></div>`;
+}
+
+function renderTracks() {
+  const ul = document.getElementById('track-list');
+  if (!tracks.length) { ul.innerHTML=`<li class="empty"><i class="fas fa-music"></i><p>Sin canciones. Añade la primera.</p></li>`; return; }
+  ul.innerHTML = tracks.map((t,i) => {
+    const g = GRADS[i%GRADS.length];
+    const cov = t.cover ? `<img src="${t.cover}" alt="">` : '<i class="fas fa-music" style="color:rgba(255,255,255,.4)"></i>';
+    const pills = Object.entries(t.platforms||{}).filter(([,v])=>v).map(([k,v])=>{
+      const p=PLATS[k]||{l:k,c:'tad',i:'fas fa-link'};
+      return `<a href="${esc(v)}" target="_blank" class="ptag ${p.c}"><i class="${p.i}"></i>${p.l}</a>`;
+    }).join('');
+    return `<li class="trow">
+      <div class="tcov" style="background:${g}">${cov}</div>
+      <div class="tinfo">
+        <div class="tname">${esc(t.title)}</div>
+        <div class="tmeta">${esc(t.type||'Single')}${t.album?' · '+esc(t.album):''}${t.year?' · '+t.year:''}</div>
+        <div class="tplats">${pills}
+          <button class="ptag tad" onclick="openTrackModal('${t.id}')"><i class="fas fa-pen"></i> editar links</button>
+        </div>
+      </div>
+      <div class="tact">
+        <button class="ib" onclick="openTrackModal('${t.id}')" title="Editar"><i class="fas fa-pen"></i></button>
+        <button class="db" onclick="delTrack('${t.id}')" title="Eliminar"><i class="fas fa-trash"></i></button>
+      </div>
+    </li>`;
+  }).join('');
+}
+
+function renderAlbums() {
+  const g = document.getElementById('album-grid');
+  if (!albums.length) { g.innerHTML=`<div class="empty" style="grid-column:1/-1"><i class="fas fa-compact-disc"></i><p>Sin álbumes.</p></div>`; return; }
+  g.innerHTML = albums.map((a,i) => {
+    const gr = GRADS[i%GRADS.length];
+    return `<div class="acard">
+      <div class="aart" style="background:${gr}"><span>${a.emoji||'🎵'}</span>
+        <div class="aact">
+          <button onclick="delAlbum('${a.id}')" title="Eliminar"><i class="fas fa-trash"></i></button>
+        </div>
+      </div>
+      <div class="ainfo">
+        <div class="aname">${esc(a.name)}</div>
+        <div class="asub">${esc(a.type||'Álbum')} · ${a.year||'—'}</div>
+        ${a.link?`<a href="${esc(a.link)}" target="_blank" class="alink"><i class="fas fa-external-link-alt"></i> Ver distribución</a>`:''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderVideos() {
+  const ul = document.getElementById('video-list');
+  if (!videos.length) { ul.innerHTML=`<li class="empty"><i class="fab fa-youtube"></i><p>Sin videos. Añade el primero.</p></li>`; return; }
+  ul.innerHTML = videos.map(v => {
+    const thumb = v.videoId ? `https://img.youtube.com/vi/${v.videoId}/mqdefault.jpg` : null;
+    return `<li class="vrow">
+      <div class="vthumb">${thumb?`<img src="${thumb}" alt="">`:'<i class="fab fa-youtube noimg"></i>'}</div>
+      <div class="vinfo">
+        <div class="vtitle">${esc(v.title||v.videoId||'Video')}</div>
+        <div class="vmeta">${v.desc||''}${v.videoId?' · ID: '+v.videoId:''}</div>
+        <span class="vbadge ${v.featured?'vfeat':'vnorm'}">${v.featured?'⭐ Destacado':'Video'}</span>
+      </div>
+      <div class="tact">
+        <button class="ib" onclick="openVideoModal('${v.id}')" title="Editar"><i class="fas fa-pen"></i></button>
+        <button class="db" onclick="delVideo('${v.id}')" title="Eliminar"><i class="fas fa-trash"></i></button>
+      </div>
+    </li>`;
+  }).join('');
+}
+
+// ── TRACK MODAL ───────────────────────────────────────────────────────────────
+function openTrackModal(id = null) {
+  editTrackId = id; coverData = null;
+  document.getElementById('mt-title').textContent = id ? 'Editar canción' : 'Nueva canción';
+  const t = id ? (tracks.find(x=>x.id===id)||{}) : {};
+  const pl = t.platforms||{};
+  document.getElementById('f-title').value = t.title||'';
+  document.getElementById('f-album').value = t.album||'';
+  document.getElementById('f-type').value  = t.type||'Single';
+  document.getElementById('f-year').value  = t.year||'';
+  ['spotify','apple','youtube','tidal','amazon','soundcloud','deezer','distrokid'].forEach(k=>{
+    document.getElementById('p-'+k).value = pl[k]||'';
+  });
+  coverData = t.cover||null;
+  const box = document.getElementById('cov-box');
+  box.innerHTML = coverData
+    ? `<input type="file" id="cov-file" accept="image/*" style="display:none" onchange="handleCover(this)"><img src="${coverData}" alt="">`
+    : `<input type="file" id="cov-file" accept="image/*" style="display:none" onchange="handleCover(this)"><i class="fas fa-image cu-icon"></i><span class="cu-text">Portada</span>`;
+  document.getElementById('modal-track').classList.add('open');
+}
+
+async function saveTrack() {
+  const title = document.getElementById('f-title').value.trim();
+  if (!title) { toast('El título es obligatorio', 'err'); return; }
+  const body = {
+    title, album: document.getElementById('f-album').value.trim(),
+    type: document.getElementById('f-type').value, year: document.getElementById('f-year').value,
+    cover: coverData,
+    platforms: {}
+  };
+  ['spotify','apple','youtube','tidal','amazon','soundcloud','deezer','distrokid'].forEach(k=>{
+    body.platforms[k] = document.getElementById('p-'+k).value.trim();
+  });
+  let r;
+  if (editTrackId) r = await apiFetch('PUT', '/tracks/'+editTrackId, body);
+  else             r = await apiFetch('POST', '/tracks', body);
+  if (r.ok) {
+    await loadAll(); closeModal('modal-track');
+    toast(editTrackId ? 'Canción actualizada ✓' : 'Canción añadida ✓');
+  } else toast(r.data?.error||'Error', 'err');
+}
+
+async function delTrack(id) {
+  const t = tracks.find(x=>x.id===id);
+  if (!confirm(`¿Eliminar "${t?.title}"?`)) return;
+  const r = await apiFetch('DELETE', '/tracks/'+id);
+  if (r.ok) { await loadAll(); toast('Canción eliminada'); }
+  else toast(r.data?.error||'Error', 'err');
+}
+
+// ── ALBUM MODAL ───────────────────────────────────────────────────────────────
+function openAlbumModal() {
+  ['al-name','al-year','al-emoji','al-link','al-notes'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('al-type').value='Álbum';
+  document.getElementById('modal-album').classList.add('open');
+}
+
+async function saveAlbum() {
+  const name = document.getElementById('al-name').value.trim();
+  if (!name) { toast('El nombre es obligatorio', 'err'); return; }
+  const r = await apiFetch('POST', '/albums', {
+    name, type: document.getElementById('al-type').value,
+    year: document.getElementById('al-year').value,
+    emoji: document.getElementById('al-emoji').value.trim()||'🎵',
+    link: document.getElementById('al-link').value.trim(),
+    notes: document.getElementById('al-notes').value.trim()
+  });
+  if (r.ok) { await loadAll(); closeModal('modal-album'); toast('Álbum añadido ✓'); }
+  else toast(r.data?.error||'Error', 'err');
+}
+
+async function delAlbum(id) {
+  const a = albums.find(x=>x.id===id);
+  if (!confirm(`¿Eliminar "${a?.name}"?`)) return;
+  const r = await apiFetch('DELETE', '/albums/'+id);
+  if (r.ok) { await loadAll(); toast('Álbum eliminado'); }
+  else toast(r.data?.error||'Error', 'err');
+}
+
+// ── VIDEO MODAL ───────────────────────────────────────────────────────────────
+function extractYtId(url) {
+  if (!url) return null;
+  const m = url.match(/(?:youtu\.be\/|v=|embed\/)([A-Za-z0-9_-]{11})/);
+  return m ? m[1] : null;
+}
+
+function openVideoModal(id = null) {
+  editVideoId = id;
+  document.getElementById('mv-title').textContent = id ? 'Editar video' : 'Nuevo video';
+  const v = id ? (videos.find(x=>x.id===id)||{}) : {};
+  document.getElementById('v-url').value = v.videoId ? `https://youtu.be/${v.videoId}` : '';
+  document.getElementById('v-title').value = v.title||'';
+  document.getElementById('v-desc').value = v.desc||'';
+  document.getElementById('v-featured').checked = v.featured||false;
+  document.getElementById('modal-video').classList.add('open');
+}
+
+async function saveVideo() {
+  const url = document.getElementById('v-url').value.trim();
+  const videoId = extractYtId(url);
+  if (!videoId) { toast('URL de YouTube no válida', 'err'); return; }
+  const body = {
+    videoId,
+    title: document.getElementById('v-title').value.trim(),
+    desc:  document.getElementById('v-desc').value.trim(),
+    featured: document.getElementById('v-featured').checked
+  };
+  let r;
+  if (editVideoId) r = await apiFetch('PUT', '/videos/'+editVideoId, body);
+  else             r = await apiFetch('POST', '/videos', body);
+  if (r.ok) { await loadAll(); closeModal('modal-video'); toast(editVideoId ? 'Video actualizado ✓' : 'Video añadido ✓'); }
+  else toast(r.data?.error||'Error', 'err');
+}
+
+async function delVideo(id) {
+  const v = videos.find(x=>x.id===id);
+  if (!confirm(`¿Eliminar "${v?.title||v?.videoId}"?`)) return;
+  const r = await apiFetch('DELETE', '/videos/'+id);
+  if (r.ok) { await loadAll(); toast('Video eliminado'); }
+  else toast(r.data?.error||'Error', 'err');
+}
+
+// ── UTILS ─────────────────────────────────────────────────────────────────────
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function handleCover(input) {
+  const f = input.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = e => {
+    coverData = e.target.result;
+    const box = document.getElementById('cov-box');
+    box.innerHTML = `<input type="file" id="cov-file" accept="image/*" style="display:none" onchange="handleCover(this)"><img src="${coverData}" alt="">`;
+  };
+  r.readAsDataURL(f);
+}
+
+let _tt;
+function toast(msg, type='ok') {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.className = 'toast '+type+' show';
+  clearTimeout(_tt); _tt = setTimeout(()=>el.classList.remove('show'), 2800);
+}
+
+document.querySelectorAll('.mbg').forEach(el=>el.addEventListener('click',e=>{ if(e.target===el) el.classList.remove('open'); }));
+
+// Auto-login si hay token en sesión
+if (TOKEN) {
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  loadAll();
+}
+</script>
+</body>
+</html>

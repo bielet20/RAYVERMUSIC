@@ -214,6 +214,33 @@ body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--text);min-
 @keyframes spin{to{transform:rotate(360deg)}}
 
 @media(max-width:700px){.sidebar{display:none}.main{padding:20px 16px}.pgrid{grid-template-columns:1fr}}
+
+/* ── DRAG & DROP VIDEOS ── */
+.drag-handle {
+  color: rgba(255,255,255,.2);
+  cursor: grab;
+  padding: 0 4px;
+  font-size: 14px;
+  flex-shrink: 0;
+  transition: color .15s;
+}
+.drag-handle:hover { color: var(--purple); }
+.vrow.dragging { opacity: .4; }
+.vrow.drag-over { background: rgba(167,139,250,.12); border-color: rgba(167,139,250,.3); }
+.vorder { flex-shrink: 0; }
+.vorder-input {
+  width: 44px;
+  background: rgba(255,255,255,.05);
+  border: 1px solid var(--gb);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  padding: 4px 6px;
+  text-align: center;
+  outline: none;
+}
+.vorder-input:focus { border-color: var(--purple); }
 </style>
 </head>
 <body>
@@ -608,9 +635,19 @@ function renderAlbums() {
 function renderVideos() {
   const ul = document.getElementById('video-list');
   if (!videos.length) { ul.innerHTML=`<li class="empty"><i class="fab fa-youtube"></i><p>Sin videos. Añade el primero.</p></li>`; return; }
-  ul.innerHTML = videos.map(v => {
+  ul.innerHTML = videos.map((v,i) => {
     const thumb = v.videoId ? `https://img.youtube.com/vi/${v.videoId}/mqdefault.jpg` : null;
-    return `<li class="vrow">
+    return `<li class="vrow" draggable="true" data-id="${v.id}" data-idx="${i}"
+      ondragstart="videoDragStart(event,${i})"
+      ondragover="videoDragOver(event)"
+      ondrop="videoDrop(event,${i})"
+      ondragend="videoDragEnd(event)">
+      <div class="drag-handle" title="Arrastrar para reordenar"><i class="fas fa-grip-vertical"></i></div>
+      <div class="vorder" title="Número de orden">
+        <input type="number" class="vorder-input" value="${v.order!=null?v.order:i+1}" min="1"
+          onchange="updateVideoOrder('${v.id}',this.value)"
+          onclick="event.stopPropagation()">
+      </div>
       <div class="vthumb">${thumb?`<img src="${thumb}" alt="">`:'<i class="fab fa-youtube noimg"></i>'}</div>
       <div class="vinfo">
         <div class="vtitle">${esc(v.title||v.videoId||'Video')}</div>
@@ -623,6 +660,60 @@ function renderVideos() {
       </div>
     </li>`;
   }).join('');
+}
+
+// ── DRAG & DROP VIDEOS ────────────────────────────────────────────────────────
+let dragSrcIdx = null;
+
+function videoDragStart(e, idx) {
+  dragSrcIdx = idx;
+  e.currentTarget.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+}
+
+function videoDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  document.querySelectorAll('.vrow').forEach(r => r.classList.remove('drag-over'));
+  e.currentTarget.classList.add('drag-over');
+}
+
+function videoDrop(e, targetIdx) {
+  e.preventDefault();
+  if (dragSrcIdx === null || dragSrcIdx === targetIdx) return;
+  const moved = videos.splice(dragSrcIdx, 1)[0];
+  videos.splice(targetIdx, 0, moved);
+  // Actualizar order en todos
+  videos.forEach((v, i) => { v.order = i + 1; });
+  renderVideos();
+  // Guardar orden en servidor
+  saveVideoOrder();
+}
+
+function videoDragEnd(e) {
+  document.querySelectorAll('.vrow').forEach(r => {
+    r.classList.remove('dragging','drag-over');
+  });
+  dragSrcIdx = null;
+}
+
+async function saveVideoOrder() {
+  const ids = videos.map(v => v.id);
+  const r = await apiFetch('PATCH', '/videos/reorder', { ids });
+  if (r.ok) toast('Orden guardado ✓');
+  else toast('Error guardando orden', 'err');
+}
+
+async function updateVideoOrder(id, orderVal) {
+  const v = videos.find(x=>x.id===id);
+  if (!v) return;
+  const newOrder = parseInt(orderVal) || 1;
+  v.order = newOrder;
+  // Reordenar por campo order
+  videos.sort((a,b) => (a.order||0)-(b.order||0));
+  videos.forEach((v,i) => { v.order = i+1; });
+  await saveVideoOrder();
+  renderVideos();
 }
 
 // ── TRACK MODAL ───────────────────────────────────────────────────────────────

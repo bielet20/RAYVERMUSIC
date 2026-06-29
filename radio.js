@@ -381,21 +381,15 @@
     } catch(_) {}
 
     if (!tracks.length) {
-      // Fallback: playlist completa del perfil de SoundCloud de RAYVER
+      // Fallback: perfil completo de SoundCloud — carga todas las canciones
       tracks = [
-        { id:'1', title:'We Were Always Light — Álbum Completo', type:'Álbum', year:'2025', cover:'',
-          streamUrl: 'https://on.soundcloud.com/VZxumhdVe8yxewFrm3',
-          platforms:{
-            soundcloud:'https://on.soundcloud.com/VZxumhdVe8yxewFrm3',
-            spotify:'https://open.spotify.com/artist/0GmwWh84e70RNGNkYOwE6d',
-            apple:'https://music.apple.com/us/artist/gabriel-rivero-sampol/1838996180'
-          }
-        },
-        { id:'2', title:'Summum', type:'Single', year:'2025', cover:'',
+        { id:'1', title:'RAYVER — Catálogo completo', type:'Perfil', year:'2025', cover:'logo.jpg',
           streamUrl: 'https://soundcloud.com/biel-rivero-sampol',
           platforms:{
-            soundcloud:'https://soundcloud.com/biel-rivero-sampol',
-            youtube:'https://youtu.be/_5ay8vh1SJk'
+            soundcloud: 'https://soundcloud.com/biel-rivero-sampol',
+            spotify:    'https://open.spotify.com/artist/0GmwWh84e70RNGNkYOwE6d',
+            apple:      'https://music.apple.com/us/artist/gabriel-rivero-sampol/1838996180',
+            youtube:    'https://youtu.be/_5ay8vh1SJk'
           }
         }
       ];

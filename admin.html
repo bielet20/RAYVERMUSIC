@@ -311,6 +311,43 @@ body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--text);min-
         </div>
       </div>
 
+
+      <!-- SYNC -->
+      <div id="page-sync" class="page">
+        <div class="ph">
+          <div><div class="ptitle">Sincronización</div><div class="psub">Spotify + YouTube → importar canciones y videos automáticamente</div></div>
+          <button class="btn btn-p" onclick="runSync()" id="btn-sync"><i class="fas fa-sync-alt"></i> Sincronizar ahora</button>
+        </div>
+
+        <!-- Estado -->
+        <div class="gc" style="margin-bottom:16px">
+          <div class="ch"><span class="ct">Estado del sistema</span></div>
+          <div style="padding:20px">
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:16px" id="sync-stats"></div>
+            <div id="sync-status-bar" style="font-size:13px;color:var(--muted);padding:10px 14px;background:rgba(255,255,255,.03);border:1px solid var(--gb);border-radius:10px"></div>
+          </div>
+        </div>
+
+        <!-- Config -->
+        <div class="gc" style="margin-bottom:16px">
+          <div class="ch"><span class="ct">Configuración de APIs</span></div>
+          <div style="padding:20px">
+            <p style="font-size:13px;color:var(--muted);margin-bottom:16px">Añade estas variables en Coolify → Environment Variables:</p>
+            <div style="display:flex;flex-direction:column;gap:10px" id="sync-config"></div>
+            <div style="margin-top:16px;padding:12px 16px;background:rgba(255,255,255,.03);border:1px solid var(--gb);border-radius:10px;font-size:12px;color:var(--muted)">
+              <strong style="color:var(--text)">IDs de artistas Spotify</strong> — por defecto ya tiene los 5 perfiles de RAYVER. Puedes añadir más con <code style="background:rgba(255,255,255,.08);padding:1px 5px;border-radius:4px">SPOTIFY_ARTIST_IDS=id1,id2,id3</code><br><br>
+              <strong style="color:var(--text)">Canal de YouTube</strong> — añade el ID de tu canal (empieza por UC...) en <code style="background:rgba(255,255,255,.08);padding:1px 5px;border-radius:4px">YOUTUBE_CHANNEL_IDS=UCxxxx</code>
+            </div>
+          </div>
+        </div>
+
+        <!-- Log -->
+        <div class="gc">
+          <div class="ch"><span class="ct">Historial de sincronizaciones</span></div>
+          <div id="sync-log-wrap" style="padding:0"></div>
+        </div>
+      </div>
+
     </main>
   </div>
 </div>
@@ -741,6 +778,115 @@ if (TOKEN) {
   loadAll();
 }
 </script>
+
+<script>
+// ── SYNC PANEL ─────────────────────────────────────────────────────
+async function loadSyncData() {
+  const r = await apiFetch('GET', '/sync/status');
+  if (!r.ok) return;
+  const d = r.data;
+
+  // Stats
+  const statsEl = document.getElementById('sync-stats');
+  if (statsEl) statsEl.innerHTML = `
+    <div class="sc"><div class="slabel">Canciones</div><div class="sval p">${d.totals?.tracks||0}</div></div>
+    <div class="sc"><div class="slabel">Videos</div><div class="sval a">${d.totals?.videos||0}</div></div>
+    <div class="sc"><div class="slabel">Estado</div><div class="sval ${d.running?'warn':'g'}" style="font-size:16px">${d.running?'⚙️ Sync…':'✓ OK'}</div></div>
+  `;
+
+  // Config check
+  const cfgEl = document.getElementById('sync-config');
+  if (cfgEl) {
+    const cfg = d.config || {};
+    cfgEl.innerHTML = `
+      <div class="setup-step ${cfg.hasSpotifyCreds?'step-done':''}">
+        <div class="step-num">${cfg.hasSpotifyCreds?'✓':'1'}</div>
+        <div class="step-body"><div class="step-title">Spotify API ${cfg.hasSpotifyCreds?'✓ Configurado':'— Pendiente'}</div>
+        ${cfg.hasSpotifyCreds
+          ? `<div class="step-desc">Sincronizando ${cfg.spotifyArtists?.length||0} perfiles de artista.</div>`
+          : `<div class="step-code">SPOTIFY_CLIENT_ID=xxx
+SPOTIFY_CLIENT_SECRET=xxx</div>`}</div>
+      </div>
+      <div class="setup-step ${cfg.hasYoutubeCreds&&cfg.youtubeChannels?.length?'step-done':''}">
+        <div class="step-num">${cfg.hasYoutubeCreds&&cfg.youtubeChannels?.length?'✓':'2'}</div>
+        <div class="step-body"><div class="step-title">YouTube API ${cfg.hasYoutubeCreds?'✓ Configurado':'— Pendiente'}</div>
+        ${cfg.hasYoutubeCreds && cfg.youtubeChannels?.length
+          ? `<div class="step-desc">Canal: ${cfg.youtubeChannels.join(', ')}</div>`
+          : `<div class="step-code">YOUTUBE_API_KEY=AIza...
+YOUTUBE_CHANNEL_IDS=UCxxxx</div>`}</div>
+      </div>
+    `;
+  }
+
+  // Status bar
+  const statusEl = document.getElementById('sync-status-bar');
+  if (statusEl) {
+    const last = d.logs?.[0];
+    statusEl.innerHTML = d.running
+      ? '<i class="fas fa-circle-notch fa-spin" style="margin-right:8px"></i> Sincronización en progreso…'
+      : last
+        ? `Última sync: ${new Date(last.finishedAt||last.startedAt).toLocaleString('es')} — Trigger: ${last.trigger} — Tracks: ${last.totalTracks||'?'} · Videos: ${last.totalVideos||'?'}`
+        : 'Sin sincronizaciones todavía. Pulsa "Sincronizar ahora" para importar tu catálogo.';
+  }
+
+  // Log
+  const logEl = document.getElementById('sync-log-wrap');
+  if (logEl) {
+    const logs = d.logs || [];
+    if (!logs.length) {
+      logEl.innerHTML = '<div class="empty-table" style="padding:32px;text-align:center;color:var(--muted)">Sin historial aún</div>';
+    } else {
+      logEl.innerHTML = `<div style="overflow-x:auto"><table class="member-table">
+        <thead><tr><th>Fecha</th><th>Trigger</th><th>Spotify</th><th>YouTube</th><th>Total tracks</th><th>Total videos</th></tr></thead>
+        <tbody>${logs.map(l => {
+          const sp = l.spotify;
+          const yt = l.youtube;
+          return `<tr>
+            <td style="font-size:12px">${new Date(l.startedAt).toLocaleString('es')}</td>
+            <td><span class="status-pill ${l.trigger==='manual'?'s-active':'s-past_due'}">${l.trigger}</span></td>
+            <td style="font-size:12px;color:var(--green)">${sp?.skipped?'<span style="color:var(--muted)">—</span>':`+${sp?.added||0} / ~${sp?.updated||0}`}</td>
+            <td style="font-size:12px;color:var(--green)">${yt?.skipped?'<span style="color:var(--muted)">—</span>':`+${yt?.added||0} / ~${yt?.updated||0}`}</td>
+            <td style="font-weight:600">${l.totalTracks||'—'}</td>
+            <td style="font-weight:600">${l.totalVideos||'—'}</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table></div>`;
+    }
+  }
+}
+
+async function runSync() {
+  const btn = document.getElementById('btn-sync');
+  if (btn) { btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Sincronizando…'; btn.disabled = true; }
+  await apiFetch('POST', '/sync/run', {});
+  toast('Sincronización iniciada — puede tardar 1-2 minutos ⏳', 'ok');
+  // Polling cada 3s hasta que termine
+  let polls = 0;
+  const interval = setInterval(async () => {
+    await loadSyncData();
+    polls++;
+    const status = await apiFetch('GET', '/sync/status');
+    if (!status.data?.running || polls > 40) {
+      clearInterval(interval);
+      if (btn) { btn.innerHTML = '<i class="fas fa-sync-alt"></i> Sincronizar ahora'; btn.disabled = false; }
+      toast('Sincronización completada ✓');
+      await loadSyncData();
+    }
+  }, 3000);
+}
+
+// Patch showPage para cargar sync
+const _origShowPage2 = window.showPage;
+window.showPage = function(p) {
+  _origShowPage2 && _origShowPage2(p);
+  if (p === 'sync' && TOKEN) loadSyncData();
+};
+
+if (typeof TOKEN !== 'undefined' && TOKEN) {
+  setTimeout(loadSyncData, 600);
+}
+</script>
+
 </body>
 </html>
 
@@ -796,7 +942,8 @@ document.addEventListener('DOMContentLoaded', () => {
       { page:'products', icon:'fas fa-store', label:'Tienda / Membresías' },
       { page:'members',  icon:'fas fa-users', label:'Miembros' },
       { page:'orders',   icon:'fas fa-receipt', label:'Pedidos' },
-      { page:'setup',    icon:'fas fa-plug', label:'Configurar Stripe' }
+      { page:'setup',    icon:'fas fa-plug', label:'Configurar Stripe' },
+      { page:'sync',     icon:'fas fa-sync-alt', label:'Sincronización' }
     ];
     items.forEach(({page, icon, label}) => {
       const btn = document.createElement('button');

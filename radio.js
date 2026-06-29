@@ -381,14 +381,17 @@
     } catch(_) {}
 
     if (!tracks.length) {
-      // Fallback con tracks que tienen SoundCloud directamente
+      // Fallback: tracks con URLs reales de SoundCloud y YouTube
       tracks = [
         { id:'1', title:'Feel It In The Air', type:'Álbum', year:'2025', cover:'',
+          streamUrl: 'https://soundcloud.com/biel-rivero-sampol/feel-it-in-the-air',
           platforms:{ soundcloud:'https://soundcloud.com/biel-rivero-sampol', spotify:'https://open.spotify.com/artist/0GmwWh84e70RNGNkYOwE6d' } },
         { id:'2', title:'Summum', type:'Single', year:'2025', cover:'',
-          platforms:{ youtube:'https://youtu.be/_5ay8vh1SJk' } },
+          streamUrl: 'https://soundcloud.com/biel-rivero-sampol',
+          platforms:{ soundcloud:'https://soundcloud.com/biel-rivero-sampol', youtube:'https://youtu.be/_5ay8vh1SJk' } },
         { id:'3', title:'I Am Found', type:'Álbum', year:'2025', cover:'',
-          platforms:{ spotify:'https://open.spotify.com/artist/0GmwWh84e70RNGNkYOwE6d' } }
+          streamUrl: 'https://soundcloud.com/biel-rivero-sampol',
+          platforms:{ soundcloud:'https://soundcloud.com/biel-rivero-sampol', spotify:'https://open.spotify.com/artist/0GmwWh84e70RNGNkYOwE6d' } }
       ];
     }
 

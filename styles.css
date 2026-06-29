@@ -72,7 +72,7 @@ body {
 }
 
 .section-title {
-  font-family: 'Bebas Neue', 'Outfit', sans-serif;
+  font-family: 'Orbitron', 'Outfit', sans-serif;
   font-size: clamp(36px,6vw,60px);
   line-height: 1;
   letter-spacing: 1px;
@@ -253,7 +253,7 @@ body {
 }
 
 .hero-title {
-  font-family: 'Bebas Neue', sans-serif;
+  font-family: 'Orbitron', sans-serif;
   font-size: clamp(80px,16vw,180px);
   line-height: .88;
   letter-spacing: 3px;
@@ -290,7 +290,7 @@ body {
 
 .hero-stat-num {
   display: block;
-  font-family: 'Bebas Neue', sans-serif;
+  font-family: 'Orbitron', sans-serif;
   font-size: 36px;
   letter-spacing: 1px;
   color: var(--primary-2);
@@ -1033,7 +1033,7 @@ body {
 }
 
 .license-name  { font-size: 13px; font-weight: 700; letter-spacing: 2px; color: var(--muted); text-transform: uppercase; margin-bottom: 8px; }
-.license-price { font-family: 'Bebas Neue', sans-serif; font-size: 48px; letter-spacing: 1px; color: var(--text); margin-bottom: 20px; line-height: 1; }
+.license-price { font-family: 'Orbitron', sans-serif; font-size: 48px; letter-spacing: 1px; color: var(--text); margin-bottom: 20px; line-height: 1; }
 
 .license-features { list-style: none; display: flex; flex-direction: column; gap: 8px; margin-bottom: 24px; }
 .license-features li { font-size: 13px; display: flex; align-items: center; gap: 8px; }
@@ -1069,7 +1069,7 @@ body {
 }
 
 .about-stat { text-align: center; }
-.about-stat span { display: block; font-family: 'Bebas Neue', sans-serif; font-size: 36px; color: var(--primary-2); line-height: 1; }
+.about-stat span { display: block; font-family: 'Orbitron', sans-serif; font-size: 36px; color: var(--primary-2); line-height: 1; }
 .about-stat small { font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--subtle); }
 
 .about-visual { flex-shrink: 0; }

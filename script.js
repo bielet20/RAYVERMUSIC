@@ -1,244 +1,349 @@
+'use strict';
 document.addEventListener('DOMContentLoaded', () => {
-    // Navbar Scroll Effect
-    const navbar = document.querySelector('.navbar');
-    window.addEventListener('scroll', () => {
-        if (window.scrollY > 50) {
-            navbar.classList.add('scrolled');
-        } else {
-            navbar.classList.remove('scrolled');
-        }
+
+  // ── NAV SCROLL + ACTIVE ─────────────────────────────────────────
+  const navbar = document.getElementById('navbar');
+  const navLinks = document.querySelectorAll('.nav-links a[data-section]');
+  const sections = document.querySelectorAll('section[id]');
+
+  window.addEventListener('scroll', () => {
+    navbar.classList.toggle('scrolled', window.scrollY > 60);
+    // Active nav
+    let current = '';
+    sections.forEach(s => {
+      if (window.scrollY >= s.offsetTop - 120) current = s.id;
     });
+    navLinks.forEach(a => a.classList.toggle('active', a.dataset.section === current));
+  }, { passive: true });
 
-    // Mobile Menu Toggle
-    const hamburger = document.querySelector('.hamburger');
-    const navLinks = document.querySelector('.nav-links');
-
-    hamburger.addEventListener('click', () => {
-        navLinks.classList.toggle('active');
-        const icon = hamburger.querySelector('i');
-        if (navLinks.classList.contains('active')) {
-            icon.classList.remove('fa-bars');
-            icon.classList.add('fa-times');
-        } else {
-            icon.classList.remove('fa-times');
-            icon.classList.add('fa-bars');
-        }
+  // ── HAMBURGER ────────────────────────────────────────────────────
+  const hamburger = document.getElementById('hamburger');
+  const navLinksList = document.getElementById('nav-links');
+  hamburger.addEventListener('click', () => {
+    hamburger.classList.toggle('open');
+    navLinksList.classList.toggle('open');
+  });
+  navLinksList.querySelectorAll('a').forEach(a => {
+    a.addEventListener('click', () => {
+      hamburger.classList.remove('open');
+      navLinksList.classList.remove('open');
     });
+  });
 
-    // Close mobile menu when clicking a link
-    document.querySelectorAll('.nav-links li a').forEach(link => {
-        link.addEventListener('click', () => {
-            navLinks.classList.remove('active');
-            const icon = hamburger.querySelector('i');
-            icon.classList.remove('fa-times');
-            icon.classList.add('fa-bars');
-        });
+  // ── SMOOTH SCROLL ────────────────────────────────────────────────
+  document.querySelectorAll('a[href^="#"]').forEach(a => {
+    a.addEventListener('click', e => {
+      const target = document.querySelector(a.getAttribute('href'));
+      if (target) { e.preventDefault(); target.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
     });
+  });
 
-    // Scroll Reveal Animation
-    const revealElements = document.querySelectorAll(
-        '.platform-card, .playlist-card, .about-content, .contact-container, .youtube-container'
-    );
-    
-    revealElements.forEach(el => {
-        el.classList.add('scroll-reveal');
-    });
+  // ── HERO CANVAS — PARTICLES ─────────────────────────────────────
+  (function initParticles() {
+    const canvas = document.getElementById('hero-canvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    let W, H, particles = [];
 
-    const revealOnScroll = () => {
-        const windowHeight = window.innerHeight;
-        const revealPoint = 150;
-
-        revealElements.forEach(el => {
-            const elTop = el.getBoundingClientRect().top;
-            if (elTop < windowHeight - revealPoint) {
-                el.classList.add('active');
-            }
-        });
-    };
-
-    window.addEventListener('scroll', revealOnScroll);
-    revealOnScroll();
-
-    // Smooth scroll for nav links (enhanced for all anchors)
-    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
-        anchor.addEventListener('click', function (e) {
-            const target = document.querySelector(this.getAttribute('href'));
-            if (target) {
-                e.preventDefault();
-                target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            }
-        });
-    });
-
-    // Form — handled natively by FormSubmit (redirect to gracias.html)
-
-    // ── Dynamic content from backend API ──────────────────────────────────────
-    const API = '/api';
-
-    // Latest release banner
-    async function loadLatestRelease() {
-      const banner = document.getElementById('latest-release-banner');
-      if (!banner) return;
-      try {
-        const res = await fetch(`${API}/latest-release`);
-        if (!res.ok) return;
-        const release = await res.json();
-        if (!release) return;
-        const date = new Date(release.releaseDate).toLocaleDateString('es-ES', {
-          year: 'numeric', month: 'long', day: 'numeric',
-        });
-        banner.innerHTML = `
-          <div class="latest-inner">
-            ${release.imageUrl ? `<img src="${release.imageUrl}" alt="${release.name}" class="latest-cover">` : ''}
-            <div class="latest-text">
-              <span class="latest-tag">✨ Nuevo Lanzamiento</span>
-              <h3 class="latest-title">${release.name}</h3>
-              <span class="latest-meta">${release.artistLabel} · ${release.artistGenre} · ${date}</span>
-            </div>
-            <a href="${release.externalUrl}" target="_blank" rel="noopener" class="btn primary-btn latest-btn">
-              <i class="fab fa-spotify"></i> Escuchar
-            </a>
-          </div>`;
-        banner.style.display = 'block';
-      } catch { /* API not available — banner stays hidden */ }
+    function resize() {
+      W = canvas.width  = canvas.offsetWidth;
+      H = canvas.height = canvas.offsetHeight;
     }
 
-    // Update follower counts from Spotify API
-    async function loadArtistStats() {
-      try {
-        const res = await fetch(`${API}/artists`);
-        if (!res.ok) return;
-        const artists = await res.json();
-        artists.forEach(a => {
-          const el = document.querySelector(`[data-artist-id="${a.id}"] .listeners`);
-          if (el && a.followers) {
-            el.textContent = `${a.followers.toLocaleString('es-ES')} seguidores`;
+    function mkParticle() {
+      return {
+        x: Math.random() * W,
+        y: Math.random() * H,
+        r: Math.random() * 1.5 + .3,
+        vx: (Math.random() - .5) * .4,
+        vy: (Math.random() - .5) * .4,
+        a: Math.random() * .6 + .1
+      };
+    }
+
+    resize();
+    window.addEventListener('resize', () => { resize(); particles = Array.from({ length: 120 }, mkParticle); });
+    particles = Array.from({ length: 120 }, mkParticle);
+
+    function frame() {
+      ctx.clearRect(0, 0, W, H);
+      particles.forEach(p => {
+        p.x += p.vx; p.y += p.vy;
+        if (p.x < 0) p.x = W;
+        if (p.x > W) p.x = 0;
+        if (p.y < 0) p.y = H;
+        if (p.y > H) p.y = 0;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(168,85,247,${p.a})`;
+        ctx.fill();
+      });
+      // Connections
+      for (let i = 0; i < particles.length; i++) {
+        for (let j = i + 1; j < particles.length; j++) {
+          const dx = particles[i].x - particles[j].x;
+          const dy = particles[i].y - particles[j].y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < 100) {
+            ctx.beginPath();
+            ctx.moveTo(particles[i].x, particles[i].y);
+            ctx.lineTo(particles[j].x, particles[j].y);
+            ctx.strokeStyle = `rgba(168,85,247,${(1 - dist / 100) * .12})`;
+            ctx.lineWidth = .5;
+            ctx.stroke();
           }
-        });
-      } catch { /* Silently fail — static values remain */ }
+        }
+      }
+      requestAnimationFrame(frame);
     }
+    frame();
+  })();
 
-    loadLatestRelease();
-    loadArtistStats();
-    loadYoutube();
-});
+  // ── SCROLL REVEAL ────────────────────────────────────────────────
+  document.querySelectorAll('.glass, .track-card, .beat-card, .license-card, .platform-card-link, .yt-card').forEach(el => {
+    el.classList.add('reveal');
+  });
 
-// ── YouTube dynamic section ────────────────────────────────────────────────────
-async function loadYoutube() {
-    try {
-        const [videosRes, channelsRes] = await Promise.all([
-            fetch(`${API}/youtube/videos?limit=7`),
-            fetch(`${API}/youtube/channels`),
-        ]);
-        if (!videosRes.ok) return;
+  const revealObs = new IntersectionObserver(entries => {
+    entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('visible'); revealObs.unobserve(e.target); } });
+  }, { threshold: 0.08 });
 
-        const videos   = await videosRes.json();
-        const channels = channelsRes.ok ? await channelsRes.json() : [];
+  document.querySelectorAll('.reveal').forEach(el => revealObs.observe(el));
 
-        if (!videos.length) return;
-
-        // Update featured video (latest)
-        const featured = videos[0];
-        const isNew = isWithinDays(featured.published_at, 7);
-
-        const iframe = document.getElementById('yt-featured-iframe');
-        const titleEl  = document.getElementById('yt-featured-title');
-        const dateEl   = document.getElementById('yt-featured-date');
-        const linkEl   = document.getElementById('yt-featured-link');
-        const badgeEl  = document.getElementById('yt-new-badge');
-
-        if (iframe) iframe.src = `${featured.embed_url}?rel=0&modestbranding=1`;
-        if (titleEl) titleEl.textContent = featured.title;
-        if (dateEl)  dateEl.textContent  = fmtDate(featured.published_at);
-        if (linkEl)  linkEl.href         = featured.watch_url;
-        if (badgeEl) badgeEl.style.display = isNew ? 'inline-flex' : 'none';
-
-        // Render grid (remaining videos)
-        const grid = document.getElementById('yt-grid');
-        if (grid && videos.length > 1) {
-            grid.innerHTML = videos.slice(1).map(v => `
-                <a href="${v.watch_url}" target="_blank" rel="noopener" class="yt-card glass">
-                    <div class="yt-card-thumb">
-                        <img src="${v.thumbnail_url}" alt="${escHtml(v.title)}" loading="lazy">
-                        <span class="yt-play-icon"><i class="fas fa-play"></i></span>
-                        ${isWithinDays(v.published_at, 7) ? '<span class="yt-card-badge">NUEVO</span>' : ''}
-                    </div>
-                    <div class="yt-card-info">
-                        <span class="yt-card-title">${escHtml(v.title)}</span>
-                        <span class="yt-card-date">${fmtDate(v.published_at)}</span>
-                    </div>
-                </a>
-            `).join('');
-        }
-
-        // Render channel stats bar
-        const bar = document.getElementById('yt-channels-bar');
-        if (bar && channels.length) {
-            bar.innerHTML = channels.map(ch => `
-                <div class="yt-channel-stat">
-                    ${ch.thumbnail_url ? `<img src="${ch.thumbnail_url}" alt="${escHtml(ch.title)}" class="yt-ch-thumb">` : ''}
-                    <div class="yt-ch-info">
-                        <span class="yt-ch-name">${escHtml(ch.title)}</span>
-                        <span class="yt-ch-subs">${fmtNum(ch.subscriber_count)} suscriptores · ${fmtNum(ch.video_count)} vídeos</span>
-                    </div>
-                </div>
-            `).join('');
-            bar.style.display = 'flex';
-        }
-
-    } catch { /* API not available — static fallback stays */ }
-}
-
-function fmtDate(iso) {
-    if (!iso) return '';
-    return new Date(iso).toLocaleDateString('es-ES', { year:'numeric', month:'long', day:'numeric' });
-}
-function fmtNum(n) {
-    if (!n) return '0';
-    return n >= 1000 ? (n / 1000).toFixed(1) + 'K' : String(n);
-}
-function isWithinDays(iso, days) {
-    if (!iso) return false;
-    return (Date.now() - new Date(iso).getTime()) < days * 86400000;
-}
-function escHtml(str) {
-    return String(str).replace(/[&<>"']/g, c =>
-        ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-}
-
-
-/* ═══════════════════════════════════════════
-   BEATS — filtros + prellenar contacto
-═══════════════════════════════════════════ */
-document.querySelectorAll('.beats-filter').forEach(btn => {
+  // ── BEATS FILTER ─────────────────────────────────────────────────
+  document.querySelectorAll('.filter-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-        document.querySelectorAll('.beats-filter').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        const f = btn.dataset.filter;
-        document.querySelectorAll('.beat-card').forEach(card => {
-            card.classList.toggle('hidden', f !== 'all' && card.dataset.genre !== f);
-        });
+      document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const genre = btn.dataset.genre;
+      document.querySelectorAll('.beat-card').forEach(card => {
+        const show = genre === 'all' || card.dataset.genre === genre;
+        card.dataset.hidden = show ? 'false' : 'true';
+        card.style.display = show ? '' : 'none';
+      });
     });
+  });
+
+  // ── CONTACT MOTIVO ───────────────────────────────────────────────
+  window.setMotivo = function(val) {
+    const el = document.getElementById('motivo');
+    if (!el) return;
+    Array.from(el.options).forEach(o => { if (o.value === val || o.text.includes(val)) el.value = o.value; });
+  };
+
+  // ── API: CARGAR DATOS ────────────────────────────────────────────
+  const API = '/api/public';
+
+  async function apiGet(path) {
+    try {
+      const r = await fetch(API + path);
+      if (!r.ok) return null;
+      return await r.json();
+    } catch { return null; }
+  }
+
+  // Plataformas para las tarjetas de tracks
+  const PLATS = {
+    spotify:    { l: 'Spotify',     c: 'ptag-s',  i: 'fab fa-spotify' },
+    apple:      { l: 'Apple',       c: 'ptag-a',  i: 'fab fa-apple' },
+    youtube:    { l: 'YouTube',     c: 'ptag-y',  i: 'fab fa-youtube' },
+    tidal:      { l: 'Tidal',       c: 'ptag-t',  i: 'fas fa-water' },
+    amazon:     { l: 'Amazon',      c: 'ptag-am', i: 'fab fa-amazon' },
+    soundcloud: { l: 'SoundCloud',  c: 'ptag-sc', i: 'fab fa-soundcloud' },
+    deezer:     { l: 'Deezer',      c: 'ptag-dz', i: 'fas fa-music' },
+    distrokid:  { l: 'Link',        c: 'ptag-lk', i: 'fas fa-link' }
+  };
+
+  const GRADS = [
+    'linear-gradient(135deg,#1a0a2e,#4c1d95)',
+    'linear-gradient(135deg,#0f0520,#3b0764)',
+    'linear-gradient(135deg,#071424,#0c2d54)',
+    'linear-gradient(135deg,#200820,#451540)',
+    'linear-gradient(135deg,#0a1a08,#1a3510)',
+    'linear-gradient(135deg,#1a1008,#352a08)'
+  ];
+
+  function esc(s) {
+    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // TRACKS / DISCOGRAFÍA
+  async function loadTracks() {
+    const tracks = await apiGet('/tracks');
+    const grid = document.getElementById('music-grid');
+    if (!grid) return;
+
+    // Actualizar stats
+    if (tracks && tracks.length) {
+      const el = document.getElementById('stat-tracks');
+      if (el) el.textContent = tracks.length;
+      const ab = document.getElementById('about-tracks');
+      if (ab) ab.textContent = tracks.length;
+    }
+
+    if (!tracks || !tracks.length) {
+      // Fallback estático
+      grid.innerHTML = `
+        <div class="track-card"><div class="track-art" style="background:linear-gradient(135deg,#1a0a2e,#4c1d95)"><span>Feel It</span></div>
+          <div class="track-info"><div class="track-name">Feel It In The Air</div><div class="track-meta">Álbum · 2025</div>
+          <div class="track-platforms"><a href="https://open.spotify.com/artist/0GmwWh84e70RNGNkYOwE6d" target="_blank" class="ptag ptag-s"><i class="fab fa-spotify"></i> Spotify</a></div></div></div>
+        <div class="track-card"><div class="track-art" style="background:linear-gradient(135deg,#0f0520,#3b0764)"><span>Summum</span></div>
+          <div class="track-info"><div class="track-name">Summum</div><div class="track-meta">Single · 2025</div>
+          <div class="track-platforms"><a href="https://youtu.be/_5ay8vh1SJk" target="_blank" class="ptag ptag-y"><i class="fab fa-youtube"></i> YouTube</a></div></div></div>
+        <div class="track-card"><div class="track-art" style="background:linear-gradient(135deg,#071424,#0c2d54)"><span>I Am Found</span></div>
+          <div class="track-info"><div class="track-name">I Am Found</div><div class="track-meta">Álbum · 2025</div>
+          <div class="track-platforms"><a href="https://open.spotify.com/artist/0GmwWh84e70RNGNkYOwE6d" target="_blank" class="ptag ptag-s"><i class="fab fa-spotify"></i> Spotify</a></div></div></div>
+      `;
+      return;
+    }
+
+    grid.innerHTML = tracks.map((t, i) => {
+      const pills = Object.entries(t.platforms || {}).filter(([, v]) => v).map(([k, v]) => {
+        const p = PLATS[k] || { l: k, c: 'ptag-lk', i: 'fas fa-link' };
+        return `<a href="${esc(v)}" target="_blank" class="ptag ${p.c}"><i class="${p.i}"></i> ${p.l}</a>`;
+      }).join('');
+      const coverStyle = t.cover
+        ? `background-image:url(${t.cover});background-size:cover;background-position:center`
+        : `background:${GRADS[i % GRADS.length]}`;
+      const coverText = t.cover ? '' : `<span>${esc(t.title.split(' ').slice(0, 2).join(' '))}</span>`;
+      return `<div class="track-card reveal">
+        <div class="track-art" style="${coverStyle}">${coverText}</div>
+        <div class="track-info">
+          <div class="track-name">${esc(t.title)}</div>
+          <div class="track-meta">${esc(t.type || 'Single')}${t.year ? ' · ' + t.year : ''}</div>
+          <div class="track-platforms">${pills || '<span class="ptag ptag-lk">Próximamente</span>'}</div>
+        </div>
+      </div>`;
+    }).join('');
+    // Re-observe new elements
+    grid.querySelectorAll('.reveal').forEach(el => revealObs.observe(el));
+  }
+
+  // VIDEOS YOUTUBE
+  async function loadVideos() {
+    const videos = await apiGet('/videos');
+    const statEl = document.getElementById('stat-videos');
+
+    if (!videos || !videos.length) return;
+    if (statEl) statEl.textContent = videos.length;
+
+    const featured = videos.find(v => v.featured) || videos[0];
+    const rest = videos.filter(v => v.id !== featured.id);
+
+    // Featured
+    const iframe = document.getElementById('yt-featured-iframe');
+    const titleEl = document.getElementById('yt-featured-title');
+    const descEl  = document.getElementById('yt-featured-desc');
+    const linkEl  = document.getElementById('yt-featured-link');
+
+    if (iframe) iframe.src = `https://www.youtube.com/embed/${esc(featured.videoId)}?rel=0`;
+    if (titleEl) titleEl.textContent = featured.title || 'RAYVER — Video Musical';
+    if (descEl)  descEl.textContent  = featured.desc  || '';
+    if (linkEl)  linkEl.href = `https://www.youtube.com/watch?v=${esc(featured.videoId)}`;
+
+    // Grid
+    const grid = document.getElementById('yt-grid');
+    if (grid && rest.length) {
+      grid.innerHTML = rest.map(v => `
+        <div class="yt-card reveal">
+          <div class="yt-thumb" onclick="playYtVideo('${esc(v.videoId)}', this)">
+            <img src="https://img.youtube.com/vi/${esc(v.videoId)}/mqdefault.jpg" alt="${esc(v.title || '')}" loading="lazy">
+            <div class="yt-play-btn"><div class="yt-play-circle"><i class="fas fa-play"></i></div></div>
+          </div>
+          <div class="yt-card-info">
+            <div class="yt-card-title">${esc(v.title || v.videoId)}</div>
+            <div class="yt-card-desc">${esc(v.desc || '')}</div>
+          </div>
+        </div>`).join('');
+      grid.querySelectorAll('.reveal').forEach(el => revealObs.observe(el));
+    }
+  }
+
+  window.playYtVideo = function(videoId, thumbEl) {
+    const wrap = thumbEl.closest('.yt-thumb');
+    wrap.innerHTML = `<iframe width="100%" height="100%" style="aspect-ratio:16/9;border:none;display:block"
+      src="https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0"
+      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>`;
+  };
+
+  // BEATS desde API (productos de tipo "product" o "beat")
+  async function loadBeats() {
+    const products = await apiGet('/products');
+    const grid = document.getElementById('beats-grid');
+    if (!grid) return;
+
+    const beats = (products || []).filter(p => p.type === 'product');
+
+    if (!beats.length) {
+      // Fallback beats hardcoded
+      grid.innerHTML = `
+        <div class="beat-card" data-genre="trance">
+          <div class="beat-cover beat-trance"><span class="beat-genre-tag">Trance</span>🎹</div>
+          <div class="beat-body"><div class="beat-title">Feel It In The Air</div><div class="beat-meta">138 BPM · Am · Melodic</div>
+          <div class="beat-footer"><span class="beat-price">desde <strong>49€</strong></span>
+          <a href="#contact" class="beats-btn" onclick="setMotivo('Licencia de beat — Feel It In The Air')">Licenciar</a></div></div></div>
+        <div class="beat-card" data-genre="electronica">
+          <div class="beat-cover beat-electronic"><span class="beat-genre-tag">Electrónica</span>🎛️</div>
+          <div class="beat-body"><div class="beat-title">Summum</div><div class="beat-meta">124 BPM · Gm · Dark &amp; Deep</div>
+          <div class="beat-footer"><span class="beat-price">desde <strong>49€</strong></span>
+          <a href="#contact" class="beats-btn" onclick="setMotivo('Licencia de beat — Summum')">Licenciar</a></div></div></div>
+        <div class="beat-card" data-genre="trance">
+          <div class="beat-cover beat-trance2"><span class="beat-genre-tag">Trance</span>🎵</div>
+          <div class="beat-body"><div class="beat-title">Shine Together</div><div class="beat-meta">130 BPM · Em · Uplifting</div>
+          <div class="beat-footer"><span class="beat-price">desde <strong>49€</strong></span>
+          <a href="#contact" class="beats-btn" onclick="setMotivo('Licencia de beat — Shine Together')">Licenciar</a></div></div></div>
+        <div class="beat-card" data-genre="orquestal">
+          <div class="beat-cover beat-orquestal"><span class="beat-genre-tag">Orquestal</span>🎻</div>
+          <div class="beat-body"><div class="beat-title">Eternal Frequencies</div><div class="beat-meta">120 BPM · Dm · Ideal para sync</div>
+          <div class="beat-footer"><span class="beat-price">desde <strong>49€</strong></span>
+          <a href="#contact" class="beats-btn" onclick="setMotivo('Licencia de beat — Eternal Frequencies')">Licenciar</a></div></div></div>
+        <div class="beat-card" data-genre="orquestal">
+          <div class="beat-cover beat-orquestal2"><span class="beat-genre-tag">Orquestal</span>🎼</div>
+          <div class="beat-body"><div class="beat-title">Classic Essence</div><div class="beat-meta">80 BPM · Fm · Cinematográfico</div>
+          <div class="beat-footer"><span class="beat-price">desde <strong>69€</strong></span>
+          <a href="#contact" class="beats-btn" onclick="setMotivo('Licencia de beat — Classic Essence')">Licenciar</a></div></div></div>
+        <div class="beat-card" data-genre="pop">
+          <div class="beat-cover beat-pop"><span class="beat-genre-tag">Pop</span>🎤</div>
+          <div class="beat-body"><div class="beat-title">Vuelven las Emociones</div><div class="beat-meta">118 BPM · C · Emotivo</div>
+          <div class="beat-footer"><span class="beat-price">desde <strong>39€</strong></span>
+          <a href="#contact" class="beats-btn" onclick="setMotivo('Licencia de beat — Vuelven las Emociones')">Licenciar</a></div></div></div>
+        <div class="beat-card" data-genre="electronica">
+          <div class="beat-cover beat-electronic2"><span class="beat-genre-tag">Electrónica</span>⚡</div>
+          <div class="beat-body"><div class="beat-title">DEEPBRAVE</div><div class="beat-meta">138 BPM · Bm · Hipnótico</div>
+          <div class="beat-footer"><span class="beat-price">desde <strong>49€</strong></span>
+          <a href="#contact" class="beats-btn" onclick="setMotivo('Licencia de beat — DEEPBRAVE')">Licenciar</a></div></div></div>
+        <div class="beat-card" data-genre="pop">
+          <div class="beat-cover beat-pop2"><span class="beat-genre-tag">Balada</span>🌙</div>
+          <div class="beat-body"><div class="beat-title">Cuando el Silencio Grita</div><div class="beat-meta">90 BPM · Am · Íntimo</div>
+          <div class="beat-footer"><span class="beat-price">desde <strong>39€</strong></span>
+          <a href="#contact" class="beats-btn" onclick="setMotivo('Licencia de beat — Cuando el Silencio Grita')">Licenciar</a></div></div></div>
+      `;
+      return;
+    }
+
+    const EMOJIS = ['🎹','🎛️','🎵','🎻','🎼','🎤','⚡','🌙','🔊','🎸'];
+    const COVERS = ['beat-trance','beat-electronic','beat-orquestal','beat-trance2','beat-electronic2','beat-orquestal2','beat-pop','beat-pop2'];
+    grid.innerHTML = beats.map((p, i) => {
+      const genre = p.genre || 'electronica';
+      const cov   = COVERS[i % COVERS.length];
+      const em    = p.emoji || EMOJIS[i % EMOJIS.length];
+      const price = p.price ? `desde <strong>${p.price}€</strong>` : 'Consultar';
+      return `<div class="beat-card" data-genre="${esc(genre)}">
+        <div class="beat-cover ${cov}"><span class="beat-genre-tag">${esc(p.category || genre)}</span>${em}</div>
+        <div class="beat-body">
+          <div class="beat-title">${esc(p.name)}</div>
+          <div class="beat-meta">${esc(p.description || '')}</div>
+          <div class="beat-footer">
+            <span class="beat-price">${price}</span>
+            <a href="#contact" class="beats-btn" onclick="setMotivo('Licencia de beat — ${esc(p.name)}')">Licenciar</a>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  // Iniciar carga
+  loadTracks();
+  loadVideos();
+  loadBeats();
 });
-
-function setMotivo(texto) {
-    const sel = document.getElementById('motivo');
-    if (!sel) return;
-    // Busca la opción más cercana o la primera
-    let found = false;
-    for (const opt of sel.options) {
-        if (texto.toLowerCase().includes(opt.value.toLowerCase().split(' ')[0].toLowerCase())) {
-            sel.value = opt.value;
-            found = true;
-            break;
-        }
-    }
-    if (!found) sel.value = 'Licencia de beat';
-
-    // Añade el beat al mensaje si está vacío
-    const msg = document.getElementById('message');
-    if (msg && !msg.value) {
-        const beat = texto.replace('Licencia de beat — ', '').replace('Licencia ', '').replace(/\s*\(.*\)/, '');
-        msg.placeholder = `Hola! Me interesa "${beat}". ¿Podemos hablar sobre la licencia?`;
-    }
-}

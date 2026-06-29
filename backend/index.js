@@ -1,25 +1,32 @@
 'use strict';
 
-const express = require('express');
-const cors    = require('cors');
-const fs      = require('fs');
-const path    = require('path');
-const crypto  = require('crypto');
-const https   = require('https');
+const express  = require('express');
+const cors     = require('cors');
+const fs       = require('fs');
+const path     = require('path');
+const crypto   = require('crypto');
+const https    = require('https');
 
 const app  = express();
 const PORT = process.env.BACKEND_PORT || 3001;
-const DATA = path.join('/app/data', 'db.json');
+const DATA    = path.join('/app/data', 'db.json');
 const UPLOADS = path.join('/app/data', 'uploads');
 const ORIGIN  = process.env.FRONTEND_ORIGIN || '*';
-const STRIPE_SECRET = process.env.STRIPE_SECRET_KEY || '';
+
+// Credenciales de APIs externas
+const SPOTIFY_CLIENT_ID     = process.env.SPOTIFY_CLIENT_ID     || '';
+const SPOTIFY_CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET || '';
+const YOUTUBE_API_KEY       = process.env.YOUTUBE_API_KEY       || '';
+// IDs de artistas Spotify separados por coma
+const SPOTIFY_ARTIST_IDS    = (process.env.SPOTIFY_ARTIST_IDS || '0GmwWh84e70RNGNkYOwE6d,5nSppopCQHlvoqzITdo0D5,0f0nSRoIlPdvZyPuBIZD8M,5GzN9yf1adZZKKUBFHArg5,5kOm7nsefS4UwlK9B11iom').split(',').map(s => s.trim()).filter(Boolean);
+// IDs de canal YouTube separados por coma (o handle como @RAYVER)
+const YOUTUBE_CHANNEL_IDS   = (process.env.YOUTUBE_CHANNEL_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
+const SITE_URL              = process.env.SITE_URL || 'https://rayvermusic.com';
+const STRIPE_SECRET         = process.env.STRIPE_SECRET_KEY || '';
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || '';
-const SITE_URL = process.env.SITE_URL || 'https://rayvermusic.com';
 
 // ── CORS ─────────────────────────────────────────────────────────────────────
 app.use(cors({ origin: ORIGIN, methods: ['GET','POST','PUT','DELETE','PATCH'] }));
-
-// Raw body para webhooks de Stripe (debe ir ANTES de express.json)
 app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }));
 app.use(express.json({ limit: '10mb' }));
 
@@ -30,10 +37,9 @@ function defaultDb() {
   return {
     auth: { hash, salt },
     tracks: [], albums: [], videos: [],
-    products: [],    // beats, packs, stems
-    members: [],     // suscriptores activos
-    orders: [],      // compras únicas (tienda)
-    downloadTokens: {} // token temporal → { productId, expires }
+    products: [], members: [], orders: [],
+    downloadTokens: {},
+    syncLog: []   // historial de sincronizaciones
   };
 }
 
@@ -50,11 +56,8 @@ function saveDb(db) {
 }
 
 let db = loadDb();
-
-// Asegurar campos nuevos en DB existente
-if (!db.products) db.products = [];
-if (!db.members)  db.members  = [];
-if (!db.orders)   db.orders   = [];
+// Garantizar campos nuevos en DB existente
+['products','members','orders','syncLog'].forEach(k => { if (!db[k]) db[k] = []; });
 if (!db.downloadTokens) db.downloadTokens = {};
 saveDb(db);
 
@@ -82,51 +85,293 @@ function auth(req, res, next) {
 
 setInterval(() => { const n = Date.now(); for (const [k,e] of tokens) if (e < n) tokens.delete(k); }, 3600000);
 
-// ── STRIPE HELPER ─────────────────────────────────────────────────────────────
-function stripeRequest(method, endpoint, body) {
+// ── HTTP HELPER ───────────────────────────────────────────────────────────────
+function httpGet(url) {
   return new Promise((resolve, reject) => {
-    if (!STRIPE_SECRET) return reject(new Error('STRIPE_SECRET_KEY no configurada'));
-    const data = body ? new URLSearchParams(flattenStripeBody(body)).toString() : '';
-    const options = {
-      hostname: 'api.stripe.com',
-      path: `/v1/${endpoint}`,
-      method,
-      headers: {
-        'Authorization': `Bearer ${STRIPE_SECRET}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Content-Length': Buffer.byteLength(data)
-      }
-    };
-    const req = https.request(options, res => {
+    https.get(url, res => {
       let raw = '';
       res.on('data', d => raw += d);
       res.on('end', () => {
         try { resolve({ status: res.statusCode, data: JSON.parse(raw) }); }
-        catch { reject(new Error('Stripe parse error')); }
+        catch { resolve({ status: res.statusCode, data: raw }); }
+      });
+    }).on('error', reject);
+  });
+}
+
+function httpPost(hostname, path, body, headers) {
+  return new Promise((resolve, reject) => {
+    const data = body;
+    const opts = { hostname, path, method: 'POST', headers: { 'Content-Length': Buffer.byteLength(data), ...headers } };
+    const req = https.request(opts, res => {
+      let raw = '';
+      res.on('data', d => raw += d);
+      res.on('end', () => {
+        try { resolve({ status: res.statusCode, data: JSON.parse(raw) }); }
+        catch { resolve({ status: res.statusCode, data: raw }); }
       });
     });
     req.on('error', reject);
-    if (data) req.write(data);
+    req.write(data);
     req.end();
   });
 }
 
-function flattenStripeBody(obj, prefix = '') {
-  const flat = {};
-  for (const [k, v] of Object.entries(obj)) {
-    const key = prefix ? `${prefix}[${k}]` : k;
-    if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
-      Object.assign(flat, flattenStripeBody(v, key));
-    } else if (Array.isArray(v)) {
-      v.forEach((item, i) => {
-        if (typeof item === 'object') Object.assign(flat, flattenStripeBody(item, `${key}[${i}]`));
-        else flat[`${key}[${i}]`] = item;
+// ── SPOTIFY AUTH ──────────────────────────────────────────────────────────────
+let spotifyToken = null;
+let spotifyTokenExpiry = 0;
+
+async function getSpotifyToken() {
+  if (spotifyToken && Date.now() < spotifyTokenExpiry) return spotifyToken;
+  if (!SPOTIFY_CLIENT_ID || !SPOTIFY_CLIENT_SECRET) throw new Error('Spotify credentials missing');
+
+  const creds = Buffer.from(`${SPOTIFY_CLIENT_ID}:${SPOTIFY_CLIENT_SECRET}`).toString('base64');
+  const { data } = await httpPost('accounts.spotify.com', '/api/token',
+    'grant_type=client_credentials',
+    { 'Content-Type': 'application/x-www-form-urlencoded', 'Authorization': `Basic ${creds}` }
+  );
+  spotifyToken = data.access_token;
+  spotifyTokenExpiry = Date.now() + (data.expires_in - 60) * 1000;
+  return spotifyToken;
+}
+
+async function spotifyGet(endpoint) {
+  const token = await getSpotifyToken();
+  const { data } = await httpGet(`https://api.spotify.com/v1${endpoint}`);
+  // Si necesitamos autenticación Bearer la añadimos via headers — usar https.get con headers
+  return new Promise((resolve, reject) => {
+    const url = new URL(`https://api.spotify.com/v1${endpoint}`);
+    const opts = {
+      hostname: url.hostname, path: url.pathname + url.search, method: 'GET',
+      headers: { 'Authorization': `Bearer ${token}` }
+    };
+    https.request(opts, res => {
+      let raw = '';
+      res.on('data', d => raw += d);
+      res.on('end', () => {
+        try { resolve(JSON.parse(raw)); }
+        catch { resolve({}); }
       });
-    } else if (v !== undefined && v !== null) {
-      flat[key] = String(v);
+    }).on('error', reject).end();
+  });
+}
+
+// ── SPOTIFY SYNC ──────────────────────────────────────────────────────────────
+async function syncSpotify() {
+  const results = { added: 0, updated: 0, skipped: 0, errors: [] };
+
+  for (const artistId of SPOTIFY_ARTIST_IDS) {
+    try {
+      // Obtener info del artista
+      const artist = await spotifyGet(`/artists/${artistId}`);
+      const artistName = artist.name || 'RAYVER';
+
+      // Obtener álbumes (incluye singles, albums, compilations)
+      let offset = 0, total = Infinity;
+      while (offset < total) {
+        const albumsData = await spotifyGet(
+          `/artists/${artistId}/albums?include_groups=album,single&market=ES&limit=50&offset=${offset}`
+        );
+        total = albumsData.total || 0;
+        const albums = albumsData.items || [];
+        if (!albums.length) break;
+
+        for (const album of albums) {
+          // Obtener tracks del álbum
+          let trackOffset = 0, trackTotal = Infinity;
+          while (trackOffset < trackTotal) {
+            const tracksData = await spotifyGet(
+              `/albums/${album.id}/tracks?market=ES&limit=50&offset=${trackOffset}`
+            );
+            trackTotal = tracksData.total || 0;
+            const tracks = tracksData.items || [];
+            if (!tracks.length) break;
+
+            for (const t of tracks) {
+              const spotifyUrl = `https://open.spotify.com/track/${t.id}`;
+              // Buscar si ya existe
+              const existing = db.tracks.find(x =>
+                x.platforms?.spotify === spotifyUrl ||
+                (x.title?.toLowerCase() === t.name?.toLowerCase() && x.source === 'spotify')
+              );
+
+              const trackData = {
+                title:  t.name,
+                album:  album.name,
+                type:   album.album_type === 'album' ? 'Álbum' : 'Single',
+                year:   album.release_date?.slice(0, 4) || '',
+                cover:  album.images?.[0]?.url || '',
+                source: 'spotify',
+                sourceId: t.id,
+                streamUrl: t.preview_url || '', // preview de 30s de Spotify
+                platforms: { spotify: spotifyUrl, ...(existing?.platforms || {}) },
+                updatedAt: new Date().toISOString()
+              };
+
+              if (existing) {
+                Object.assign(existing, trackData);
+                results.updated++;
+              } else {
+                db.tracks.unshift({ id: uid(), createdAt: new Date().toISOString(), ...trackData });
+                results.added++;
+              }
+            }
+            trackOffset += tracks.length;
+            if (trackOffset >= trackTotal) break;
+          }
+        }
+        offset += albums.length;
+        if (offset >= total) break;
+      }
+    } catch (e) {
+      results.errors.push(`Spotify artist ${artistId}: ${e.message}`);
     }
   }
-  return flat;
+
+  return results;
+}
+
+// ── YOUTUBE SYNC ──────────────────────────────────────────────────────────────
+async function syncYouTube() {
+  const results = { added: 0, updated: 0, skipped: 0, errors: [] };
+  if (!YOUTUBE_API_KEY) return { ...results, errors: ['YouTube API key missing'] };
+
+  for (const channelId of YOUTUBE_CHANNEL_IDS) {
+    try {
+      // Obtener uploads playlist del canal
+      const channelRes = await httpGet(
+        `https://www.googleapis.com/youtube/v3/channels?part=contentDetails,snippet&id=${channelId}&key=${YOUTUBE_API_KEY}`
+      );
+      const channel = channelRes.data?.items?.[0];
+      if (!channel) { results.errors.push(`Canal no encontrado: ${channelId}`); continue; }
+
+      const uploadsPlaylistId = channel.contentDetails?.relatedPlaylists?.uploads;
+      if (!uploadsPlaylistId) continue;
+
+      // Paginar todos los videos
+      let pageToken = '';
+      do {
+        const listUrl = `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet,contentDetails&playlistId=${uploadsPlaylistId}&maxResults=50&key=${YOUTUBE_API_KEY}${pageToken ? '&pageToken=' + pageToken : ''}`;
+        const listRes = await httpGet(listUrl);
+        const items   = listRes.data?.items || [];
+        pageToken     = listRes.data?.nextPageToken || '';
+
+        for (const item of items) {
+          const videoId   = item.contentDetails?.videoId || item.snippet?.resourceId?.videoId;
+          const title     = item.snippet?.title || '';
+          const desc      = item.snippet?.description || '';
+          const thumb     = item.snippet?.thumbnails?.high?.url || item.snippet?.thumbnails?.default?.url || '';
+          const published = item.snippet?.publishedAt?.slice(0, 4) || '';
+          const ytUrl     = `https://www.youtube.com/watch?v=${videoId}`;
+
+          // Skip privados/eliminados
+          if (title === 'Private video' || title === 'Deleted video' || !videoId) continue;
+
+          // ¿Es video oficial (no shorts)? Detectar por duración si hay details
+          const existing = db.videos.find(v => v.videoId === videoId);
+          const videoData = {
+            videoId,
+            title,
+            desc:     desc.slice(0, 200),
+            thumb,
+            year:     published,
+            source:   'youtube',
+            featured: existing?.featured || false,
+            updatedAt: new Date().toISOString()
+          };
+
+          // También vincular a track si coincide el título
+          const matchTrack = db.tracks.find(t =>
+            t.title?.toLowerCase().includes(title.toLowerCase().split(' ').slice(0, 2).join(' ')) ||
+            title.toLowerCase().includes(t.title?.toLowerCase().split(' ').slice(0, 2).join(' ') || '')
+          );
+          if (matchTrack && !matchTrack.platforms?.youtube) {
+            matchTrack.platforms = matchTrack.platforms || {};
+            matchTrack.platforms.youtube = ytUrl;
+          }
+
+          if (existing) {
+            Object.assign(existing, videoData);
+            results.updated++;
+          } else {
+            db.videos.unshift({ id: uid(), createdAt: new Date().toISOString(), ...videoData });
+            results.added++;
+          }
+        }
+      } while (pageToken);
+
+    } catch (e) {
+      results.errors.push(`YouTube channel ${channelId}: ${e.message}`);
+    }
+  }
+
+  return results;
+}
+
+// ── SYNC PRINCIPAL ─────────────────────────────────────────────────────────────
+let syncRunning = false;
+
+async function runSync(trigger = 'auto') {
+  if (syncRunning) return { error: 'Sync ya en progreso' };
+  syncRunning = true;
+
+  const log = {
+    id: uid(),
+    startedAt: new Date().toISOString(),
+    trigger,
+    spotify: null,
+    youtube: null,
+    error: null
+  };
+
+  try {
+    console.log(`[sync] Iniciando sincronización (${trigger})…`);
+
+    // Spotify
+    if (SPOTIFY_CLIENT_ID && SPOTIFY_CLIENT_SECRET) {
+      log.spotify = await syncSpotify();
+      console.log(`[sync] Spotify: +${log.spotify.added} / ~${log.spotify.updated}`);
+    } else {
+      log.spotify = { skipped: true, error: 'Credenciales no configuradas' };
+    }
+
+    // YouTube
+    if (YOUTUBE_API_KEY && YOUTUBE_CHANNEL_IDS.length) {
+      log.youtube = await syncYouTube();
+      console.log(`[sync] YouTube: +${log.youtube.added} / ~${log.youtube.updated}`);
+    } else {
+      log.youtube = { skipped: true, error: 'API key o canal no configurados' };
+    }
+
+    log.finishedAt = new Date().toISOString();
+    log.totalTracks = db.tracks.length;
+    log.totalVideos = db.videos.length;
+
+    saveDb(db);
+
+    // Guardar en log (máximo 20 entradas)
+    db.syncLog.unshift(log);
+    if (db.syncLog.length > 20) db.syncLog = db.syncLog.slice(0, 20);
+    saveDb(db);
+
+  } catch (e) {
+    log.error = e.message;
+    log.finishedAt = new Date().toISOString();
+    console.error('[sync] Error:', e.message);
+  }
+
+  syncRunning = false;
+  return log;
+}
+
+// ── CRON — SYNC DIARIO ────────────────────────────────────────────────────────
+function scheduleSync() {
+  // Primera sync 30s después de arrancar
+  setTimeout(() => runSync('startup'), 30000);
+
+  // Luego cada 24h
+  setInterval(() => runSync('daily-cron'), 24 * 60 * 60 * 1000);
+  console.log('[sync] Scheduler activo — primera sync en 30s, luego cada 24h');
 }
 
 // ── RUTAS PÚBLICAS ────────────────────────────────────────────────────────────
@@ -149,178 +394,45 @@ app.get('/api/public/products', (_, res) => res.json(
     stripePriceId: p.stripePriceId
   }))
 ));
-app.get('/api/public/membership', (_, res) => res.json(
-  db.products.filter(p => p.active && p.type === 'membership').map(p => ({
-    id: p.id, name: p.name, description: p.description,
-    price: p.price, currency: p.currency || 'eur',
-    features: p.features || [], stripePriceId: p.stripePriceId
-  }))
-));
 
 app.get('/api/health', (_, res) => res.json({
-  ok: true, tracks: db.tracks.length, albums: db.albums.length,
-  videos: db.videos.length, products: db.products.length, members: db.members.length
+  ok: true,
+  tracks: db.tracks.length,
+  albums: db.albums.length,
+  videos: db.videos.length,
+  products: db.products.filter(p=>p.active).length,
+  members: db.members.filter(m=>m.status==='active').length,
+  syncRunning,
+  lastSync: db.syncLog[0]?.finishedAt || null
 }));
 
-// ── CHECKOUT — TIENDA (pago único) ───────────────────────────────────────────
-app.post('/api/checkout/product', async (req, res) => {
-  const { productId, email } = req.body || {};
-  const product = db.products.find(p => p.id === productId && p.active);
-  if (!product) return res.status(404).json({ error: 'Producto no encontrado' });
-  if (!product.stripePriceId) return res.status(400).json({ error: 'Producto sin precio Stripe configurado' });
-
-  try {
-    const { data } = await stripeRequest('POST', 'checkout/sessions', {
-      mode: 'payment',
-      customer_email: email || undefined,
-      line_items: [{ price: product.stripePriceId, quantity: 1 }],
-      success_url: `${SITE_URL}/gracias.html?session_id={CHECKOUT_SESSION_ID}&product=${productId}`,
-      cancel_url: `${SITE_URL}/#store`,
-      metadata: { productId, type: 'product' }
-    });
-    if (data.error) return res.status(400).json({ error: data.error.message });
-    res.json({ url: data.url });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+// ── RUTAS PRIVADAS — SYNC ─────────────────────────────────────────────────────
+// Trigger manual desde el admin
+app.post('/api/sync/run', auth, async (req, res) => {
+  if (syncRunning) return res.status(409).json({ error: 'Sync ya en progreso' });
+  // Lanzar async y responder inmediatamente
+  res.json({ ok: true, message: 'Sincronización iniciada' });
+  await runSync('manual');
 });
 
-// ── CHECKOUT — MEMBRESÍA (suscripción) ───────────────────────────────────────
-app.post('/api/checkout/membership', async (req, res) => {
-  const { planId, email } = req.body || {};
-  const plan = db.products.find(p => p.id === planId && p.type === 'membership' && p.active);
-  if (!plan) return res.status(404).json({ error: 'Plan no encontrado' });
-  if (!plan.stripePriceId) return res.status(400).json({ error: 'Plan sin precio Stripe configurado' });
-
-  try {
-    const { data } = await stripeRequest('POST', 'checkout/sessions', {
-      mode: 'subscription',
-      customer_email: email || undefined,
-      line_items: [{ price: plan.stripePriceId, quantity: 1 }],
-      success_url: `${SITE_URL}/gracias.html?session_id={CHECKOUT_SESSION_ID}&plan=${planId}`,
-      cancel_url: `${SITE_URL}/#membership`,
-      metadata: { planId, type: 'membership' }
-    });
-    if (data.error) return res.status(400).json({ error: data.error.message });
-    res.json({ url: data.url });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// ── DESCARGA SEGURA ───────────────────────────────────────────────────────────
-// Verificar sesión de Stripe y generar token de descarga temporal
-app.post('/api/download/verify', async (req, res) => {
-  const { sessionId, productId } = req.body || {};
-  if (!sessionId || !productId) return res.status(400).json({ error: 'Faltan datos' });
-
-  try {
-    const { data: session } = await stripeRequest('GET', `checkout/sessions/${sessionId}`, null);
-    if (session.payment_status !== 'paid' && session.status !== 'complete')
-      return res.status(402).json({ error: 'Pago no completado' });
-    if (session.metadata?.productId !== productId)
-      return res.status(403).json({ error: 'Sesión no coincide con producto' });
-
-    // Generar token de descarga válido 24h
-    const token = crypto.randomBytes(32).toString('hex');
-    db.downloadTokens[token] = {
-      productId,
-      email: session.customer_details?.email || '',
-      expires: Date.now() + 24 * 60 * 60 * 1000
-    };
-    saveDb(db);
-    res.json({ token });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// Descarga del archivo con token
-app.get('/api/download/:token', (req, res) => {
-  const entry = db.downloadTokens[req.params.token];
-  if (!entry || entry.expires < Date.now())
-    return res.status(403).json({ error: 'Token inválido o expirado' });
-
-  const product = db.products.find(p => p.id === entry.productId);
-  if (!product?.file) return res.status(404).json({ error: 'Archivo no encontrado' });
-
-  const filePath = path.join(UPLOADS, product.file);
-  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Archivo no disponible' });
-
-  res.download(filePath, product.fileName || product.file);
-});
-
-// ── WEBHOOK STRIPE ────────────────────────────────────────────────────────────
-app.post('/api/stripe/webhook', (req, res) => {
-  if (!STRIPE_WEBHOOK_SECRET) return res.json({ received: true });
-
-  let event;
-  try {
-    const sig = req.headers['stripe-signature'];
-    // Verificación manual de firma Stripe (sin SDK)
-    const parts = sig.split(',').reduce((acc, part) => {
-      const [k, v] = part.split('=');
-      acc[k] = v;
-      return acc;
-    }, {});
-    const payload = `${parts.t}.${req.body.toString()}`;
-    const expected = crypto.createHmac('sha256', STRIPE_WEBHOOK_SECRET).update(payload).digest('hex');
-    if (expected !== parts.v1) return res.status(400).json({ error: 'Firma inválida' });
-    event = JSON.parse(req.body.toString());
-  } catch (e) {
-    return res.status(400).json({ error: 'Webhook error' });
-  }
-
-  // Suscripción creada/renovada
-  if (event.type === 'customer.subscription.created' || event.type === 'customer.subscription.updated') {
-    const sub = event.data.object;
-    const existing = db.members.find(m => m.stripeSubscriptionId === sub.id);
-    if (!existing) {
-      db.members.push({
-        id: uid(),
-        stripeCustomerId: sub.customer,
-        stripeSubscriptionId: sub.id,
-        email: sub.customer_email || '',
-        status: sub.status,
-        planId: sub.items?.data?.[0]?.price?.id || '',
-        createdAt: new Date().toISOString(),
-        currentPeriodEnd: new Date(sub.current_period_end * 1000).toISOString()
-      });
-    } else {
-      existing.status = sub.status;
-      existing.currentPeriodEnd = new Date(sub.current_period_end * 1000).toISOString();
+app.get('/api/sync/status', auth, (req, res) => {
+  res.json({
+    running: syncRunning,
+    logs: db.syncLog,
+    totals: {
+      tracks: db.tracks.length,
+      videos: db.videos.length
+    },
+    config: {
+      spotifyArtists: SPOTIFY_ARTIST_IDS,
+      youtubeChannels: YOUTUBE_CHANNEL_IDS,
+      hasSpotifyCreds: !!(SPOTIFY_CLIENT_ID && SPOTIFY_CLIENT_SECRET),
+      hasYoutubeCreds: !!YOUTUBE_API_KEY
     }
-    saveDb(db);
-  }
-
-  // Suscripción cancelada
-  if (event.type === 'customer.subscription.deleted') {
-    const sub = event.data.object;
-    const m = db.members.find(m => m.stripeSubscriptionId === sub.id);
-    if (m) { m.status = 'canceled'; saveDb(db); }
-  }
-
-  // Pago único completado
-  if (event.type === 'checkout.session.completed') {
-    const session = event.data.object;
-    if (session.metadata?.type === 'product') {
-      db.orders.push({
-        id: uid(),
-        productId: session.metadata.productId,
-        email: session.customer_details?.email || '',
-        stripeSessionId: session.id,
-        amount: session.amount_total,
-        currency: session.currency,
-        createdAt: new Date().toISOString()
-      });
-      saveDb(db);
-    }
-  }
-
-  res.json({ received: true });
+  });
 });
 
-// ── RUTAS PRIVADAS — ADMIN ────────────────────────────────────────────────────
+// ── RUTAS PRIVADAS — AUTH ─────────────────────────────────────────────────────
 app.post('/api/auth/change-password', auth, (req, res) => {
   const { currentPassword, newPassword } = req.body || {};
   if (!currentPassword || !newPassword) return res.status(400).json({ error: 'Faltan campos' });
@@ -335,70 +447,82 @@ app.post('/api/auth/change-password', auth, (req, res) => {
   res.json({ ok: true });
 });
 
-// Tracks
+// ── TRACKS CRUD ───────────────────────────────────────────────────────────────
 app.get('/api/tracks', auth, (_, res) => res.json(db.tracks));
-app.post('/api/tracks', auth, (req, res) => { const t = { id: uid(), createdAt: new Date().toISOString(), ...req.body }; db.tracks.unshift(t); saveDb(db); res.status(201).json(t); });
-app.put('/api/tracks/:id', auth, (req, res) => { const i = db.tracks.findIndex(t => t.id === req.params.id); if (i===-1) return res.status(404).json({error:'No encontrado'}); db.tracks[i]={...db.tracks[i],...req.body,id:req.params.id}; saveDb(db); res.json(db.tracks[i]); });
-app.delete('/api/tracks/:id', auth, (req, res) => { const i = db.tracks.findIndex(t => t.id === req.params.id); if (i===-1) return res.status(404).json({error:'No encontrado'}); db.tracks.splice(i,1); saveDb(db); res.json({ok:true}); });
+app.post('/api/tracks', auth, (req, res) => {
+  const t = { id: uid(), createdAt: new Date().toISOString(), source: 'manual', ...req.body };
+  db.tracks.unshift(t); saveDb(db); res.status(201).json(t);
+});
+app.put('/api/tracks/:id', auth, (req, res) => {
+  const i = db.tracks.findIndex(t => t.id === req.params.id);
+  if (i===-1) return res.status(404).json({error:'No encontrado'});
+  db.tracks[i] = { ...db.tracks[i], ...req.body, id: req.params.id }; saveDb(db); res.json(db.tracks[i]);
+});
+app.delete('/api/tracks/:id', auth, (req, res) => {
+  const i = db.tracks.findIndex(t => t.id === req.params.id);
+  if (i===-1) return res.status(404).json({error:'No encontrado'});
+  db.tracks.splice(i,1); saveDb(db); res.json({ok:true});
+});
 
-// Albums
+// ── ALBUMS CRUD ───────────────────────────────────────────────────────────────
 app.get('/api/albums', auth, (_, res) => res.json(db.albums));
-app.post('/api/albums', auth, (req, res) => { const a = { id: uid(), createdAt: new Date().toISOString(), ...req.body }; db.albums.unshift(a); saveDb(db); res.status(201).json(a); });
-app.put('/api/albums/:id', auth, (req, res) => { const i = db.albums.findIndex(a => a.id === req.params.id); if (i===-1) return res.status(404).json({error:'No encontrado'}); db.albums[i]={...db.albums[i],...req.body,id:req.params.id}; saveDb(db); res.json(db.albums[i]); });
-app.delete('/api/albums/:id', auth, (req, res) => { const i = db.albums.findIndex(a => a.id === req.params.id); if (i===-1) return res.status(404).json({error:'No encontrado'}); db.albums.splice(i,1); saveDb(db); res.json({ok:true}); });
+app.post('/api/albums', auth, (req, res) => {
+  const a = { id: uid(), createdAt: new Date().toISOString(), ...req.body };
+  db.albums.unshift(a); saveDb(db); res.status(201).json(a);
+});
+app.put('/api/albums/:id', auth, (req, res) => {
+  const i = db.albums.findIndex(a => a.id === req.params.id);
+  if (i===-1) return res.status(404).json({error:'No encontrado'});
+  db.albums[i] = { ...db.albums[i], ...req.body, id: req.params.id }; saveDb(db); res.json(db.albums[i]);
+});
+app.delete('/api/albums/:id', auth, (req, res) => {
+  const i = db.albums.findIndex(a => a.id === req.params.id);
+  if (i===-1) return res.status(404).json({error:'No encontrado'});
+  db.albums.splice(i,1); saveDb(db); res.json({ok:true});
+});
 
-// Videos
+// ── VIDEOS CRUD ───────────────────────────────────────────────────────────────
 app.get('/api/videos', auth, (_, res) => res.json(db.videos));
-app.post('/api/videos', auth, (req, res) => { const v = { id: uid(), createdAt: new Date().toISOString(), ...req.body }; db.videos.unshift(v); saveDb(db); res.status(201).json(v); });
-app.put('/api/videos/:id', auth, (req, res) => { const i = db.videos.findIndex(v => v.id === req.params.id); if (i===-1) return res.status(404).json({error:'No encontrado'}); db.videos[i]={...db.videos[i],...req.body,id:req.params.id}; saveDb(db); res.json(db.videos[i]); });
-app.delete('/api/videos/:id', auth, (req, res) => { const i = db.videos.findIndex(v => v.id === req.params.id); if (i===-1) return res.status(404).json({error:'No encontrado'}); db.videos.splice(i,1); saveDb(db); res.json({ok:true}); });
+app.post('/api/videos', auth, (req, res) => {
+  const v = { id: uid(), createdAt: new Date().toISOString(), ...req.body };
+  db.videos.unshift(v); saveDb(db); res.status(201).json(v);
+});
+app.put('/api/videos/:id', auth, (req, res) => {
+  const i = db.videos.findIndex(v => v.id === req.params.id);
+  if (i===-1) return res.status(404).json({error:'No encontrado'});
+  db.videos[i] = { ...db.videos[i], ...req.body, id: req.params.id }; saveDb(db); res.json(db.videos[i]);
+});
+app.delete('/api/videos/:id', auth, (req, res) => {
+  const i = db.videos.findIndex(v => v.id === req.params.id);
+  if (i===-1) return res.status(404).json({error:'No encontrado'});
+  db.videos.splice(i,1); saveDb(db); res.json({ok:true});
+});
+app.patch('/api/videos/reorder', auth, (req, res) => {
+  const { ids } = req.body;
+  if (!Array.isArray(ids)) return res.status(400).json({error:'ids required'});
+  db.videos = ids.map(id=>db.videos.find(v=>v.id===id)).filter(Boolean); saveDb(db); res.json({ok:true});
+});
 
-// ── PRODUCTOS (admin) ─────────────────────────────────────────────────────────
+// ── PRODUCTS CRUD ─────────────────────────────────────────────────────────────
 app.get('/api/products', auth, (_, res) => res.json(db.products));
-
 app.post('/api/products', auth, (req, res) => {
   const p = { id: uid(), createdAt: new Date().toISOString(), active: true, ...req.body };
-  db.products.unshift(p);
-  saveDb(db);
-  res.status(201).json(p);
+  db.products.unshift(p); saveDb(db); res.status(201).json(p);
 });
-
 app.put('/api/products/:id', auth, (req, res) => {
   const i = db.products.findIndex(p => p.id === req.params.id);
-  if (i === -1) return res.status(404).json({ error: 'No encontrado' });
-  db.products[i] = { ...db.products[i], ...req.body, id: req.params.id };
-  saveDb(db);
-  res.json(db.products[i]);
+  if (i===-1) return res.status(404).json({error:'No encontrado'});
+  db.products[i] = { ...db.products[i], ...req.body, id: req.params.id }; saveDb(db); res.json(db.products[i]);
 });
-
 app.delete('/api/products/:id', auth, (req, res) => {
   const i = db.products.findIndex(p => p.id === req.params.id);
-  if (i === -1) return res.status(404).json({ error: 'No encontrado' });
-  db.products.splice(i, 1);
-  saveDb(db);
-  res.json({ ok: true });
+  if (i===-1) return res.status(404).json({error:'No encontrado'});
+  db.products.splice(i,1); saveDb(db); res.json({ok:true});
 });
 
-// Subir archivo de producto (base64 → disco)
-app.post('/api/products/:id/upload', auth, (req, res) => {
-  const product = db.products.find(p => p.id === req.params.id);
-  if (!product) return res.status(404).json({ error: 'No encontrado' });
-  const { file, fileName } = req.body;
-  if (!file) return res.status(400).json({ error: 'Falta archivo (base64)' });
-  const buf = Buffer.from(file, 'base64');
-  const safeName = `${req.params.id}_${Date.now()}_${(fileName||'file').replace(/[^a-z0-9._-]/gi,'_')}`;
-  fs.mkdirSync(UPLOADS, { recursive: true });
-  fs.writeFileSync(path.join(UPLOADS, safeName), buf);
-  product.file = safeName;
-  product.fileName = fileName || safeName;
-  saveDb(db);
-  res.json({ ok: true, file: safeName });
-});
-
-// ── MIEMBROS Y PEDIDOS (admin) ────────────────────────────────────────────────
+// ── MEMBERS & ORDERS ──────────────────────────────────────────────────────────
 app.get('/api/members', auth, (_, res) => res.json(db.members));
 app.get('/api/orders',  auth, (_, res) => res.json(db.orders));
-
 app.get('/api/stats', auth, (_, res) => {
   const activeMembers = db.members.filter(m => m.status === 'active').length;
   const totalRevenue  = db.orders.reduce((s, o) => s + (o.amount || 0), 0);
@@ -406,47 +530,133 @@ app.get('/api/stats', auth, (_, res) => {
     tracks: db.tracks.length, albums: db.albums.length, videos: db.videos.length,
     products: db.products.filter(p=>p.active).length,
     members: activeMembers, orders: db.orders.length,
-    revenueEur: (totalRevenue / 100).toFixed(2)
+    revenueEur: (totalRevenue / 100).toFixed(2),
+    lastSync: db.syncLog[0]?.finishedAt || null,
+    syncRunning
   });
 });
 
-// Crear precio en Stripe y asociar al producto
+// ── STRIPE (simplificado — mantener de versión anterior) ──────────────────────
+function stripeReq(method, endpoint, body) {
+  return new Promise((resolve, reject) => {
+    if (!STRIPE_SECRET) return reject(new Error('STRIPE_SECRET_KEY no configurada'));
+    const data = body ? new URLSearchParams(flattenObj(body)).toString() : '';
+    const opts = {
+      hostname: 'api.stripe.com', path: `/v1/${endpoint}`, method,
+      headers: {
+        'Authorization': `Bearer ${STRIPE_SECRET}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Length': Buffer.byteLength(data)
+      }
+    };
+    const req = https.request(opts, res => {
+      let raw = '';
+      res.on('data', d => raw += d);
+      res.on('end', () => {
+        try { resolve({ status: res.statusCode, data: JSON.parse(raw) }); }
+        catch { reject(new Error('Stripe parse error')); }
+      });
+    });
+    req.on('error', reject);
+    if (data) req.write(data);
+    req.end();
+  });
+}
+
+function flattenObj(obj, prefix='') {
+  const flat = {};
+  for (const [k, v] of Object.entries(obj)) {
+    const key = prefix ? `${prefix}[${k}]` : k;
+    if (v !== null && typeof v === 'object' && !Array.isArray(v)) Object.assign(flat, flattenObj(v, key));
+    else if (Array.isArray(v)) v.forEach((item, i) => { if (typeof item==='object') Object.assign(flat, flattenObj(item, `${key}[${i}]`)); else flat[`${key}[${i}]`]=item; });
+    else if (v !== undefined && v !== null) flat[key] = String(v);
+  }
+  return flat;
+}
+
+app.post('/api/checkout/product', async (req, res) => {
+  const { productId, email } = req.body || {};
+  const product = db.products.find(p => p.id === productId && p.active);
+  if (!product) return res.status(404).json({ error: 'Producto no encontrado' });
+  if (!product.stripePriceId) return res.status(400).json({ error: 'Precio Stripe no configurado' });
+  try {
+    const { data } = await stripeReq('POST', 'checkout/sessions', {
+      mode: 'payment', customer_email: email||undefined,
+      line_items: [{ price: product.stripePriceId, quantity: 1 }],
+      success_url: `${SITE_URL}/gracias.html?session_id={CHECKOUT_SESSION_ID}&product=${productId}`,
+      cancel_url: `${SITE_URL}/#beats`, metadata: { productId, type: 'product' }
+    });
+    if (data.error) return res.status(400).json({ error: data.error.message });
+    res.json({ url: data.url });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/checkout/membership', async (req, res) => {
+  const { planId, email } = req.body || {};
+  const plan = db.products.find(p => p.id === planId && p.type === 'membership' && p.active);
+  if (!plan) return res.status(404).json({ error: 'Plan no encontrado' });
+  if (!plan.stripePriceId) return res.status(400).json({ error: 'Precio Stripe no configurado' });
+  try {
+    const { data } = await stripeReq('POST', 'checkout/sessions', {
+      mode: 'subscription', customer_email: email||undefined,
+      line_items: [{ price: plan.stripePriceId, quantity: 1 }],
+      success_url: `${SITE_URL}/gracias.html?session_id={CHECKOUT_SESSION_ID}&plan=${planId}`,
+      cancel_url: `${SITE_URL}/#membership`, metadata: { planId, type: 'membership' }
+    });
+    if (data.error) return res.status(400).json({ error: data.error.message });
+    res.json({ url: data.url });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.post('/api/products/:id/stripe-price', auth, async (req, res) => {
   const product = db.products.find(p => p.id === req.params.id);
   if (!product) return res.status(404).json({ error: 'No encontrado' });
-
   try {
-    // Crear producto en Stripe si no existe
     let stripeProductId = product.stripeProductId;
     if (!stripeProductId) {
-      const { data: sp } = await stripeRequest('POST', 'products', {
-        name: product.name,
-        description: product.description || ''
-      });
-      stripeProductId = sp.id;
-      product.stripeProductId = stripeProductId;
+      const { data: sp } = await stripeReq('POST', 'products', { name: product.name, description: product.description||'' });
+      stripeProductId = sp.id; product.stripeProductId = stripeProductId;
     }
-
-    // Crear precio
-    const priceBody = {
-      product: stripeProductId,
-      unit_amount: Math.round(product.price * 100),
-      currency: product.currency || 'eur'
-    };
-    if (product.type === 'membership') {
-      priceBody.recurring = { interval: 'month' };
-    }
-    const { data: price } = await stripeRequest('POST', 'prices', priceBody);
-    product.stripePriceId = price.id;
-    saveDb(db);
+    const priceBody = { product: stripeProductId, unit_amount: Math.round(product.price*100), currency: product.currency||'eur' };
+    if (product.type === 'membership') priceBody.recurring = { interval: 'month' };
+    const { data: price } = await stripeReq('POST', 'prices', priceBody);
+    product.stripePriceId = price.id; saveDb(db);
     res.json({ ok: true, stripePriceId: price.id });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Reorders existentes
-app.patch('/api/tracks/reorder', auth, (req, res) => { const { ids } = req.body; if (!Array.isArray(ids)) return res.status(400).json({error:'ids required'}); db.tracks = ids.map(id=>db.tracks.find(t=>t.id===id)).filter(Boolean); saveDb(db); res.json({ok:true}); });
-app.patch('/api/videos/reorder', auth, (req, res) => { const { ids } = req.body; if (!Array.isArray(ids)) return res.status(400).json({error:'ids required'}); db.videos = ids.map(id=>db.videos.find(v=>v.id===id)).filter(Boolean); saveDb(db); res.json({ok:true}); });
+app.post('/api/stripe/webhook', (req, res) => {
+  if (!STRIPE_WEBHOOK_SECRET) return res.json({ received: true });
+  let event;
+  try {
+    const sig = req.headers['stripe-signature'];
+    const parts = sig.split(',').reduce((a,p) => { const [k,v]=p.split('='); a[k]=v; return a; }, {});
+    const payload = `${parts.t}.${req.body.toString()}`;
+    const expected = crypto.createHmac('sha256', STRIPE_WEBHOOK_SECRET).update(payload).digest('hex');
+    if (expected !== parts.v1) return res.status(400).json({ error: 'Firma inválida' });
+    event = JSON.parse(req.body.toString());
+  } catch { return res.status(400).json({ error: 'Webhook error' }); }
+  if (event.type === 'customer.subscription.created' || event.type === 'customer.subscription.updated') {
+    const sub = event.data.object;
+    const ex = db.members.find(m => m.stripeSubscriptionId === sub.id);
+    if (!ex) db.members.push({ id: uid(), stripeCustomerId: sub.customer, stripeSubscriptionId: sub.id, status: sub.status, planId: sub.items?.data?.[0]?.price?.id||'', createdAt: new Date().toISOString(), currentPeriodEnd: new Date(sub.current_period_end*1000).toISOString() });
+    else { ex.status = sub.status; ex.currentPeriodEnd = new Date(sub.current_period_end*1000).toISOString(); }
+    saveDb(db);
+  }
+  if (event.type === 'customer.subscription.deleted') {
+    const m = db.members.find(m => m.stripeSubscriptionId === event.data.object.id);
+    if (m) { m.status = 'canceled'; saveDb(db); }
+  }
+  if (event.type === 'checkout.session.completed' && event.data.object.metadata?.type === 'product') {
+    const s = event.data.object;
+    db.orders.push({ id: uid(), productId: s.metadata.productId, email: s.customer_details?.email||'', stripeSessionId: s.id, amount: s.amount_total, currency: s.currency, createdAt: new Date().toISOString() });
+    saveDb(db);
+  }
+  res.json({ received: true });
+});
 
-app.listen(PORT, () => console.log(`Rayvermusic backend v2 :${PORT}`));
+// ── ARRANCAR ──────────────────────────────────────────────────────────────────
+app.listen(PORT, () => {
+  console.log(`Rayvermusic backend v4 :${PORT}`);
+  scheduleSync();
+});

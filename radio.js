@@ -9,7 +9,7 @@
 (function () {
   'use strict';
 
-  const SC_PROFILE = 'https://soundcloud.com/biel-rivero-sampol';
+  const SC_PROFILE = 'https://soundcloud.com/biel-rivero-sampol/sets/marzo-best-ranking';
   const API = '/api/public';
 
   let tracks    = [];

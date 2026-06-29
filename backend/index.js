@@ -25,6 +25,11 @@ const SITE_URL              = process.env.SITE_URL || 'https://rayvermusic.com';
 const STRIPE_SECRET         = process.env.STRIPE_SECRET_KEY || '';
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || '';
 
+// SoundCloud API
+const SC_CLIENT_ID       = process.env.SC_CLIENT_ID || 'k2D1eFX4gQdXMiTb98JNEuPC5XRSrfqP';
+const SC_USER_PERMALINK  = process.env.SC_USER_PERMALINK || 'biel-rivero-sampol';
+const SC_PLAYLIST_URL    = process.env.SC_PLAYLIST_URL || 'https://soundcloud.com/biel-rivero-sampol/sets/marzo-best-ranking';
+
 // ── CORS ─────────────────────────────────────────────────────────────────────
 app.use(cors({ origin: ORIGIN, methods: ['GET','POST','PUT','DELETE','PATCH'] }));
 app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }));
@@ -335,6 +340,14 @@ async function runSync(trigger = 'auto') {
       log.spotify = { skipped: true, error: 'Credenciales no configuradas' };
     }
 
+    // SoundCloud
+    if (SC_CLIENT_ID) {
+      log.soundcloud = await syncSoundCloud();
+      console.log(`[sync] SoundCloud: +${log.soundcloud.added} / ~${log.soundcloud.updated}`);
+    } else {
+      log.soundcloud = { skipped: true, error: 'SC_CLIENT_ID no configurado' };
+    }
+
     // YouTube
     if (YOUTUBE_API_KEY && YOUTUBE_CHANNEL_IDS.length) {
       log.youtube = await syncYouTube();
@@ -403,7 +416,8 @@ app.get('/api/health', (_, res) => res.json({
   products: db.products.filter(p=>p.active).length,
   members: db.members.filter(m=>m.status==='active').length,
   syncRunning,
-  lastSync: db.syncLog[0]?.finishedAt || null
+  lastSync: db.syncLog[0]?.finishedAt || null,
+  sc: { configured: !!SC_CLIENT_ID, user: SC_USER_PERMALINK }
 }));
 
 // ── RUTAS PRIVADAS — SYNC ─────────────────────────────────────────────────────
@@ -653,6 +667,152 @@ app.post('/api/stripe/webhook', (req, res) => {
     saveDb(db);
   }
   res.json({ received: true });
+});
+
+// ── SOUNDCLOUD SYNC ──────────────────────────────────────────────────────────
+async function syncSoundCloud() {
+  const results = { added: 0, updated: 0, errors: [] };
+  if (!SC_CLIENT_ID) return { ...results, errors: ['SC_CLIENT_ID no configurado'] };
+
+  try {
+    // Resolver el usuario para obtener su ID numérico
+    const userRes = await httpGet(
+      `https://api.soundcloud.com/resolve?url=https://soundcloud.com/${SC_USER_PERMALINK}&client_id=${SC_CLIENT_ID}`
+    );
+    if (!userRes.data || userRes.data.kind !== 'user') {
+      return { ...results, errors: ['Usuario SC no encontrado'] };
+    }
+    const userId = userRes.data.id;
+
+    // Obtener todos los tracks del usuario paginando
+    let nextUrl = `https://api.soundcloud.com/users/${userId}/tracks?client_id=${SC_CLIENT_ID}&limit=200&linked_partitioning=1`;
+    let totalFetched = 0;
+
+    while (nextUrl) {
+      const res = await httpGet(nextUrl);
+      const trackList = res.data?.collection || res.data || [];
+      if (!Array.isArray(trackList) || !trackList.length) break;
+
+      for (const t of trackList) {
+        if (!t.streamable && !t.permalink_url) continue;
+
+        const scUrl = t.permalink_url;
+        const existing = db.tracks.find(x =>
+          x.platforms?.soundcloud === scUrl ||
+          x.sourceId === String(t.id)
+        );
+
+        const trackData = {
+          title:     t.title,
+          type:      'Single',
+          year:      t.created_at ? t.created_at.slice(0, 4) : '',
+          cover:     t.artwork_url ? t.artwork_url.replace('large', 't300x300') : '',
+          streamUrl: scUrl,
+          source:    'soundcloud',
+          sourceId:  String(t.id),
+          duration:  t.duration,
+          genre:     t.genre || '',
+          platforms: { soundcloud: scUrl, ...(existing?.platforms || {}) },
+          updatedAt: new Date().toISOString()
+        };
+
+        if (existing) {
+          Object.assign(existing, trackData);
+          results.updated++;
+        } else {
+          db.tracks.push({ id: uid(), createdAt: new Date().toISOString(), ...trackData });
+          results.added++;
+        }
+        totalFetched++;
+      }
+
+      // Paginar si hay más
+      nextUrl = res.data?.next_href
+        ? res.data.next_href + `&client_id=${SC_CLIENT_ID}`
+        : null;
+
+      if (totalFetched >= 500) break; // límite de seguridad
+    }
+
+    // También obtener la playlist principal
+    try {
+      const plRes = await httpGet(
+        `https://api.soundcloud.com/resolve?url=${encodeURIComponent(SC_PLAYLIST_URL)}&client_id=${SC_CLIENT_ID}`
+      );
+      if (plRes.data?.tracks) {
+        // Marcar el orden de la playlist en los tracks
+        plRes.data.tracks.forEach((t, i) => {
+          const match = db.tracks.find(x => x.sourceId === String(t.id));
+          if (match) match.playlistOrder = i + 1;
+        });
+      }
+    } catch(e) {
+      results.errors.push('Playlist SC: ' + e.message);
+    }
+
+  } catch(e) {
+    results.errors.push('SC sync: ' + e.message);
+  }
+
+  return results;
+}
+
+// Endpoint público para obtener tracks de SC sin auth (para la radio)
+app.get('/api/public/sc-playlist', async (req, res) => {
+  if (!SC_CLIENT_ID) return res.json({ tracks: [], error: 'SC_CLIENT_ID no configurado' });
+  try {
+    const plRes = await httpGet(
+      `https://api.soundcloud.com/resolve?url=${encodeURIComponent(SC_PLAYLIST_URL)}&client_id=${SC_CLIENT_ID}`
+    );
+    if (!plRes.data?.tracks) return res.json({ tracks: [] });
+
+    const tracks = plRes.data.tracks.map(t => ({
+      id:        String(t.id),
+      title:     t.title,
+      artist:    t.user?.username || 'RAYVER',
+      cover:     t.artwork_url ? t.artwork_url.replace('large','t300x300') : '',
+      permalink: t.permalink_url,
+      duration:  t.duration,
+      streamUrl: t.permalink_url,
+      streamable: t.streamable
+    }));
+
+    res.json({ tracks, total: tracks.length });
+  } catch(e) {
+    res.status(500).json({ tracks: [], error: e.message });
+  }
+});
+
+// Endpoint para obtener tracks del perfil completo
+app.get('/api/public/sc-tracks', async (req, res) => {
+  if (!SC_CLIENT_ID) return res.json({ tracks: [], error: 'SC_CLIENT_ID no configurado' });
+  try {
+    // Resolver user
+    const userRes = await httpGet(
+      `https://api.soundcloud.com/resolve?url=https://soundcloud.com/${SC_USER_PERMALINK}&client_id=${SC_CLIENT_ID}`
+    );
+    if (!userRes.data?.id) return res.json({ tracks: [] });
+
+    const tracksRes = await httpGet(
+      `https://api.soundcloud.com/users/${userRes.data.id}/tracks?client_id=${SC_CLIENT_ID}&limit=200`
+    );
+    const rawTracks = tracksRes.data?.collection || tracksRes.data || [];
+
+    const tracks = rawTracks.map(t => ({
+      id:        String(t.id),
+      title:     t.title,
+      artist:    t.user?.username || 'RAYVER',
+      cover:     t.artwork_url ? t.artwork_url.replace('large','t300x300') : '',
+      permalink: t.permalink_url,
+      duration:  t.duration,
+      genre:     t.genre || '',
+      streamable: t.streamable
+    }));
+
+    res.json({ tracks, total: tracks.length });
+  } catch(e) {
+    res.status(500).json({ tracks: [], error: e.message });
+  }
 });
 
 // ── ARRANCAR ──────────────────────────────────────────────────────────────────

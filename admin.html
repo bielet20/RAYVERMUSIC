@@ -743,3 +743,380 @@ if (TOKEN) {
 </script>
 </body>
 </html>
+
+<!-- ══════════════════════════════════════════════════════════
+     EXTENSIÓN: TIENDA + MEMBRESÍAS + MIEMBROS + PEDIDOS
+     ════════════════════════════════════════════════════════ -->
+<style>
+/* ── Estilos adicionales tienda ── */
+.prod-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px;padding:16px}
+.prod-card{background:var(--glass);border:1px solid var(--gb);border-radius:10px;overflow:hidden;transition:transform .2s,border-color .2s}
+.prod-card:hover{transform:translateY(-2px);border-color:rgba(167,139,250,.4)}
+.prod-art{aspect-ratio:16/9;background:linear-gradient(135deg,#1a0a2e,#4c1d95);display:flex;align-items:center;justify-content:center;font-size:32px;position:relative}
+.prod-badge-type{position:absolute;top:8px;left:8px;padding:3px 8px;border-radius:20px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase}
+.badge-product{background:rgba(167,139,250,.2);color:var(--purple);border:1px solid rgba(167,139,250,.3)}
+.badge-membership{background:rgba(245,158,11,.2);color:var(--amber);border:1px solid rgba(245,158,11,.3)}
+.badge-inactive{background:rgba(239,68,68,.15);color:var(--red)}
+.prod-info{padding:14px}
+.prod-name{font-size:14px;font-weight:600;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.prod-price-tag{font-size:20px;font-weight:700;color:var(--purple);margin-bottom:8px}
+.prod-price-tag small{font-size:12px;font-weight:400;color:var(--muted)}
+.prod-stripe-ok{display:inline-flex;align-items:center;gap:4px;font-size:10px;color:var(--green);background:rgba(29,185,84,.1);border:1px solid rgba(29,185,84,.2);padding:2px 7px;border-radius:20px}
+.prod-stripe-no{display:inline-flex;align-items:center;gap:4px;font-size:10px;color:var(--amber);background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.2);padding:2px 7px;border-radius:20px}
+.member-table{width:100%;border-collapse:collapse;font-size:13px}
+.member-table th{text-align:left;padding:10px 16px;border-bottom:1px solid var(--gb);font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+.member-table td{padding:11px 16px;border-bottom:1px solid var(--gb)}
+.member-table tr:last-child td{border-bottom:none}
+.status-pill{display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:600}
+.s-active{background:rgba(29,185,84,.15);color:var(--green)}
+.s-canceled{background:rgba(239,68,68,.15);color:var(--red)}
+.s-past_due{background:rgba(245,158,11,.15);color:var(--amber)}
+.empty-table{text-align:center;padding:40px;color:var(--muted);font-size:13px}
+/* Setup guide */
+.setup-steps{display:flex;flex-direction:column;gap:12px;padding:4px 0}
+.setup-step{display:flex;gap:14px;padding:14px;background:rgba(255,255,255,.03);border:1px solid var(--gb);border-radius:10px}
+.step-num{width:28px;height:28px;border-radius:50%;background:var(--bg-pro);color:var(--text-pro);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;flex-shrink:0}
+.step-done .step-num{background:rgba(29,185,84,.2);color:var(--green)}
+.step-body{flex:1}
+.step-title{font-weight:600;font-size:13px;margin-bottom:3px}
+.step-desc{font-size:12px;color:var(--muted);line-height:1.5}
+.step-code{font-family:monospace;font-size:11px;background:rgba(255,255,255,.05);padding:6px 10px;border-radius:6px;margin-top:6px;color:var(--purple);word-break:break-all}
+/* Modal extra */
+.mbg.open{display:flex}
+</style>
+
+<!-- NAV ITEMS adicionales -->
+<script>
+// Patch: añadir ítems de nav al sidebar cuando el DOM esté listo
+document.addEventListener('DOMContentLoaded', () => {
+  // Añadir nav items
+  const nav = document.querySelector('.sidebar nav');
+  if (nav) {
+    const items = [
+      { page:'products', icon:'fas fa-store', label:'Tienda / Membresías' },
+      { page:'members',  icon:'fas fa-users', label:'Miembros' },
+      { page:'orders',   icon:'fas fa-receipt', label:'Pedidos' },
+      { page:'setup',    icon:'fas fa-plug', label:'Configurar Stripe' }
+    ];
+    items.forEach(({page, icon, label}) => {
+      const btn = document.createElement('button');
+      btn.className = 'ni';
+      btn.setAttribute('onclick', `showPage('${page}')`);
+      btn.innerHTML = `<i class="${icon}"></i> ${label}`;
+      nav.appendChild(btn);
+    });
+  }
+
+  // Añadir páginas al main
+  const main = document.querySelector('.main');
+  if (main) {
+    main.insertAdjacentHTML('beforeend', `
+      <!-- PRODUCTOS -->
+      <div id="page-products" class="page">
+        <div class="ph">
+          <div><div class="ptitle">Tienda & Membresías</div><div class="psub">Gestiona productos digitales y planes de suscripción</div></div>
+          <button class="btn btn-p" onclick="openProductModal()"><i class="fas fa-plus"></i> Nuevo producto</button>
+        </div>
+        <div class="gc"><div class="ch"><span class="ct">Productos activos</span></div>
+          <div class="prod-grid" id="prod-grid"><div class="loading"><i class="fas fa-circle-notch spin"></i> Cargando...</div></div>
+        </div>
+      </div>
+
+      <!-- MIEMBROS -->
+      <div id="page-members" class="page">
+        <div class="ph"><div><div class="ptitle">Miembros</div><div class="psub">Suscriptores activos via Stripe</div></div></div>
+        <div class="gc"><div class="ch"><span class="ct">Suscripciones</span></div>
+          <div id="members-wrap"><div class="loading"><i class="fas fa-circle-notch spin"></i> Cargando...</div></div>
+        </div>
+      </div>
+
+      <!-- PEDIDOS -->
+      <div id="page-orders" class="page">
+        <div class="ph"><div><div class="ptitle">Pedidos</div><div class="psub">Compras únicas completadas</div></div></div>
+        <div class="gc"><div class="ch"><span class="ct">Historial de ventas</span></div>
+          <div id="orders-wrap"><div class="loading"><i class="fas fa-circle-notch spin"></i> Cargando...</div></div>
+        </div>
+      </div>
+
+      <!-- SETUP STRIPE -->
+      <div id="page-setup" class="page">
+        <div class="ph"><div><div class="ptitle">Configurar Stripe</div><div class="psub">Pasos para activar los pagos en tu web</div></div></div>
+        <div class="gc"><div class="ch"><span class="ct">Guía de configuración</span></div>
+          <div style="padding:20px">
+            <div class="setup-steps">
+              <div class="setup-step">
+                <div class="step-num">1</div>
+                <div class="step-body">
+                  <div class="step-title">Crear cuenta en Stripe</div>
+                  <div class="step-desc">Regístrate en <a href="https://stripe.com" target="_blank" style="color:var(--purple)">stripe.com</a> con tu cuenta de empresa o autónomo. Activa el modo live cuando estés listo (empieza en modo test).</div>
+                </div>
+              </div>
+              <div class="setup-step">
+                <div class="step-num">2</div>
+                <div class="step-body">
+                  <div class="step-title">Añadir variables de entorno en Coolify</div>
+                  <div class="step-desc">En Coolify → tu app → Environment Variables, añade estas variables:</div>
+                  <div class="step-code">STRIPE_SECRET_KEY=sk_live_xxx<br>STRIPE_WEBHOOK_SECRET=whsec_xxx<br>SITE_URL=https://rayvermusic.com</div>
+                </div>
+              </div>
+              <div class="setup-step">
+                <div class="step-num">3</div>
+                <div class="step-body">
+                  <div class="step-title">Configurar webhook en Stripe Dashboard</div>
+                  <div class="step-desc">En Stripe → Developers → Webhooks → Add endpoint:</div>
+                  <div class="step-code">URL: https://rayvermusic.com/api/stripe/webhook<br>Eventos: checkout.session.completed, customer.subscription.created, customer.subscription.updated, customer.subscription.deleted</div>
+                </div>
+              </div>
+              <div class="setup-step">
+                <div class="step-num">4</div>
+                <div class="step-body">
+                  <div class="step-title">Crear productos y generar precios Stripe</div>
+                  <div class="step-desc">Ve a Tienda → Nuevo producto → guarda → haz clic en "⚡ Crear precio en Stripe". El sistema crea el producto y precio en tu cuenta Stripe automáticamente.</div>
+                </div>
+              </div>
+              <div class="setup-step">
+                <div class="step-num">5</div>
+                <div class="step-body">
+                  <div class="step-title">Subir archivos de descarga</div>
+                  <div class="step-desc">Para productos digitales (beats, packs), sube el ZIP/RAR desde el backoffice. Los clientes recibirán un enlace de descarga seguro de 24h tras el pago.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `);
+  }
+
+  // Modal de producto
+  document.body.insertAdjacentHTML('beforeend', `
+    <div class="mbg" id="modal-product">
+      <div class="modal">
+        <div class="mh"><span class="mt" id="mp-title">Nuevo producto</span>
+          <button class="mc" onclick="closeModal('modal-product')"><i class="fas fa-times"></i></button></div>
+        <div class="mb">
+          <div class="field"><label>Nombre *</label><input type="text" id="prod-name" placeholder="Trance Beat Pack Vol.1"></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <div class="field">
+              <label>Tipo</label>
+              <select id="prod-type">
+                <option value="product">Producto digital (pago único)</option>
+                <option value="membership">Membresía (suscripción mensual)</option>
+              </select>
+            </div>
+            <div class="field"><label>Precio (€) *</label><input type="number" id="prod-price" placeholder="29" min="0.5" step="0.01"></div>
+          </div>
+          <div class="field"><label>Descripción</label><textarea id="prod-desc" rows="3" placeholder="Describe qué incluye este producto..."></textarea></div>
+          <div class="field"><label>Características (una por línea)</label><textarea id="prod-features" rows="4" placeholder="10 beats originales&#10;Stems incluidos&#10;Licencia comercial&#10;Formato WAV 24-bit"></textarea></div>
+          <div class="field"><label>Emoji / portada</label><input type="text" id="prod-emoji" placeholder="🎹" maxlength="2"></div>
+          <div class="field" id="stripe-price-field" style="display:none">
+            <label>Stripe Price ID (generado automáticamente)</label>
+            <input type="text" id="prod-stripe" placeholder="price_xxx" readonly style="opacity:.6">
+          </div>
+        </div>
+        <div class="mf">
+          <button class="btn btn-g" onclick="closeModal('modal-product')">Cancelar</button>
+          <button class="btn btn-g" id="btn-stripe-price" onclick="createStripePrice()" style="display:none">⚡ Crear precio en Stripe</button>
+          <button class="btn btn-p" onclick="saveProduct()"><i class="fas fa-check"></i> Guardar</button>
+        </div>
+      </div>
+    </div>
+  `);
+});
+</script>
+
+<script>
+// ── PRODUCTOS ──────────────────────────────────────────────────────────────────
+let products = [], members = [], orders = [];
+let editProductId = null;
+
+async function loadStoreData() {
+  const [pr, mr, or_] = await Promise.all([
+    apiFetch('GET', '/products'),
+    apiFetch('GET', '/members'),
+    apiFetch('GET', '/orders')
+  ]);
+  if (pr.ok) products = pr.data;
+  if (mr.ok) members  = mr.data;
+  if (or_.ok) orders  = or_.data;
+  renderProducts();
+  renderMembers();
+  renderOrders();
+}
+
+function renderProducts() {
+  const grid = document.getElementById('prod-grid');
+  if (!grid) return;
+  if (!products.length) {
+    grid.innerHTML = `<div class="empty" style="grid-column:1/-1"><i class="fas fa-store"></i><p>Sin productos. Añade tu primer beat pack o membresía.</p></div>`;
+    return;
+  }
+  grid.innerHTML = products.map(p => `
+    <div class="prod-card">
+      <div class="prod-art" style="background:linear-gradient(135deg,#1a0a2e,#4c1d95)">
+        <span style="font-size:36px">${p.emoji||'🎵'}</span>
+        <span class="prod-badge-type ${p.type==='membership'?'badge-membership':'badge-product'}">${p.type==='membership'?'Membresía':'Digital'}</span>
+        ${!p.active?'<span class="prod-badge-type badge-inactive" style="top:32px">Inactivo</span>':''}
+      </div>
+      <div class="prod-info">
+        <div class="prod-name">${esc(p.name)}</div>
+        <div class="prod-price-tag">€${p.price}<small>${p.type==='membership'?'/mes':' único'}</small></div>
+        <div style="margin-bottom:10px">
+          ${p.stripePriceId
+            ? `<span class="prod-stripe-ok"><i class="fas fa-check-circle"></i> Stripe OK</span>`
+            : `<span class="prod-stripe-no"><i class="fas fa-exclamation-circle"></i> Sin precio Stripe</span>`}
+        </div>
+        <div class="tact">
+          <button class="ib" onclick="openProductModal('${p.id}')" title="Editar"><i class="fas fa-pen"></i></button>
+          <button class="ib" onclick="syncStripePrice('${p.id}')" title="Crear/sync precio Stripe" style="color:var(--amber)"><i class="fas fa-bolt"></i></button>
+          <button class="db" onclick="deleteProduct('${p.id}')" title="Eliminar"><i class="fas fa-trash"></i></button>
+        </div>
+      </div>
+    </div>`).join('');
+}
+
+function renderMembers() {
+  const wrap = document.getElementById('members-wrap');
+  if (!wrap) return;
+  if (!members.length) {
+    wrap.innerHTML = `<div class="empty-table"><i class="fas fa-users" style="font-size:36px;display:block;margin-bottom:12px"></i>Sin miembros aún. Se añaden automáticamente cuando alguien suscribe.</div>`;
+    return;
+  }
+  wrap.innerHTML = `<div style="overflow-x:auto"><table class="member-table">
+    <thead><tr><th>Email</th><th>Plan</th><th>Estado</th><th>Renovación</th></tr></thead>
+    <tbody>${members.map(m=>`<tr>
+      <td>${esc(m.email||'—')}</td>
+      <td style="font-size:12px;color:var(--muted)">${esc(m.planId||'—')}</td>
+      <td><span class="status-pill s-${m.status||'unknown'}">${m.status||'?'}</span></td>
+      <td style="font-size:12px;color:var(--muted)">${m.currentPeriodEnd?new Date(m.currentPeriodEnd).toLocaleDateString('es'):'-'}</td>
+    </tr>`).join('')}</tbody>
+  </table></div>`;
+}
+
+function renderOrders() {
+  const wrap = document.getElementById('orders-wrap');
+  if (!wrap) return;
+  if (!orders.length) {
+    wrap.innerHTML = `<div class="empty-table"><i class="fas fa-receipt" style="font-size:36px;display:block;margin-bottom:12px"></i>Sin pedidos aún.</div>`;
+    return;
+  }
+  wrap.innerHTML = `<div style="overflow-x:auto"><table class="member-table">
+    <thead><tr><th>Email</th><th>Producto</th><th>Importe</th><th>Fecha</th></tr></thead>
+    <tbody>${orders.map(o=>{
+      const prod = products.find(p=>p.id===o.productId);
+      return `<tr>
+        <td>${esc(o.email||'—')}</td>
+        <td style="font-size:12px">${esc(prod?.name||o.productId||'—')}</td>
+        <td style="color:var(--green);font-weight:600">€${((o.amount||0)/100).toFixed(2)}</td>
+        <td style="font-size:12px;color:var(--muted)">${new Date(o.createdAt).toLocaleDateString('es')}</td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table></div>`;
+}
+
+// ── MODAL PRODUCTO ─────────────────────────────────────────────────────────────
+function openProductModal(id = null) {
+  editProductId = id;
+  document.getElementById('mp-title').textContent = id ? 'Editar producto' : 'Nuevo producto';
+  const p = id ? (products.find(x=>x.id===id)||{}) : {};
+  document.getElementById('prod-name').value    = p.name || '';
+  document.getElementById('prod-type').value    = p.type || 'product';
+  document.getElementById('prod-price').value   = p.price || '';
+  document.getElementById('prod-desc').value    = p.description || '';
+  document.getElementById('prod-features').value = (p.features||[]).join('\n');
+  document.getElementById('prod-emoji').value   = p.emoji || '';
+  const stripeField = document.getElementById('stripe-price-field');
+  const stripeBtn   = document.getElementById('btn-stripe-price');
+  if (id && p.stripePriceId) {
+    document.getElementById('prod-stripe').value = p.stripePriceId;
+    if (stripeField) stripeField.style.display = '';
+  } else if (stripeField) {
+    stripeField.style.display = 'none';
+  }
+  if (stripeBtn) stripeBtn.style.display = id ? '' : 'none';
+  document.getElementById('modal-product').classList.add('open');
+}
+
+async function saveProduct() {
+  const name = document.getElementById('prod-name').value.trim();
+  if (!name) { toast('El nombre es obligatorio', 'err'); return; }
+  const price = parseFloat(document.getElementById('prod-price').value);
+  if (!price || price <= 0) { toast('Introduce un precio válido', 'err'); return; }
+  const body = {
+    name,
+    type: document.getElementById('prod-type').value,
+    price,
+    description: document.getElementById('prod-desc').value.trim(),
+    features: document.getElementById('prod-features').value.trim().split('\n').filter(Boolean),
+    emoji: document.getElementById('prod-emoji').value.trim() || '🎵',
+    currency: 'eur',
+    active: true
+  };
+  let r;
+  if (editProductId) r = await apiFetch('PUT', '/products/' + editProductId, body);
+  else               r = await apiFetch('POST', '/products', body);
+  if (r.ok) {
+    await loadStoreData();
+    closeModal('modal-product');
+    toast(editProductId ? 'Producto actualizado ✓' : 'Producto creado ✓');
+    if (!editProductId && r.data?.id) {
+      editProductId = r.data.id;
+      const stripeBtn = document.getElementById('btn-stripe-price');
+      if (stripeBtn) stripeBtn.style.display = '';
+    }
+  } else toast(r.data?.error || 'Error', 'err');
+}
+
+async function syncStripePrice(id) {
+  editProductId = id;
+  await createStripePrice();
+}
+
+async function createStripePrice() {
+  if (!editProductId) { toast('Guarda el producto primero', 'warn'); return; }
+  const btn = document.getElementById('btn-stripe-price');
+  if (btn) { btn.textContent = '⏳ Creando...'; btn.disabled = true; }
+  const r = await apiFetch('POST', `/products/${editProductId}/stripe-price`, {});
+  if (btn) { btn.textContent = '⚡ Crear precio en Stripe'; btn.disabled = false; }
+  if (r.ok) {
+    await loadStoreData();
+    const stripeField = document.getElementById('stripe-price-field');
+    if (stripeField) {
+      stripeField.style.display = '';
+      document.getElementById('prod-stripe').value = r.data.stripePriceId;
+    }
+    toast('Precio creado en Stripe ✓');
+  } else {
+    toast(r.data?.error || 'Error Stripe — revisa la clave API en Coolify', 'err');
+  }
+}
+
+async function deleteProduct(id) {
+  const p = products.find(x=>x.id===id);
+  if (!confirm(`¿Eliminar "${p?.name}"?`)) return;
+  const r = await apiFetch('DELETE', '/products/' + id);
+  if (r.ok) { await loadStoreData(); toast('Producto eliminado'); }
+  else toast(r.data?.error || 'Error', 'err');
+}
+
+// Patch showPage para cargar datos de tienda al navegar
+const _origShowPage = window.showPage;
+window.showPage = function(p) {
+  if (_origShowPage) _origShowPage(p);
+  else {
+    document.querySelectorAll('.page').forEach(el => el.classList.remove('active'));
+    document.getElementById('page-' + p)?.classList.add('active');
+    document.querySelectorAll('.ni').forEach(el => {
+      el.classList.toggle('active', (el.getAttribute('onclick')||'').includes("'"+p+"'"));
+    });
+  }
+  if (['products','members','orders','setup'].includes(p) && TOKEN) {
+    loadStoreData();
+  }
+};
+
+// Cargar datos de tienda si el token ya existe
+if (typeof TOKEN !== 'undefined' && TOKEN) {
+  setTimeout(loadStoreData, 500);
+}
+</script>

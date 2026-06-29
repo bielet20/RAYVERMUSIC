@@ -288,20 +288,38 @@
   }
 
   // ── INIT ────────────────────────────────────────────────────────
-  function init() {
-    // Mostrar tracklist de carga mientras SC carga
+  // ── CARGAR TRACKLIST DESDE BACKEND ──────────────────────────────
+  async function loadTracklistFromAPI() {
+    try {
+      const r = await fetch('/api/public/sc-playlist');
+      if (!r.ok) return null;
+      const data = await r.json();
+      return data.tracks || null;
+    } catch { return null; }
+  }
+
+  async function init() {
+    // Mostrar spinner inicial
     if (tracklistBody) {
       tracklistBody.innerHTML = `<div class="radio-empty">
         <i class="fas fa-circle-notch fa-spin"></i>
-        <p>Cargando playlist de SoundCloud…</p>
+        <p>Cargando playlist…</p>
       </div>`;
     }
-
-    if (titleEl)  titleEl.textContent  = 'RAYVER Radio';
-    if (artistEl) artistEl.textContent = 'Pulsa ▶ para escuchar';
+    if (titleEl)   titleEl.textContent  = 'RAYVER Radio';
+    if (artistEl)  artistEl.textContent = 'Pulsa ▶ para escuchar';
     if (counterEl) counterEl.textContent = '— / —';
 
-    // Crear el widget e inicializar (sin autoplay)
+    // 1. Intentar cargar tracklist desde la API del backend (más rápido)
+    const apiTracks = await loadTracklistFromAPI();
+    if (apiTracks && apiTracks.length) {
+      scTracks = apiTracks;
+      renderTracklist();
+      if (counterEl) counterEl.textContent = `1 / ${scTracks.length}`;
+      if (titleEl) titleEl.textContent = scTracks[0]?.title || 'RAYVER Radio';
+    }
+
+    // 2. Crear el widget SC (se sincronizará cuando cargue)
     const iframe = createWidget();
     loadSCScript(() => bindWidget(iframe));
   }

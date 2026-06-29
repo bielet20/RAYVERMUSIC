@@ -1,527 +1,383 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RAYVER | Productor Musical - Electronic Music</title>
-    <meta name="description" content="Portal oficial de RAYVER (Gabriel Rivero Sampol). Escucha mis últimos lanzamientos en Spotify, SoundCloud, Apple Music, YouTube y más. Productor Musical & Electronic Music.">
-    <meta name="robots" content="index, follow">
-    <link rel="canonical" href="https://rayvermusic.com/">
-
-    <!-- Open Graph — previsualización en redes sociales, Spotify, WhatsApp, etc. -->
-    <meta property="og:type" content="website">
-    <meta property="og:url" content="https://rayvermusic.com/">
-    <meta property="og:title" content="RAYVER | Productor Musical - Electronic Music">
-    <meta property="og:description" content="Portal oficial de RAYVER. Escucha los últimos lanzamientos en Spotify, SoundCloud, Apple Music y YouTube.">
-    <meta property="og:image" content="https://rayvermusic.com/hero_bg.png">
-    <meta property="og:image:width" content="1200">
-    <meta property="og:image:height" content="630">
-    <meta property="og:site_name" content="RAYVER Music">
-    <meta property="og:locale" content="es_ES">
-
-    <!-- Twitter / X Card -->
-    <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="RAYVER | Productor Musical - Electronic Music">
-    <meta name="twitter:description" content="Portal oficial de RAYVER. Escucha los últimos lanzamientos en Spotify, SoundCloud, Apple Music y YouTube.">
-    <meta name="twitter:image" content="https://rayvermusic.com/hero_bg.png">
-
-    <link rel="stylesheet" href="styles.css">
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-
-    <!-- Privacy-friendly analytics by Plausible -->
-    <script async src="https://plausible.io/js/pa-ax8pbKKZr_jYIfg8t1P28.js"></script>
-    <script>
-      window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};
-      plausible.init()
-    </script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RAYVER | Electronic Music Producer</title>
+<meta name="description" content="Portal oficial de RAYVER (Gabriel Rivero Sampol). Progressive & melodic trance desde Palma de Mallorca. Escucha en Spotify, SoundCloud, Apple Music y YouTube.">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="https://rayvermusic.com/">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://rayvermusic.com/">
+<meta property="og:title" content="RAYVER | Electronic Music Producer">
+<meta property="og:description" content="Progressive & melodic trance. Escucha los últimos lanzamientos en todas las plataformas.">
+<meta property="og:image" content="https://rayvermusic.com/hero_bg.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="RAYVER | Electronic Music Producer">
+<meta name="twitter:description" content="Progressive & melodic trance desde Palma de Mallorca.">
+<meta name="twitter:image" content="https://rayvermusic.com/hero_bg.png">
+<link rel="preload" href="hero_bg.png" as="image">
+<link rel="stylesheet" href="styles.css">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Bebas+Neue&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<script async src="https://plausible.io/js/pa-ax8pbKKZr_jYIfg8t1P28.js"></script>
+<script>window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)};window.plausible.init=window.plausible.init||function(i){window.plausible.o=i||{}};window.plausible.init();</script>
 </head>
 <body>
-    <nav class="navbar">
-        <a href="#home" class="logo">
-            <img src="logo.jpg" alt="Rayver Music Logo" class="logo-img">
-        </a>
-        <ul class="nav-links">
-            <li><a href="#home">Inicio</a></li>
-            <li><a href="#radio" class="nav-radio"><i class="fas fa-broadcast-tower"></i> Radio</a></li>
-            <li><a href="#music">Música</a></li>
-            <li><a href="#playlists">Listas</a></li>
-            <li><a href="#youtube">Videos</a></li>
-            <li><a href="#beats" class="nav-beats"><i class="fas fa-tag"></i> Beats</a></li>
-            <li><a href="#about">Sobre Mí</a></li>
-            <li><a href="#contact">Contacto</a></li>
-        </ul>
-        <div class="hamburger">
-            <i class="fas fa-bars"></i>
+
+<!-- ═══════════════════════════════════════════════════════ NAV -->
+<nav class="navbar" id="navbar">
+  <a href="#home" class="logo">
+    <img src="logo.jpg" alt="RAYVER Music" class="logo-img">
+  </a>
+  <ul class="nav-links" id="nav-links">
+    <li><a href="#home" data-section="home">Inicio</a></li>
+    <li><a href="#radio" data-section="radio"><i class="fas fa-broadcast-tower"></i> Radio</a></li>
+    <li><a href="#music" data-section="music">Música</a></li>
+    <li><a href="#youtube" data-section="youtube">Videos</a></li>
+    <li><a href="#beats" data-section="beats"><i class="fas fa-tag"></i> Beats</a></li>
+    <li><a href="#about" data-section="about">Sobre Mí</a></li>
+    <li><a href="#contact" data-section="contact">Contacto</a></li>
+  </ul>
+  <button class="hamburger" id="hamburger" aria-label="Menú">
+    <span></span><span></span><span></span>
+  </button>
+</nav>
+
+<!-- ═══════════════════════════════════════════════════════ HERO -->
+<section id="home" class="hero">
+  <canvas id="hero-canvas" aria-hidden="true"></canvas>
+  <div class="hero-overlay"></div>
+  <div class="hero-content">
+    <div class="hero-eyebrow">Progressive · Melodic Trance · Electronic</div>
+    <h1 class="hero-title">RAYVER</h1>
+    <p class="hero-subtitle">Feel It In The Air</p>
+    <div class="hero-stats" id="hero-stats">
+      <div class="hero-stat"><span class="hero-stat-num" id="stat-tracks">6</span><span class="hero-stat-label">Canciones</span></div>
+      <div class="hero-stat-div"></div>
+      <div class="hero-stat"><span class="hero-stat-num">7</span><span class="hero-stat-label">Plataformas</span></div>
+      <div class="hero-stat-div"></div>
+      <div class="hero-stat"><span class="hero-stat-num" id="stat-videos">3</span><span class="hero-stat-label">Videos</span></div>
+    </div>
+    <div class="hero-cta">
+      <a href="#radio" class="btn btn-primary"><i class="fas fa-play"></i> Escuchar ahora</a>
+      <a href="#contact" class="btn btn-outline">Contactar</a>
+    </div>
+    <div class="hero-platforms">
+      <a href="https://open.spotify.com/artist/0GmwWh84e70RNGNkYOwE6d" target="_blank" class="platform-link" title="Spotify"><i class="fab fa-spotify"></i></a>
+      <a href="https://on.soundcloud.com/3RbhbGAQNfq2mFntUv" target="_blank" class="platform-link" title="SoundCloud"><i class="fab fa-soundcloud"></i></a>
+      <a href="https://music.apple.com/us/artist/gabriel-rivero-sampol/1838996180" target="_blank" class="platform-link" title="Apple Music"><i class="fab fa-apple"></i></a>
+      <a href="https://youtu.be/_5ay8vh1SJk" target="_blank" class="platform-link" title="YouTube"><i class="fab fa-youtube"></i></a>
+    </div>
+  </div>
+  <div class="hero-scroll-hint">
+    <div class="hero-scroll-line"></div>
+    <span>Scroll</span>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════ RADIO -->
+<section id="radio" class="section radio-section">
+  <div class="section-header">
+    <div class="section-eyebrow">En directo</div>
+    <h2 class="section-title">RAYVER <span>Radio</span></h2>
+    <p class="section-subtitle">Toda mi música en un player — sin parar</p>
+  </div>
+
+  <div class="radio-wrap">
+    <div class="radio-player glass">
+      <div class="radio-onair-bar">
+        <span class="radio-onair-dot" id="radio-onair-dot"></span>
+        <span class="radio-onair-label">RAYVER RADIO</span>
+        <span class="radio-track-counter" id="radio-counter"></span>
+      </div>
+
+      <div class="radio-now-playing">
+        <div class="radio-cover-wrap">
+          <img id="radio-cover" src="logo.jpg" alt="Portada" class="radio-cover">
+          <div class="radio-cover-pulse" id="radio-cover-pulse"></div>
         </div>
-    </nav>
-
-    <header id="home" class="hero">
-        <div class="hero-overlay"></div>
-        <div class="hero-content">
-            <h1 class="reveal-text">El Sonido del Futuro</h1>
-            <p class="fade-in">Productor Musical | Electronic Music | Sound Designer</p>
-            <div class="hero-buttons fade-in-delay">
-                <a href="#music" class="btn primary-btn"><i class="fas fa-play"></i> Escuchar Ahora</a>
-                <a href="#contact" class="btn secondary-btn">Contactar</a>
-            </div>
-            <!-- Quick Platform Links -->
-            <div class="hero-platforms fade-in-delay-2">
-                <a href="https://open.spotify.com/artist/0GmwWh84e70RNGNkYOwE6d" target="_blank" class="platform-link" title="Spotify"><i class="fab fa-spotify"></i></a>
-                <a href="https://on.soundcloud.com/3RbhbGAQNfq2mFntUv" target="_blank" class="platform-link" title="SoundCloud"><i class="fab fa-soundcloud"></i></a>
-                <a href="https://music.apple.com/us/artist/gabriel-rivero-sampol/1838996180" target="_blank" class="platform-link" title="Apple Music"><i class="fab fa-apple"></i></a>
-                <a href="https://youtu.be/_5ay8vh1SJk" target="_blank" class="platform-link" title="YouTube"><i class="fab fa-youtube"></i></a>
-            </div>
+        <div class="radio-meta">
+          <div id="radio-title" class="radio-track-title">Cargando playlist…</div>
+          <div id="radio-artist" class="radio-track-artist">RAYVER</div>
+          <div id="radio-genre" class="radio-track-genre"></div>
+          <div class="radio-platform-tags" id="radio-platform-tags"></div>
         </div>
-    </header>
+      </div>
 
-    <main>
-        <!-- =================== LATEST RELEASE BANNER =================== -->
-        <div id="latest-release-banner" class="latest-release-banner" style="display:none"></div>
+      <div class="radio-progress-wrap">
+        <span id="radio-current-time" class="radio-time">0:00</span>
+        <div id="radio-progress" class="radio-progress" role="slider" aria-label="Progreso">
+          <div id="radio-progress-fill" class="radio-progress-fill"></div>
+        </div>
+        <span id="radio-duration" class="radio-time">0:00</span>
+      </div>
 
-        <!-- =================== RADIO SECTION =================== -->
-        <section id="radio" class="section radio-section">
-            <h2 class="section-title">RAYVER <span>Radio</span></h2>
-            <p class="section-subtitle">Escucha mis tracks en directo — shuffle, sin parar</p>
+      <div class="radio-controls">
+        <button id="radio-shuffle" class="radio-btn-sm" title="Shuffle" aria-label="Shuffle">
+          <i class="fas fa-random"></i>
+        </button>
+        <button id="radio-prev" class="radio-btn" title="Anterior" aria-label="Anterior">
+          <i class="fas fa-step-backward"></i>
+        </button>
+        <button id="radio-play" class="radio-btn-play" title="Play / Pausa" aria-label="Play">
+          <i class="fas fa-play" id="radio-play-icon"></i>
+        </button>
+        <button id="radio-next" class="radio-btn" title="Siguiente" aria-label="Siguiente">
+          <i class="fas fa-step-forward"></i>
+        </button>
+        <div class="radio-volume-wrap">
+          <button id="radio-mute" class="radio-btn-sm" aria-label="Silenciar"><i class="fas fa-volume-up" id="radio-vol-icon"></i></button>
+          <input id="radio-volume" type="range" min="0" max="100" value="80" class="radio-volume" aria-label="Volumen">
+        </div>
+      </div>
 
-            <div class="radio-player glass">
-                <!-- ON AIR indicator -->
-                <div class="radio-header">
-                    <span class="radio-onair"><span id="radio-onair-dot" class="onair-dot"></span> EN DIRECTO</span>
-                    <span class="radio-label">RAYVER RADIO</span>
-                </div>
+      <!-- Audio element nativo — sin dependencia de SoundCloud -->
+      <audio id="radio-audio" preload="none"></audio>
+    </div>
 
-                <!-- Now playing -->
-                <div class="radio-now-playing">
-                    <img id="radio-cover" src="logo.jpg" alt="Cover" class="radio-cover">
-                    <div class="radio-track-meta">
-                        <div id="radio-title" class="radio-track-title">Selecciona un track</div>
-                        <div id="radio-artist" class="radio-track-artist">RAYVER</div>
-                        <div id="radio-genre" class="radio-track-genre"></div>
-                    </div>
-                </div>
+    <!-- Tracklist -->
+    <div class="radio-tracklist glass" id="radio-tracklist">
+      <div class="radio-tracklist-head">
+        <i class="fas fa-list-music"></i> Playlist
+      </div>
+      <div id="radio-tracklist-body"></div>
+    </div>
+  </div>
+</section>
 
-                <!-- Progress bar -->
-                <div class="radio-progress-wrap">
-                    <span id="radio-current-time" class="radio-time">0:00</span>
-                    <div id="radio-progress" class="radio-progress">
-                        <div id="radio-progress-fill" class="radio-progress-fill"></div>
-                    </div>
-                    <span id="radio-duration" class="radio-time">0:00</span>
-                </div>
+<!-- ═══════════════════════════════════════════════════════ MÚSICA -->
+<section id="music" class="section music-section">
+  <div class="section-header">
+    <div class="section-eyebrow">Catálogo</div>
+    <h2 class="section-title">Mi <span>Música</span></h2>
+    <p class="section-subtitle">Progressive y melodic trance — disponible en todas las plataformas</p>
+  </div>
 
-                <!-- Controls -->
-                <div class="radio-controls">
-                    <button id="radio-shuffle" class="radio-btn radio-btn-sm" title="Shuffle">
-                        <i class="fas fa-random"></i>
-                    </button>
-                    <button id="radio-prev" class="radio-btn" title="Anterior">
-                        <i class="fas fa-step-backward"></i>
-                    </button>
-                    <button id="radio-play" class="radio-btn radio-btn-play" title="Play/Pausa">
-                        <i class="fas fa-play"></i>
-                    </button>
-                    <button id="radio-next" class="radio-btn" title="Siguiente">
-                        <i class="fas fa-step-forward"></i>
-                    </button>
-                    <div class="radio-volume-wrap">
-                        <i class="fas fa-volume-up radio-volume-icon"></i>
-                        <input id="radio-volume" type="range" min="0" max="100" value="80" class="radio-volume">
-                    </div>
-                </div>
+  <!-- Discografía dinámica desde API -->
+  <div class="music-grid" id="music-grid">
+    <div class="music-loading"><i class="fas fa-circle-notch fa-spin"></i> Cargando catálogo…</div>
+  </div>
 
-                <!-- Hidden SoundCloud widget iframe -->
-                <iframe id="sc-widget" width="100%" height="0" scrolling="no" frameborder="no"
-                    allow="autoplay" style="display:none" aria-hidden="true"></iframe>
-            </div>
+  <!-- Spotify principal -->
+  <div class="spotify-featured">
+    <div class="spotify-featured-label"><i class="fab fa-spotify"></i> Perfil principal en Spotify</div>
+    <iframe style="border-radius:12px" loading="lazy"
+      src="https://open.spotify.com/embed/artist/0GmwWh84e70RNGNkYOwE6d?utm_source=generator&theme=0"
+      width="100%" height="200" frameborder="0"
+      allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"></iframe>
+  </div>
 
-            <!-- Tracklist -->
-            <div id="radio-tracklist" class="radio-tracklist glass"></div>
-        </section>
+  <!-- Otras plataformas — tarjetas limpias sin iframe pesado -->
+  <div class="platforms-cards">
+    <a href="https://on.soundcloud.com/3RbhbGAQNfq2mFntUv" target="_blank" class="platform-card-link glass">
+      <i class="fab fa-soundcloud soundcloud-color"></i>
+      <div>
+        <div class="platform-card-name">SoundCloud</div>
+        <div class="platform-card-sub">Biel Rivero Sampol</div>
+      </div>
+      <i class="fas fa-external-link-alt platform-card-arrow"></i>
+    </a>
+    <a href="https://music.apple.com/us/artist/gabriel-rivero-sampol/1838996180" target="_blank" class="platform-card-link glass">
+      <i class="fab fa-apple apple-color"></i>
+      <div>
+        <div class="platform-card-name">Apple Music</div>
+        <div class="platform-card-sub">Gabriel Rivero Sampol</div>
+      </div>
+      <i class="fas fa-external-link-alt platform-card-arrow"></i>
+    </a>
+    <a href="https://open.spotify.com/playlist/2cbTGuXBfOdV8IMtQWU9Zm" target="_blank" class="platform-card-link glass">
+      <i class="fab fa-spotify spotify-color"></i>
+      <div>
+        <div class="platform-card-name">RAYVER Selection</div>
+        <div class="platform-card-sub">Playlist curada</div>
+      </div>
+      <i class="fas fa-external-link-alt platform-card-arrow"></i>
+    </a>
+  </div>
+</section>
 
-        <!-- =================== SPOTIFY SECTION =================== -->
-        <section id="music" class="section music-section">
-            <h2 class="section-title">Mi Música en <span>Spotify</span></h2>
-            <p class="section-subtitle">Explora mis diferentes proyectos y perfiles en Spotify</p>
+<!-- ═══════════════════════════════════════════════════════ YOUTUBE -->
+<section id="youtube" class="section youtube-section">
+  <div class="section-header">
+    <div class="section-eyebrow">YouTube</div>
+    <h2 class="section-title">Videos <span>Musicales</span></h2>
+    <p class="section-subtitle">Visuales cinematográficos — actualizados desde el backoffice</p>
+  </div>
 
-            <div class="spotify-grid">
-                <!-- Main Profile -->
-                <div class="platform-card glass spotify-main" data-artist-id="0GmwWh84e70RNGNkYOwE6d">
-                    <div class="platform-header">
-                        <i class="fab fa-spotify spotify-color"></i>
-                        <div>
-                            <h3>Perfil Principal</h3>
-                            <span class="listeners">61 oyentes mensuales</span>
-                        </div>
-                    </div>
-                    <div class="player-placeholder">
-                        <iframe style="border-radius:12px" src="https://open.spotify.com/embed/artist/0GmwWh84e70RNGNkYOwE6d?utm_source=generator&theme=0" width="100%" height="352" frameBorder="0" allowfullscreen="" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe>
-                    </div>
-                </div>
+  <div class="yt-featured-wrap glass" id="yt-featured-wrap">
+    <div class="yt-featured-player">
+      <iframe id="yt-featured-iframe"
+        src="https://www.youtube.com/embed/5su6w2batKA?rel=0"
+        title="RAYVER — Video Musical" frameborder="0" loading="lazy"
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+        allowfullscreen></iframe>
+    </div>
+    <div class="yt-featured-info">
+      <div class="yt-live-badge"><span class="yt-dot"></span> VIDEO</div>
+      <h3 id="yt-featured-title" class="yt-featured-title">RAYVER — Video Musical</h3>
+      <p id="yt-featured-desc" class="yt-featured-desc"></p>
+      <a id="yt-featured-link" href="https://youtu.be/5su6w2batKA" target="_blank" rel="noopener" class="btn btn-youtube">
+        <i class="fab fa-youtube"></i> Ver en YouTube
+      </a>
+    </div>
+  </div>
 
-                <!-- Profile 2 -->
-                <div class="platform-card glass" data-artist-id="5nSppopCQHlvoqzITdo0D5">
-                    <div class="platform-header">
-                        <i class="fab fa-spotify spotify-color"></i>
-                        <div>
-                            <h3>Trance & Celtic</h3>
-                            <span class="listeners">44 oyentes mensuales</span>
-                        </div>
-                    </div>
-                    <div class="player-placeholder">
-                        <iframe style="border-radius:12px" src="https://open.spotify.com/embed/artist/5nSppopCQHlvoqzITdo0D5?utm_source=generator&theme=0" width="100%" height="352" frameBorder="0" allowfullscreen="" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe>
-                    </div>
-                </div>
+  <div class="yt-grid" id="yt-grid"></div>
+</section>
 
-                <!-- Profile 3 -->
-                <div class="platform-card glass" data-artist-id="0f0nSRoIlPdvZyPuBIZD8M">
-                    <div class="platform-header">
-                        <i class="fab fa-spotify spotify-color"></i>
-                        <div>
-                            <h3>Cinematic & Emotional</h3>
-                            <span class="listeners">8 oyentes mensuales</span>
-                        </div>
-                    </div>
-                    <div class="player-placeholder">
-                        <iframe style="border-radius:12px" src="https://open.spotify.com/embed/artist/0f0nSRoIlPdvZyPuBIZD8M?utm_source=generator&theme=0" width="100%" height="352" frameBorder="0" allowfullscreen="" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe>
-                    </div>
-                </div>
+<!-- ═══════════════════════════════════════════════════════ BEATS -->
+<section id="beats" class="section beats-section">
+  <div class="section-header">
+    <div class="section-eyebrow">Producción</div>
+    <h2 class="section-title">Beats & <span>Licencias</span></h2>
+    <p class="section-subtitle">Adquiere derechos sobre mis producciones para tu proyecto</p>
+  </div>
 
-                <!-- Profile 4 -->
-                <div class="platform-card glass" data-artist-id="5GzN9yf1adZZKKUBFHArg5">
-                    <div class="platform-header">
-                        <i class="fab fa-spotify spotify-color"></i>
-                        <div>
-                            <h3>Uplifting & Harmony</h3>
-                            <span class="listeners">7 oyentes mensuales</span>
-                        </div>
-                    </div>
-                    <div class="player-placeholder">
-                        <iframe style="border-radius:12px" src="https://open.spotify.com/embed/artist/5GzN9yf1adZZKKUBFHArg5?utm_source=generator&theme=0" width="100%" height="352" frameBorder="0" allowfullscreen="" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe>
-                    </div>
-                </div>
+  <div class="beats-filter" id="beats-filter">
+    <button class="filter-btn active" data-genre="all">Todos</button>
+    <button class="filter-btn" data-genre="trance">Trance</button>
+    <button class="filter-btn" data-genre="electronica">Electrónica</button>
+    <button class="filter-btn" data-genre="orquestal">Orquestal</button>
+    <button class="filter-btn" data-genre="pop">Pop / Balada</button>
+  </div>
 
-                <!-- Profile 5 -->
-                <div class="platform-card glass" data-artist-id="5kOm7nsefS4UwlK9B11iom">
-                    <div class="platform-header">
-                        <i class="fab fa-spotify spotify-color"></i>
-                        <div>
-                            <h3>Classical & Orchestral</h3>
-                            <span class="listeners">3 oyentes mensuales</span>
-                        </div>
-                    </div>
-                    <div class="player-placeholder">
-                        <iframe style="border-radius:12px" src="https://open.spotify.com/embed/artist/5kOm7nsefS4UwlK9B11iom?utm_source=generator&theme=0" width="100%" height="352" frameBorder="0" allowfullscreen="" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe>
-                    </div>
-                </div>
-            </div>
-        </section>
-        
-        <!-- =================== PLAYLISTS SECTION =================== -->
-        <section id="playlists" class="section playlists-section">
-            <h2 class="section-title">Playlists <span>Curadas</span></h2>
-            <p class="section-subtitle">Selección de los mejores tracks elegidos por RAYVER</p>
+  <div class="beats-grid" id="beats-grid">
+    <!-- Cargado desde API o fallback estático -->
+  </div>
 
-            <div class="playlists-container-single">
-                <!-- Playlist: RAYVER Playlist -->
-                <div class="playlist-card glass highlight-card">
-                    <div class="playlist-info">
-                        <i class="fab fa-spotify spotify-color"></i>
-                        <h3>RAYVER Selection</h3>
-                    </div>
-                    <div class="player-placeholder">
-                        <iframe style="border-radius:12px" src="https://open.spotify.com/embed/playlist/2cbTGuXBfOdV8IMtQWU9Zm?utm_source=generator&theme=0" width="100%" height="450" frameBorder="0" allowfullscreen="" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe>
-                    </div>
-                </div>
-            </div>
-        </section>
+  <div class="license-grid">
+    <div class="license-card glass">
+      <div class="license-name">BÁSICA</div>
+      <div class="license-price">49€</div>
+      <ul class="license-features">
+        <li class="ok">MP3 320 kbps</li>
+        <li class="ok">YouTube &amp; redes sociales</li>
+        <li class="ok">Hasta 100.000 streams</li>
+        <li class="ok">Crédito al productor</li>
+        <li class="no">WAV / Stems</li>
+        <li class="no">Uso comercial amplio</li>
+      </ul>
+      <a href="#contact" class="btn btn-outline btn-block" onclick="setMotivo('Licencia Básica (49€)')">Contratar</a>
+    </div>
+    <div class="license-card glass license-featured">
+      <div class="license-badge">MÁS POPULAR</div>
+      <div class="license-name">PREMIUM</div>
+      <div class="license-price">149€</div>
+      <ul class="license-features">
+        <li class="ok">WAV sin comprimir</li>
+        <li class="ok">Stems separados</li>
+        <li class="ok">Streams ilimitados</li>
+        <li class="ok">Uso comercial completo</li>
+        <li class="ok">Radio y TV local</li>
+        <li class="no">Derechos exclusivos</li>
+      </ul>
+      <a href="#contact" class="btn btn-primary btn-block" onclick="setMotivo('Licencia Premium (149€)')">Contratar</a>
+    </div>
+    <div class="license-card glass">
+      <div class="license-name">EXCLUSIVA</div>
+      <div class="license-price">Consultar</div>
+      <ul class="license-features">
+        <li class="ok">Derechos exclusivos totales</li>
+        <li class="ok">WAV + Stems + Proyecto DAW</li>
+        <li class="ok">Sync: cine, TV, publicidad</li>
+        <li class="ok">Beat retirado del catálogo</li>
+        <li class="ok">Streams ilimitados</li>
+        <li class="ok">Sesión de producción incluida</li>
+      </ul>
+      <a href="#contact" class="btn btn-outline btn-block" onclick="setMotivo('Licencia Exclusiva (consultar precio)')">Consultar precio</a>
+    </div>
+  </div>
+</section>
 
-        <!-- =================== OTHER PLATFORMS =================== -->
-        <section id="platforms" class="section platforms-section">
-            <h2 class="section-title">Más <span>Plataformas</span></h2>
-            <p class="section-subtitle">Escúchame también en SoundCloud y Apple Music</p>
+<!-- ═══════════════════════════════════════════════════════ SOBRE MÍ -->
+<section id="about" class="section about-section">
+  <div class="about-wrap glass">
+    <div class="about-text">
+      <div class="section-eyebrow">El artista</div>
+      <h2 class="section-title">Sobre <span>Mí</span></h2>
+      <p>Soy <strong>RAYVER</strong> (Gabriel Rivero Sampol), productor musical apasionado por crear texturas sonoras únicas y ritmos envolventes desde Palma de Mallorca.</p>
+      <p>Mi sonido fusiona elementos electrónicos con vibraciones orgánicas — desde el <em>Progressive Trance</em> hasta lo <em>Cinematic y Orchestral</em>. Tracks como <strong>"Summum"</strong>, <strong>"Feel It In The Air"</strong> y <strong>"I Am Found"</strong> definen mi visión sonora.</p>
+      <p>Actualmente utilizo la IA como herramienta creativa para explorar nuevas fronteras musicales, siempre con identidad artística propia.</p>
+      <div class="about-stats">
+        <div class="about-stat"><span id="about-tracks">6</span><small>Canciones</small></div>
+        <div class="about-stat"><span>7</span><small>Plataformas</small></div>
+        <div class="about-stat"><span>2025</span><small>Activo desde</small></div>
+      </div>
+    </div>
+    <div class="about-visual">
+      <div class="about-logo-wrap">
+        <img src="logo.jpg" alt="RAYVER" class="about-logo">
+        <div class="about-logo-ring"></div>
+      </div>
+    </div>
+  </div>
+</section>
 
-            <div class="platforms-container">
-                <!-- SoundCloud Card -->
-                <div class="platform-card glass">
-                    <div class="platform-header">
-                        <i class="fab fa-soundcloud soundcloud-color"></i>
-                        <h3>SoundCloud</h3>
-                    </div>
-                    <div class="player-placeholder">
-                        <iframe width="100%" height="300" scrolling="no" frameborder="no" allow="autoplay" src="https://w.soundcloud.com/player/?url=https%3A//soundcloud.com/biel-rivero-sampol&color=%23ff5500&auto_play=false&hide_related=false&show_comments=true&show_user=true&show_reposts=false&show_teaser=true&visual=true"></iframe>
-                    </div>
-                    <a href="https://on.soundcloud.com/3RbhbGAQNfq2mFntUv" target="_blank" class="btn soundcloud-btn btn-block">
-                        <i class="fab fa-soundcloud"></i> Abrir en SoundCloud
-                    </a>
-                </div>
+<!-- ═══════════════════════════════════════════════════════ CONTACTO -->
+<section id="contact" class="section contact-section">
+  <div class="section-header">
+    <div class="section-eyebrow">Hablemos</div>
+    <h2 class="section-title">Trabajemos <span>Juntos</span></h2>
+  </div>
+  <div class="contact-wrap glass">
+    <form id="contact-form" class="contact-form"
+      action="https://formsubmit.co/bielrivero@gmail.com" method="POST">
+      <input type="hidden" name="_subject" value="✉️ Nuevo mensaje desde RAYVERMUSIC.com">
+      <input type="hidden" name="_captcha" value="false">
+      <input type="hidden" name="_next" value="https://rayvermusic.com/gracias.html">
+      <input type="hidden" name="_template" value="table">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Nombre</label>
+          <input type="text" name="Nombre" placeholder="Tu nombre" required>
+        </div>
+        <div class="form-group">
+          <label>Email</label>
+          <input type="email" name="Email" placeholder="tu@email.com" required>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Motivo</label>
+        <select name="Motivo" id="motivo">
+          <option value="Licencia de beat">🎵 Licencia de beat</option>
+          <option value="Sync / Publicidad">🎬 Sync / Publicidad</option>
+          <option value="Booking / Actuación">🎤 Booking / Actuación</option>
+          <option value="Colaboración musical">🤝 Colaboración musical</option>
+          <option value="Prensa / Media">📰 Prensa / Media</option>
+          <option value="Otro">💬 Otro</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Mensaje</label>
+        <textarea name="Mensaje" rows="5" placeholder="Cuéntame tu proyecto…" required></textarea>
+      </div>
+      <button type="submit" class="btn btn-primary btn-block">Enviar mensaje</button>
+    </form>
+    <div class="contact-info">
+      <div class="contact-info-item"><i class="fas fa-map-marker-alt"></i> Palma de Mallorca, España</div>
+      <div class="contact-info-item"><i class="fas fa-clock"></i> Respuesta en 24–48h</div>
+      <div class="social-links">
+        <a href="https://open.spotify.com/artist/0GmwWh84e70RNGNkYOwE6d" target="_blank" class="social-icon" title="Spotify"><i class="fab fa-spotify"></i></a>
+        <a href="https://on.soundcloud.com/3RbhbGAQNfq2mFntUv" target="_blank" class="social-icon" title="SoundCloud"><i class="fab fa-soundcloud"></i></a>
+        <a href="https://music.apple.com/us/artist/gabriel-rivero-sampol/1838996180" target="_blank" class="social-icon" title="Apple Music"><i class="fab fa-apple"></i></a>
+        <a href="https://youtu.be/_5ay8vh1SJk" target="_blank" class="social-icon" title="YouTube"><i class="fab fa-youtube"></i></a>
+        <a href="https://www.instagram.com/" target="_blank" class="social-icon" title="Instagram"><i class="fab fa-instagram"></i></a>
+        <a href="https://www.tiktok.com/" target="_blank" class="social-icon" title="TikTok"><i class="fab fa-tiktok"></i></a>
+      </div>
+    </div>
+  </div>
+</section>
 
-                <!-- Apple Music Card 1 -->
-                <div class="platform-card glass">
-                    <div class="platform-header">
-                        <i class="fab fa-apple apple-color"></i>
-                        <h3>Apple Music</h3>
-                    </div>
-                    <div class="player-placeholder">
-                        <iframe allow="autoplay *; encrypted-media *; fullscreen *; clipboard-write" frameborder="0" height="450" style="width:100%;overflow:hidden;background:transparent;border-radius:12px;" sandbox="allow-forms allow-popups allow-same-origin allow-scripts allow-top-navigation-by-user-activation" src="https://embed.music.apple.com/us/artist/gabriel-rivero-sampol/1838996180"></iframe>
-                    </div>
-                    <div class="apple-links">
-                        <a href="https://music.apple.com/us/artist/gabriel-rivero-sampol/1838996180" target="_blank" class="btn apple-btn btn-block">
-                            <i class="fab fa-apple"></i> Perfil Principal
-                        </a>
-                        <a href="https://music.apple.com/artist/1885284640" target="_blank" class="btn apple-btn btn-block">
-                            <i class="fab fa-apple"></i> Segundo Perfil
-                        </a>
-                    </div>
-                </div>
-            </div>
-        </section>
+<footer class="footer">
+  <img src="logo.jpg" alt="RAYVER" class="footer-logo">
+  <p>&copy; 2026 RAYVER (Gabriel Rivero Sampol). Todos los derechos reservados.</p>
+  <p class="footer-credit">Electronic Music Producer · Palma de Mallorca</p>
+</footer>
 
-        <!-- =================== YOUTUBE SECTION =================== -->
-        <section id="youtube" class="section youtube-section">
-            <h2 class="section-title">Videos en <span>YouTube</span></h2>
-            <p class="section-subtitle">Últimos estrenos y visuales musicales — actualizado automáticamente</p>
-
-            <!-- Channel stats bar -->
-            <div id="yt-channels-bar" class="yt-channels-bar" style="display:none"></div>
-
-            <!-- Featured latest video -->
-            <div id="yt-featured" class="yt-featured glass">
-                <!-- Fallback static while API loads -->
-                <div class="yt-featured-player">
-                    <iframe id="yt-featured-iframe"
-                        width="100%" height="100%"
-                        src="https://www.youtube.com/embed/5su6w2batKA?start=36"
-                        title="RAYVER - Video Musical"
-                        frameborder="0"
-                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                        allowfullscreen loading="lazy"></iframe>
-                </div>
-                <div id="yt-featured-info" class="yt-featured-info">
-                    <span class="yt-new-badge" id="yt-new-badge" style="display:none">🔴 NUEVO</span>
-                    <h3 id="yt-featured-title" class="yt-featured-title">RAYVER - Video Musical</h3>
-                    <span id="yt-featured-date" class="yt-featured-date"></span>
-                    <a id="yt-featured-link" href="https://youtu.be/5su6w2batKA" target="_blank" rel="noopener" class="btn youtube-btn">
-                        <i class="fab fa-youtube"></i> Ver en YouTube
-                    </a>
-                </div>
-            </div>
-
-            <!-- Video grid — loaded dynamically -->
-            <div id="yt-grid" class="yt-grid"></div>
-        </section>
-
-        <!-- =================== ABOUT SECTION =================== -->
-        <!-- =================== BEATS & LICENCIAS =================== -->
-        <section id="beats" class="section beats-section">
-            <h2 class="section-title">Beats <span>&amp; Licencias</span></h2>
-            <p class="section-subtitle">Producciones originales · Sin intermediarios · Entrega en 24&nbsp;h</p>
-
-            <!-- Filtros -->
-            <div class="beats-filters">
-                <button class="beats-filter active" data-filter="all">Todos</button>
-                <button class="beats-filter" data-filter="trance">Trance</button>
-                <button class="beats-filter" data-filter="electronica">Electrónica</button>
-                <button class="beats-filter" data-filter="orquestal">Orquestal</button>
-                <button class="beats-filter" data-filter="pop">Pop / Balada</button>
-            </div>
-
-            <!-- Grid de beats -->
-            <div class="beats-grid">
-                <div class="beat-card glass" data-genre="trance">
-                    <div class="beat-cover beat-trance"><span class="beat-genre-tag">Trance</span></div>
-                    <div class="beat-body">
-                        <div class="beat-title">Hearts In Motion</div>
-                        <div class="beat-meta">128 BPM · Am · Stems incluidos</div>
-                        <div class="beat-footer">
-                            <span class="beat-price">desde <strong>49€</strong></span>
-                            <a href="#contact" class="btn beats-btn" onclick="setMotivo('Licencia de beat — Hearts In Motion')">Licenciar</a>
-                        </div>
-                    </div>
-                </div>
-                <div class="beat-card glass" data-genre="orquestal">
-                    <div class="beat-cover beat-orquestal"><span class="beat-genre-tag">Orquestal</span></div>
-                    <div class="beat-body">
-                        <div class="beat-title">Eternal Frequencies</div>
-                        <div class="beat-meta">120 BPM · Dm · Ideal para sync</div>
-                        <div class="beat-footer">
-                            <span class="beat-price">desde <strong>49€</strong></span>
-                            <a href="#contact" class="btn beats-btn" onclick="setMotivo('Licencia de beat — Eternal Frequencies')">Licenciar</a>
-                        </div>
-                    </div>
-                </div>
-                <div class="beat-card glass" data-genre="electronica">
-                    <div class="beat-cover beat-electronic"><span class="beat-genre-tag">Electrónica</span></div>
-                    <div class="beat-body">
-                        <div class="beat-title">Summum</div>
-                        <div class="beat-meta">124 BPM · Gm · Dark &amp; Deep</div>
-                        <div class="beat-footer">
-                            <span class="beat-price">desde <strong>49€</strong></span>
-                            <a href="#contact" class="btn beats-btn" onclick="setMotivo('Licencia de beat — Summum')">Licenciar</a>
-                        </div>
-                    </div>
-                </div>
-                <div class="beat-card glass" data-genre="electronica">
-                    <div class="beat-cover beat-electronic2"><span class="beat-genre-tag">Electrónica</span></div>
-                    <div class="beat-body">
-                        <div class="beat-title">Shine Together</div>
-                        <div class="beat-meta">130 BPM · Em · Uplifting</div>
-                        <div class="beat-footer">
-                            <span class="beat-price">desde <strong>49€</strong></span>
-                            <a href="#contact" class="btn beats-btn" onclick="setMotivo('Licencia de beat — Shine Together')">Licenciar</a>
-                        </div>
-                    </div>
-                </div>
-                <div class="beat-card glass" data-genre="pop">
-                    <div class="beat-cover beat-pop"><span class="beat-genre-tag">Pop</span></div>
-                    <div class="beat-body">
-                        <div class="beat-title">Vuelven las Emociones</div>
-                        <div class="beat-meta">118 BPM · C · Emotivo</div>
-                        <div class="beat-footer">
-                            <span class="beat-price">desde <strong>39€</strong></span>
-                            <a href="#contact" class="btn beats-btn" onclick="setMotivo('Licencia de beat — Vuelven las Emociones')">Licenciar</a>
-                        </div>
-                    </div>
-                </div>
-                <div class="beat-card glass" data-genre="orquestal">
-                    <div class="beat-cover beat-orquestal2"><span class="beat-genre-tag">Orquestal</span></div>
-                    <div class="beat-body">
-                        <div class="beat-title">Classic Essence</div>
-                        <div class="beat-meta">80 BPM · Fm · Cinematográfico</div>
-                        <div class="beat-footer">
-                            <span class="beat-price">desde <strong>69€</strong></span>
-                            <a href="#contact" class="btn beats-btn" onclick="setMotivo('Licencia de beat — Classic Essence')">Licenciar</a>
-                        </div>
-                    </div>
-                </div>
-                <div class="beat-card glass" data-genre="pop">
-                    <div class="beat-cover beat-pop2"><span class="beat-genre-tag">Balada</span></div>
-                    <div class="beat-body">
-                        <div class="beat-title">Cuando el Silencio Grita</div>
-                        <div class="beat-meta">90 BPM · Am · Íntimo</div>
-                        <div class="beat-footer">
-                            <span class="beat-price">desde <strong>39€</strong></span>
-                            <a href="#contact" class="btn beats-btn" onclick="setMotivo('Licencia de beat — Cuando el Silencio Grita')">Licenciar</a>
-                        </div>
-                    </div>
-                </div>
-                <div class="beat-card glass" data-genre="trance">
-                    <div class="beat-cover beat-trance2"><span class="beat-genre-tag">Trance</span></div>
-                    <div class="beat-body">
-                        <div class="beat-title">DEEPBRAVE</div>
-                        <div class="beat-meta">138 BPM · Bm · Hypnótico</div>
-                        <div class="beat-footer">
-                            <span class="beat-price">desde <strong>49€</strong></span>
-                            <a href="#contact" class="btn beats-btn" onclick="setMotivo('Licencia de beat — DEEPBRAVE')">Licenciar</a>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Licencias -->
-            <div class="license-grid">
-                <div class="license-card glass">
-                    <div class="license-name">BÁSICA</div>
-                    <div class="license-price">49€</div>
-                    <ul class="license-features">
-                        <li class="ok">MP3 320 kbps</li>
-                        <li class="ok">YouTube &amp; redes sociales</li>
-                        <li class="ok">Hasta 100.000 streams</li>
-                        <li class="ok">Crédito al productor</li>
-                        <li class="no">WAV / Stems</li>
-                        <li class="no">Uso comercial amplio</li>
-                    </ul>
-                    <a href="#contact" class="btn secondary-btn btn-block" onclick="setMotivo('Licencia Básica (49€)')">Contratar</a>
-                </div>
-                <div class="license-card glass license-featured">
-                    <div class="license-badge">MÁS POPULAR</div>
-                    <div class="license-name">PREMIUM</div>
-                    <div class="license-price">149€</div>
-                    <ul class="license-features">
-                        <li class="ok">WAV sin comprimir</li>
-                        <li class="ok">Stems separados</li>
-                        <li class="ok">Streams ilimitados</li>
-                        <li class="ok">Uso comercial completo</li>
-                        <li class="ok">Radio y TV local</li>
-                        <li class="no">Derechos exclusivos</li>
-                    </ul>
-                    <a href="#contact" class="btn primary-btn btn-block" onclick="setMotivo('Licencia Premium (149€)')">Contratar</a>
-                </div>
-                <div class="license-card glass">
-                    <div class="license-name">EXCLUSIVA</div>
-                    <div class="license-price">Consultar</div>
-                    <ul class="license-features">
-                        <li class="ok">Derechos exclusivos totales</li>
-                        <li class="ok">WAV + Stems + Proyecto DAW</li>
-                        <li class="ok">Sync: cine, TV, publicidad</li>
-                        <li class="ok">Beat retirado del catálogo</li>
-                        <li class="ok">Streams ilimitados</li>
-                        <li class="ok">Sesión de producción incluida</li>
-                    </ul>
-                    <a href="#contact" class="btn secondary-btn btn-block" onclick="setMotivo('Licencia Exclusiva (consultar precio)')">Consultar precio</a>
-                </div>
-            </div>
-        </section>
-
-        <section id="about" class="section about-section">
-            <div class="about-content glass">
-                <div class="about-text">
-                    <h2 class="section-title">Sobre <span>Mí</span></h2>
-                    <p>Soy <strong>RAYVER</strong> (Gabriel Rivero Sampol), un productor musical apasionado por crear texturas sonoras únicas y ritmos envolventes. Con un catálogo en constante crecimiento que abarca desde el <em>Trance</em> y <em>Celtic</em> hasta lo <em>Cinematic</em> y <em>Orchestral</em>.</p>
-                    <p>Mi sonido se caracteriza por fusionar elementos electrónicos con vibras orgánicas, creando atmósferas que conectan con el oyente desde el primer segundo. Tracks como <strong>"Summum"</strong>, <strong>"Shine Together"</strong> y <strong>"Hearts in Motion"</strong> son mis canciones más reproducidas y representan mi visión sonora.</p>
-                </div>
-            </div>
-        </section>
-
-        <!-- =================== CONTACT SECTION =================== -->
-        <section id="contact" class="section contact-section">
-            <h2 class="section-title">Trabajemos <span>Juntos</span></h2>
-            <div class="contact-container glass">
-                <form id="contact-form" class="contact-form" action="https://formsubmit.co/bielrivero@gmail.com" method="POST">
-                    <input type="hidden" name="_subject" value="✉️ Nuevo mensaje desde RAYVERMUSIC.com">
-                    <input type="hidden" name="_captcha" value="false">
-                    <input type="hidden" name="_next" value="https://rayvermusic.com/gracias.html">
-                    <input type="hidden" name="_template" value="table">
-                    <div class="form-group">
-                        <input type="text" name="Nombre" id="name" placeholder="Tu Nombre" required>
-                    </div>
-                    <div class="form-group">
-                        <input type="email" name="Email" id="email" placeholder="Tu Email" required>
-                    </div>
-                    <div class="form-group">
-                        <select name="Motivo" id="motivo">
-                            <option value="Licencia de beat">🎵 Licencia de beat</option>
-                            <option value="Sync / Publicidad">🎬 Sync / Publicidad</option>
-                            <option value="Booking / Actuación">🎤 Booking / Actuación</option>
-                            <option value="Colaboración musical">🤝 Colaboración musical</option>
-                            <option value="Prensa / Media">📰 Prensa / Media</option>
-                            <option value="Otro">💬 Otro</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <textarea name="Mensaje" id="message" rows="5" placeholder="¿En qué puedo ayudarte?" required></textarea>
-                    </div>
-                    <button type="submit" class="btn primary-btn btn-block">Enviar Mensaje</button>
-                </form>
-                <div class="social-links">
-                    <a href="https://open.spotify.com/artist/0GmwWh84e70RNGNkYOwE6d" target="_blank" class="social-icon" title="Spotify"><i class="fab fa-spotify"></i></a>
-                    <a href="https://on.soundcloud.com/3RbhbGAQNfq2mFntUv" target="_blank" class="social-icon" title="SoundCloud"><i class="fab fa-soundcloud"></i></a>
-                    <a href="https://music.apple.com/us/artist/gabriel-rivero-sampol/1838996180" target="_blank" class="social-icon" title="Apple Music"><i class="fab fa-apple"></i></a>
-                    <a href="https://youtu.be/_5ay8vh1SJk" target="_blank" class="social-icon" title="YouTube"><i class="fab fa-youtube"></i></a>
-                    <a href="#" class="social-icon" title="Instagram"><i class="fab fa-instagram"></i></a>
-                    <a href="#" class="social-icon" title="TikTok"><i class="fab fa-tiktok"></i></a>
-                </div>
-            </div>
-        </section>
-    </main>
-
-    <footer>
-        <img src="logo.jpg" alt="Rayver" class="footer-logo">
-        <p>&copy; 2026 RAYVER (Gabriel Rivero Sampol). Todos los derechos reservados.</p>
-        <p class="footer-credit">Electronic Music Producer</p>
-    </footer>
-
-    <script src="script.js"></script>
-    <script src="radio.js"></script>
+<script src="script.js"></script>
+<script src="radio.js"></script>
 </body>
 </html>

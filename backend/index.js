@@ -1,822 +1,502 @@
 'use strict';
+const express = require('express');
+const cors = require('cors');
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
+const https = require('https');
 
-const express  = require('express');
-const cors     = require('cors');
-const fs       = require('fs');
-const path     = require('path');
-const crypto   = require('crypto');
-const https    = require('https');
-
-const app  = express();
+const app = express();
 const PORT = process.env.BACKEND_PORT || 3001;
-const DATA    = path.join('/app/data', 'db.json');
-const UPLOADS = path.join('/app/data', 'uploads');
-const ORIGIN  = process.env.FRONTEND_ORIGIN || '*';
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
+const DATA_FILE = path.join(DATA_DIR, 'db.json');
 
-// Credenciales de APIs externas
-const SPOTIFY_CLIENT_ID     = process.env.SPOTIFY_CLIENT_ID     || '';
-const SPOTIFY_CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET || '';
-const YOUTUBE_API_KEY       = process.env.YOUTUBE_API_KEY       || '';
-// IDs de artistas Spotify separados por coma
-const SPOTIFY_ARTIST_IDS    = (process.env.SPOTIFY_ARTIST_IDS || '0GmwWh84e70RNGNkYOwE6d,5nSppopCQHlvoqzITdo0D5,0f0nSRoIlPdvZyPuBIZD8M,5GzN9yf1adZZKKUBFHArg5,5kOm7nsefS4UwlK9B11iom').split(',').map(s => s.trim()).filter(Boolean);
-// IDs de canal YouTube separados por coma (o handle como @RAYVER)
-const YOUTUBE_CHANNEL_IDS   = (process.env.YOUTUBE_CHANNEL_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
-const SITE_URL              = process.env.SITE_URL || 'https://rayvermusic.com';
-const STRIPE_SECRET         = process.env.STRIPE_SECRET_KEY || '';
-const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || '';
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
-// SoundCloud API
-const SC_CLIENT_ID       = process.env.SC_CLIENT_ID || 'k2D1eFX4gQdXMiTb98JNEuPC5XRSrfqP';
-const SC_USER_PERMALINK  = process.env.SC_USER_PERMALINK || 'biel-rivero-sampol';
-const SC_PLAYLIST_URL    = process.env.SC_PLAYLIST_URL || 'https://soundcloud.com/biel-rivero-sampol/sets/marzo-best-ranking';
+app.use(cors());
+app.use(express.json({ limit: '5mb' }));
 
-// ── CORS ─────────────────────────────────────────────────────────────────────
-app.use(cors({ origin: ORIGIN, methods: ['GET','POST','PUT','DELETE','PATCH'] }));
-app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }));
-app.use(express.json({ limit: '10mb' }));
-
-// ── PERSISTENCIA ──────────────────────────────────────────────────────────────
-function defaultDb() {
-  const salt = crypto.randomBytes(16).toString('hex');
-  const hash = hashPwd('rayver2025', salt);
-  return {
-    auth: { hash, salt },
-    tracks: [], albums: [], videos: [],
-    products: [], members: [], orders: [],
-    downloadTokens: {},
-    syncLog: []   // historial de sincronizaciones
-  };
+// ───────────────────────── DB helpers ─────────────────────────
+function loadDB() {
+  if (!fs.existsSync(DATA_FILE)) {
+    const initial = {
+      tracks: [], albums: [], videos: [], products: [], members: [], orders: [],
+      password_hash: crypto.createHash('sha256').update('rayver2025').digest('hex'),
+      syncLog: []
+    };
+    fs.writeFileSync(DATA_FILE, JSON.stringify(initial, null, 2));
+    return initial;
+  }
+  return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
 }
+function saveDB(db) { fs.writeFileSync(DATA_FILE, JSON.stringify(db, null, 2)); }
+let db = loadDB();
 
-function loadDb() {
-  try { if (fs.existsSync(DATA)) return JSON.parse(fs.readFileSync(DATA, 'utf8')); }
-  catch (_) {}
-  return defaultDb();
-}
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
 
-function saveDb(db) {
-  fs.mkdirSync(path.dirname(DATA), { recursive: true });
-  fs.mkdirSync(UPLOADS, { recursive: true });
-  fs.writeFileSync(DATA, JSON.stringify(db, null, 2));
-}
-
-let db = loadDb();
-// Garantizar campos nuevos en DB existente
-['products','members','orders','syncLog'].forEach(k => { if (!db[k]) db[k] = []; });
-if (!db.downloadTokens) db.downloadTokens = {};
-saveDb(db);
-
-// ── AUTH ──────────────────────────────────────────────────────────────────────
-const TOKEN_TTL = 8 * 60 * 60 * 1000;
-const tokens = new Map();
-
-function hashPwd(pwd, salt) { return crypto.scryptSync(pwd, salt, 64).toString('hex'); }
-function uid() { return Date.now().toString(36) + crypto.randomBytes(3).toString('hex'); }
-
-function genToken() {
-  const t = crypto.randomBytes(32).toString('hex');
-  tokens.set(t, Date.now() + TOKEN_TTL);
-  return t;
-}
-
-function auth(req, res, next) {
-  const h = req.headers.authorization || '';
-  const t = h.startsWith('Bearer ') ? h.slice(7) : null;
-  if (!t || !tokens.has(t) || tokens.get(t) < Date.now())
-    return res.status(401).json({ error: 'No autorizado' });
-  tokens.set(t, Date.now() + TOKEN_TTL);
+// ───────────────────────── Auth ─────────────────────────
+const SESSIONS = new Set();
+function authMiddleware(req, res, next) {
+  const tok = (req.headers.authorization || '').replace('Bearer ', '');
+  if (!tok || !SESSIONS.has(tok)) return res.status(401).json({ error: 'No autorizado' });
   next();
 }
 
-setInterval(() => { const n = Date.now(); for (const [k,e] of tokens) if (e < n) tokens.delete(k); }, 3600000);
+app.post('/api/auth/login', (req, res) => {
+  const { password } = req.body || {};
+  const hash = crypto.createHash('sha256').update(password || '').digest('hex');
+  if (hash !== db.password_hash) return res.status(401).json({ error: 'Contraseña incorrecta' });
+  const token = crypto.randomBytes(24).toString('hex');
+  SESSIONS.add(token);
+  res.json({ token });
+});
 
-// ── HTTP HELPER ───────────────────────────────────────────────────────────────
-function httpGet(url) {
-  return new Promise((resolve, reject) => {
-    https.get(url, res => {
-      let raw = '';
-      res.on('data', d => raw += d);
-      res.on('end', () => {
-        try { resolve({ status: res.statusCode, data: JSON.parse(raw) }); }
-        catch { resolve({ status: res.statusCode, data: raw }); }
-      });
-    }).on('error', reject);
-  });
-}
+app.post('/api/auth/change-password', authMiddleware, (req, res) => {
+  const { newPassword } = req.body || {};
+  if (!newPassword || newPassword.length < 6) return res.status(400).json({ error: 'Contraseña muy corta' });
+  db.password_hash = crypto.createHash('sha256').update(newPassword).digest('hex');
+  saveDB(db);
+  res.json({ ok: true });
+});
 
-function httpPost(hostname, path, body, headers) {
+// ───────────────────────── HTTP helper (sin dependencias externas) ─────────────────────────
+function httpRequest(url, options = {}) {
   return new Promise((resolve, reject) => {
-    const data = body;
-    const opts = { hostname, path, method: 'POST', headers: { 'Content-Length': Buffer.byteLength(data), ...headers } };
-    const req = https.request(opts, res => {
-      let raw = '';
-      res.on('data', d => raw += d);
-      res.on('end', () => {
-        try { resolve({ status: res.statusCode, data: JSON.parse(raw) }); }
-        catch { resolve({ status: res.statusCode, data: raw }); }
+    const u = new URL(url);
+    const reqOptions = {
+      hostname: u.hostname,
+      path: u.pathname + u.search,
+      method: options.method || 'GET',
+      headers: options.headers || {},
+      timeout: 15000
+    };
+    const req = https.request(reqOptions, (resp) => {
+      let data = '';
+      resp.on('data', (chunk) => (data += chunk));
+      resp.on('end', () => {
+        resolve({ status: resp.statusCode, headers: resp.headers, body: data });
       });
     });
     req.on('error', reject);
-    req.write(data);
+    req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
+    if (options.body) req.write(options.body);
     req.end();
   });
 }
 
-// ── SPOTIFY AUTH ──────────────────────────────────────────────────────────────
-let spotifyToken = null;
-let spotifyTokenExpiry = 0;
-
-async function getSpotifyToken() {
-  if (spotifyToken && Date.now() < spotifyTokenExpiry) return spotifyToken;
-  if (!SPOTIFY_CLIENT_ID || !SPOTIFY_CLIENT_SECRET) throw new Error('Spotify credentials missing');
-
-  const creds = Buffer.from(`${SPOTIFY_CLIENT_ID}:${SPOTIFY_CLIENT_SECRET}`).toString('base64');
-  const { data } = await httpPost('accounts.spotify.com', '/api/token',
-    'grant_type=client_credentials',
-    { 'Content-Type': 'application/x-www-form-urlencoded', 'Authorization': `Basic ${creds}` }
-  );
-  spotifyToken = data.access_token;
-  spotifyTokenExpiry = Date.now() + (data.expires_in - 60) * 1000;
-  return spotifyToken;
+async function httpJSON(url, options = {}) {
+  const r = await httpRequest(url, options);
+  let json = null;
+  try { json = JSON.parse(r.body); } catch (e) { /* not json */ }
+  return { status: r.status, json, raw: r.body };
 }
 
-async function spotifyGet(endpoint) {
-  const token = await getSpotifyToken();
-  const { data } = await httpGet(`https://api.spotify.com/v1${endpoint}`);
-  // Si necesitamos autenticación Bearer la añadimos via headers — usar https.get con headers
-  return new Promise((resolve, reject) => {
-    const url = new URL(`https://api.spotify.com/v1${endpoint}`);
-    const opts = {
-      hostname: url.hostname, path: url.pathname + url.search, method: 'GET',
-      headers: { 'Authorization': `Bearer ${token}` }
-    };
-    https.request(opts, res => {
-      let raw = '';
-      res.on('data', d => raw += d);
-      res.on('end', () => {
-        try { resolve(JSON.parse(raw)); }
-        catch { resolve({}); }
-      });
-    }).on('error', reject).end();
+// ───────────────────────── Config / Env parsing ─────────────────────────
+// Limpia variables de entorno que Coolify a veces guarda con el nombre incluido
+// (ej. "YOUTUBE_CHANNEL_IDS=UC123" en vez de solo "UC123")
+function cleanEnvList(raw, varName) {
+  if (!raw) return [];
+  let v = raw.trim();
+  const prefix = varName + '=';
+  if (v.startsWith(prefix)) v = v.slice(prefix.length);
+  return v.split(',').map(s => s.trim()).filter(Boolean).map(s => {
+    const p2 = varName + '=';
+    return s.startsWith(p2) ? s.slice(p2.length) : s;
   });
 }
 
-// ── SPOTIFY SYNC ──────────────────────────────────────────────────────────────
-async function syncSpotify() {
-  const results = { added: 0, updated: 0, skipped: 0, errors: [] };
+const CONFIG = {
+  spotifyClientId: process.env.SPOTIFY_CLIENT_ID || '',
+  spotifyClientSecret: process.env.SPOTIFY_CLIENT_SECRET || '',
+  spotifyArtistIds: cleanEnvList(process.env.SPOTIFY_ARTIST_IDS, 'SPOTIFY_ARTIST_IDS'),
+  youtubeApiKey: process.env.YOUTUBE_API_KEY || '',
+  youtubeChannelIds: cleanEnvList(process.env.YOUTUBE_CHANNEL_IDS, 'YOUTUBE_CHANNEL_IDS'),
+  scClientId: process.env.SC_CLIENT_ID || '',
+  scClientSecret: process.env.SC_CLIENT_SECRET || '',
+  scUser: process.env.SC_USER || process.env.SC_USER_PERMALINK || 'biel-rivero-sampol',
+  scPlaylistUrl: process.env.SC_PLAYLIST_URL || ''
+};
 
-  for (const artistId of SPOTIFY_ARTIST_IDS) {
-    try {
-      // Obtener info del artista
-      const artist = await spotifyGet(`/artists/${artistId}`);
-      const artistName = artist.name || 'RAYVER';
+// ───────────────────────── SPOTIFY SYNC ─────────────────────────
+let spotifyTokenCache = { token: null, expiresAt: 0 };
 
-      // Obtener álbumes (incluye singles, albums, compilations)
-      let offset = 0, total = Infinity;
-      while (offset < total) {
-        const albumsData = await spotifyGet(
-          `/artists/${artistId}/albums?include_groups=album,single&market=ES&limit=50&offset=${offset}`
-        );
-        total = albumsData.total || 0;
-        const albums = albumsData.items || [];
-        if (!albums.length) break;
-
-        for (const album of albums) {
-          // Obtener tracks del álbum
-          let trackOffset = 0, trackTotal = Infinity;
-          while (trackOffset < trackTotal) {
-            const tracksData = await spotifyGet(
-              `/albums/${album.id}/tracks?market=ES&limit=50&offset=${trackOffset}`
-            );
-            trackTotal = tracksData.total || 0;
-            const tracks = tracksData.items || [];
-            if (!tracks.length) break;
-
-            for (const t of tracks) {
-              const spotifyUrl = `https://open.spotify.com/track/${t.id}`;
-              // Buscar si ya existe
-              const existing = db.tracks.find(x =>
-                x.platforms?.spotify === spotifyUrl ||
-                (x.title?.toLowerCase() === t.name?.toLowerCase() && x.source === 'spotify')
-              );
-
-              const trackData = {
-                title:  t.name,
-                album:  album.name,
-                type:   album.album_type === 'album' ? 'Álbum' : 'Single',
-                year:   album.release_date?.slice(0, 4) || '',
-                cover:  album.images?.[0]?.url || '',
-                source: 'spotify',
-                sourceId: t.id,
-                streamUrl: t.preview_url || '', // preview de 30s de Spotify
-                platforms: { spotify: spotifyUrl, ...(existing?.platforms || {}) },
-                updatedAt: new Date().toISOString()
-              };
-
-              if (existing) {
-                Object.assign(existing, trackData);
-                results.updated++;
-              } else {
-                db.tracks.unshift({ id: uid(), createdAt: new Date().toISOString(), ...trackData });
-                results.added++;
-              }
-            }
-            trackOffset += tracks.length;
-            if (trackOffset >= trackTotal) break;
-          }
-        }
-        offset += albums.length;
-        if (offset >= total) break;
-      }
-    } catch (e) {
-      results.errors.push(`Spotify artist ${artistId}: ${e.message}`);
-    }
+async function getSpotifyToken() {
+  if (spotifyTokenCache.token && Date.now() < spotifyTokenCache.expiresAt) {
+    return spotifyTokenCache.token;
   }
-
-  return results;
+  if (!CONFIG.spotifyClientId || !CONFIG.spotifyClientSecret) {
+    throw new Error('Spotify: faltan SPOTIFY_CLIENT_ID o SPOTIFY_CLIENT_SECRET');
+  }
+  const creds = Buffer.from(CONFIG.spotifyClientId + ':' + CONFIG.spotifyClientSecret).toString('base64');
+  const r = await httpJSON('https://accounts.spotify.com/api/token', {
+    method: 'POST',
+    headers: {
+      'Authorization': 'Basic ' + creds,
+      'Content-Type': 'application/x-www-form-urlencoded'
+    },
+    body: 'grant_type=client_credentials'
+  });
+  if (r.status !== 200 || !r.json || !r.json.access_token) {
+    throw new Error('Spotify token error: ' + r.status + ' ' + (r.raw || '').slice(0, 200));
+  }
+  spotifyTokenCache.token = r.json.access_token;
+  spotifyTokenCache.expiresAt = Date.now() + (r.json.expires_in - 60) * 1000;
+  return spotifyTokenCache.token;
 }
 
-// ── YOUTUBE SYNC ──────────────────────────────────────────────────────────────
-async function syncYouTube() {
-  const results = { added: 0, updated: 0, skipped: 0, errors: [] };
-  if (!YOUTUBE_API_KEY) return { ...results, errors: ['YouTube API key missing'] };
+async function syncSpotify() {
+  const result = { added: 0, updated: 0, skipped: 0, errors: [] };
+  if (!CONFIG.spotifyClientId || !CONFIG.spotifyClientSecret) {
+    result.errors.push('Credenciales de Spotify no configuradas');
+    return result;
+  }
+  if (!CONFIG.spotifyArtistIds.length) {
+    result.errors.push('SPOTIFY_ARTIST_IDS vacío — añade al menos un Artist ID de Spotify');
+    return result;
+  }
+  let token;
+  try { token = await getSpotifyToken(); }
+  catch (e) { result.errors.push(e.message); return result; }
 
-  for (const channelId of YOUTUBE_CHANNEL_IDS) {
+  for (const artistId of CONFIG.spotifyArtistIds) {
     try {
-      // Obtener uploads playlist del canal
-      const channelRes = await httpGet(
-        `https://www.googleapis.com/youtube/v3/channels?part=contentDetails,snippet&id=${channelId}&key=${YOUTUBE_API_KEY}`
-      );
-      const channel = channelRes.data?.items?.[0];
-      if (!channel) { results.errors.push(`Canal no encontrado: ${channelId}`); continue; }
-
-      const uploadsPlaylistId = channel.contentDetails?.relatedPlaylists?.uploads;
-      if (!uploadsPlaylistId) continue;
-
-      // Paginar todos los videos
-      let pageToken = '';
-      do {
-        const listUrl = `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet,contentDetails&playlistId=${uploadsPlaylistId}&maxResults=50&key=${YOUTUBE_API_KEY}${pageToken ? '&pageToken=' + pageToken : ''}`;
-        const listRes = await httpGet(listUrl);
-        const items   = listRes.data?.items || [];
-        pageToken     = listRes.data?.nextPageToken || '';
-
-        for (const item of items) {
-          const videoId   = item.contentDetails?.videoId || item.snippet?.resourceId?.videoId;
-          const title     = item.snippet?.title || '';
-          const desc      = item.snippet?.description || '';
-          const thumb     = item.snippet?.thumbnails?.high?.url || item.snippet?.thumbnails?.default?.url || '';
-          const published = item.snippet?.publishedAt?.slice(0, 4) || '';
-          const ytUrl     = `https://www.youtube.com/watch?v=${videoId}`;
-
-          // Skip privados/eliminados
-          if (title === 'Private video' || title === 'Deleted video' || !videoId) continue;
-
-          // ¿Es video oficial (no shorts)? Detectar por duración si hay details
-          const existing = db.videos.find(v => v.videoId === videoId);
-          const videoData = {
-            videoId,
-            title,
-            desc:     desc.slice(0, 200),
-            thumb,
-            year:     published,
-            source:   'youtube',
-            featured: existing?.featured || false,
+      let url = 'https://api.spotify.com/v1/artists/' + artistId + '/albums?include_groups=album,single&limit=50&market=ES';
+      let allAlbums = [];
+      while (url) {
+        const r = await httpJSON(url, { headers: { 'Authorization': 'Bearer ' + token } });
+        if (r.status !== 200 || !r.json) {
+          result.errors.push('Artista ' + artistId + ': HTTP ' + r.status + ' ' + (r.raw||'').slice(0,150));
+          break;
+        }
+        allAlbums = allAlbums.concat(r.json.items || []);
+        url = r.json.next || null;
+      }
+      for (const album of allAlbums) {
+        const tr = await httpJSON('https://api.spotify.com/v1/albums/' + album.id + '/tracks?limit=50', {
+          headers: { 'Authorization': 'Bearer ' + token }
+        });
+        if (tr.status !== 200 || !tr.json) continue;
+        for (const t of (tr.json.items || [])) {
+          const existing = db.tracks.find(x => x.spotifyId === t.id);
+          const trackData = {
+            id: existing ? existing.id : uid(),
+            title: t.name,
+            artist: (t.artists || []).map(a => a.name).join(', ') || 'RAYVER',
+            spotifyId: t.id,
+            spotifyUrl: t.external_urls && t.external_urls.spotify,
+            cover: album.images && album.images[0] ? album.images[0].url : (existing ? existing.cover : ''),
+            album: album.name,
+            releaseDate: album.release_date,
+            durationMs: t.duration_ms,
+            source: 'spotify',
+            order: existing ? existing.order : db.tracks.length,
             updatedAt: new Date().toISOString()
           };
-
-          // También vincular a track si coincide el título
-          const matchTrack = db.tracks.find(t =>
-            t.title?.toLowerCase().includes(title.toLowerCase().split(' ').slice(0, 2).join(' ')) ||
-            title.toLowerCase().includes(t.title?.toLowerCase().split(' ').slice(0, 2).join(' ') || '')
-          );
-          if (matchTrack && !matchTrack.platforms?.youtube) {
-            matchTrack.platforms = matchTrack.platforms || {};
-            matchTrack.platforms.youtube = ytUrl;
-          }
-
           if (existing) {
-            Object.assign(existing, videoData);
-            results.updated++;
+            Object.assign(existing, trackData);
+            result.updated++;
           } else {
-            db.videos.unshift({ id: uid(), createdAt: new Date().toISOString(), ...videoData });
-            results.added++;
+            db.tracks.push(trackData);
+            result.added++;
           }
         }
-      } while (pageToken);
-
+      }
     } catch (e) {
-      results.errors.push(`YouTube channel ${channelId}: ${e.message}`);
+      result.errors.push('Artista ' + artistId + ': ' + e.message);
     }
   }
-
-  return results;
+  saveDB(db);
+  return result;
 }
 
-// ── SYNC PRINCIPAL ─────────────────────────────────────────────────────────────
-let syncRunning = false;
+// ───────────────────────── YOUTUBE SYNC ─────────────────────────
+async function syncYouTube() {
+  const result = { added: 0, updated: 0, skipped: 0, errors: [] };
+  if (!CONFIG.youtubeApiKey) {
+    result.errors.push('YOUTUBE_API_KEY no configurada');
+    return result;
+  }
+  if (!CONFIG.youtubeChannelIds.length) {
+    result.errors.push('YOUTUBE_CHANNEL_IDS vacío');
+    return result;
+  }
+  for (const channelId of CONFIG.youtubeChannelIds) {
+    try {
+      const chR = await httpJSON('https://www.googleapis.com/youtube/v3/channels?part=contentDetails&id=' + channelId + '&key=' + CONFIG.youtubeApiKey);
+      if (chR.status !== 200 || !chR.json || !chR.json.items || !chR.json.items.length) {
+        result.errors.push('Canal no encontrado: ' + channelId + (chR.json && chR.json.error ? ' — ' + chR.json.error.message : ''));
+        continue;
+      }
+      const uploadsPlaylistId = chR.json.items[0].contentDetails.relatedPlaylists.uploads;
+      let pageToken = '';
+      let videos = [];
+      do {
+        const plR = await httpJSON('https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&playlistId=' + uploadsPlaylistId + '&maxResults=50&pageToken=' + pageToken + '&key=' + CONFIG.youtubeApiKey);
+        if (plR.status !== 200 || !plR.json) {
+          result.errors.push('Error obteniendo videos de ' + channelId + ': HTTP ' + plR.status);
+          break;
+        }
+        videos = videos.concat(plR.json.items || []);
+        pageToken = plR.json.nextPageToken || '';
+      } while (pageToken);
 
-async function runSync(trigger = 'auto') {
-  if (syncRunning) return { error: 'Sync ya en progreso' };
-  syncRunning = true;
+      for (const v of videos) {
+        const videoId = v.snippet.resourceId.videoId;
+        const existing = db.videos.find(x => x.videoId === videoId);
+        const videoData = {
+          id: existing ? existing.id : uid(),
+          videoId,
+          title: v.snippet.title,
+          desc: v.snippet.description || '',
+          thumbnail: (v.snippet.thumbnails && (v.snippet.thumbnails.maxres || v.snippet.thumbnails.high || v.snippet.thumbnails.default) || {}).url || '',
+          channelId,
+          publishedAt: v.snippet.publishedAt,
+          order: existing ? existing.order : db.videos.length,
+          featured: existing ? existing.featured : false,
+          source: 'youtube',
+          updatedAt: new Date().toISOString()
+        };
+        if (existing) { Object.assign(existing, videoData); result.updated++; }
+        else { db.videos.push(videoData); result.added++; }
+      }
+    } catch (e) {
+      result.errors.push('Canal ' + channelId + ': ' + e.message);
+    }
+  }
+  saveDB(db);
+  return result;
+}
 
-  const log = {
-    id: uid(),
-    startedAt: new Date().toISOString(),
-    trigger,
-    spotify: null,
-    youtube: null,
-    error: null
-  };
+// ───────────────────────── SOUNDCLOUD SYNC ─────────────────────────
+let scTokenCache = { token: null, expiresAt: 0 };
 
+async function getSCToken() {
+  if (scTokenCache.token && Date.now() < scTokenCache.expiresAt) return scTokenCache.token;
+  if (!CONFIG.scClientId || !CONFIG.scClientSecret) {
+    throw new Error('SoundCloud: faltan SC_CLIENT_ID o SC_CLIENT_SECRET');
+  }
+  const r = await httpJSON('https://secure.soundcloud.com/oauth/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json; charset=utf-8' },
+    body: 'grant_type=client_credentials&client_id=' + encodeURIComponent(CONFIG.scClientId) + '&client_secret=' + encodeURIComponent(CONFIG.scClientSecret)
+  });
+  if (r.status !== 200 || !r.json || !r.json.access_token) {
+    throw new Error('SoundCloud OAuth falló (credenciales inválidas o app no autorizada por SoundCloud): HTTP ' + r.status + ' ' + (r.raw||'').slice(0,200));
+  }
+  scTokenCache.token = r.json.access_token;
+  scTokenCache.expiresAt = Date.now() + ((r.json.expires_in || 3600) - 60) * 1000;
+  return scTokenCache.token;
+}
+
+// Fallback sin autenticación: oEmbed público de SoundCloud.
+// Funciona siempre (sin client_id) pero solo da datos básicos de UNA url (track o playlist).
+async function scOEmbed(targetUrl) {
+  const r = await httpJSON('https://soundcloud.com/oembed?format=json&url=' + encodeURIComponent(targetUrl));
+  if (r.status !== 200 || !r.json) return null;
+  return r.json;
+}
+
+async function syncSoundCloud() {
+  const result = { added: 0, updated: 0, skipped: 0, errors: [], mode: null };
+
+  // 1. Intentar vía API oficial con OAuth2 (da catálogo completo)
+  let token = null;
   try {
-    console.log(`[sync] Iniciando sincronización (${trigger})…`);
-
-    // Spotify
-    if (SPOTIFY_CLIENT_ID && SPOTIFY_CLIENT_SECRET) {
-      log.spotify = await syncSpotify();
-      console.log(`[sync] Spotify: +${log.spotify.added} / ~${log.spotify.updated}`);
-    } else {
-      log.spotify = { skipped: true, error: 'Credenciales no configuradas' };
-    }
-
-    // SoundCloud
-    if (SC_CLIENT_ID) {
-      log.soundcloud = await syncSoundCloud();
-      console.log(`[sync] SoundCloud: +${log.soundcloud.added} / ~${log.soundcloud.updated}`);
-    } else {
-      log.soundcloud = { skipped: true, error: 'SC_CLIENT_ID no configurado' };
-    }
-
-    // YouTube
-    if (YOUTUBE_API_KEY && YOUTUBE_CHANNEL_IDS.length) {
-      log.youtube = await syncYouTube();
-      console.log(`[sync] YouTube: +${log.youtube.added} / ~${log.youtube.updated}`);
-    } else {
-      log.youtube = { skipped: true, error: 'API key o canal no configurados' };
-    }
-
-    log.finishedAt = new Date().toISOString();
-    log.totalTracks = db.tracks.length;
-    log.totalVideos = db.videos.length;
-
-    saveDb(db);
-
-    // Guardar en log (máximo 20 entradas)
-    db.syncLog.unshift(log);
-    if (db.syncLog.length > 20) db.syncLog = db.syncLog.slice(0, 20);
-    saveDb(db);
-
+    token = await getSCToken();
   } catch (e) {
-    log.error = e.message;
-    log.finishedAt = new Date().toISOString();
-    console.error('[sync] Error:', e.message);
+    result.errors.push(e.message);
   }
 
+  if (token) {
+    try {
+      result.mode = 'api';
+      const resolveR = await httpJSON('https://api.soundcloud.com/resolve?url=' + encodeURIComponent('https://soundcloud.com/' + CONFIG.scUser), {
+        headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/json; charset=utf-8' }
+      });
+      if (resolveR.status !== 200 || !resolveR.json || !resolveR.json.id) {
+        result.errors.push('Usuario SC no encontrado: ' + CONFIG.scUser + ' (HTTP ' + resolveR.status + ')');
+      } else {
+        const userId = resolveR.json.id;
+        let url = 'https://api.soundcloud.com/users/' + userId + '/tracks?limit=200';
+        let allTracks = [];
+        let guard = 0;
+        while (url && guard < 10) {
+          const tR = await httpJSON(url, { headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/json; charset=utf-8' } });
+          if (tR.status !== 200 || !tR.json) break;
+          const items = Array.isArray(tR.json) ? tR.json : (tR.json.collection || []);
+          allTracks = allTracks.concat(items);
+          url = tR.json.next_href || null;
+          guard++;
+        }
+        for (const t of allTracks) {
+          const existing = db.tracks.find(x => x.scId === t.id);
+          const trackData = {
+            id: existing ? existing.id : uid(),
+            title: t.title,
+            artist: (t.user && t.user.username) || 'RAYVER',
+            scId: t.id,
+            scUrl: t.permalink_url,
+            cover: t.artwork_url ? t.artwork_url.replace('-large', '-t500x500') : ((t.user && t.user.avatar_url) || ''),
+            durationMs: t.duration,
+            genre: t.genre || '',
+            source: existing && existing.source === 'spotify' ? existing.source : 'soundcloud',
+            order: existing ? existing.order : db.tracks.length,
+            updatedAt: new Date().toISOString()
+          };
+          if (existing) { Object.assign(existing, trackData); result.updated++; }
+          else { db.tracks.push(trackData); result.added++; }
+        }
+      }
+    } catch (e) {
+      result.errors.push('SC API: ' + e.message);
+    }
+  }
+
+  // 2. Fallback: oEmbed de la playlist pública (no requiere credenciales, siempre funciona si la URL es correcta)
+  if (CONFIG.scPlaylistUrl && (result.added === 0 && result.updated === 0)) {
+    try {
+      result.mode = (result.mode ? result.mode + '+' : '') + 'oembed';
+      const embed = await scOEmbed(CONFIG.scPlaylistUrl);
+      if (embed && embed.title) {
+        const existing = db.tracks.find(x => x.scUrl === CONFIG.scPlaylistUrl);
+        const data = {
+          id: existing ? existing.id : uid(),
+          title: embed.title,
+          artist: embed.author_name || 'RAYVER',
+          scUrl: CONFIG.scPlaylistUrl,
+          cover: (embed.thumbnail_url || '').replace('-large', '-t500x500'),
+          source: 'soundcloud',
+          embedHtml: embed.html || '',
+          order: existing ? existing.order : db.tracks.length,
+          updatedAt: new Date().toISOString()
+        };
+        if (existing) { Object.assign(existing, data); result.updated++; }
+        else { db.tracks.push(data); result.added++; }
+      } else {
+        result.errors.push('oEmbed: no se pudo resolver ' + CONFIG.scPlaylistUrl);
+      }
+    } catch (e) {
+      result.errors.push('oEmbed error: ' + e.message);
+    }
+  }
+
+  saveDB(db);
+  return result;
+}
+
+// ───────────────────────── SYNC orquestador ─────────────────────────
+let syncRunning = false;
+
+async function runFullSync(trigger) {
+  if (syncRunning) return { error: 'Ya hay una sincronización en curso' };
+  syncRunning = true;
+  const log = { id: uid(), trigger: trigger || 'manual', startedAt: new Date().toISOString() };
+  try {
+    log.spotify = await syncSpotify();
+    log.youtube = await syncYouTube();
+    log.soundcloud = await syncSoundCloud();
+  } catch (e) {
+    log.fatalError = e.message;
+  }
+  log.finishedAt = new Date().toISOString();
+  log.totalTracks = db.tracks.length;
+  log.totalVideos = db.videos.length;
+  db.syncLog = db.syncLog || [];
+  db.syncLog.unshift(log);
+  db.syncLog = db.syncLog.slice(0, 20);
+  saveDB(db);
   syncRunning = false;
   return log;
 }
 
-// ── CRON — SYNC DIARIO ────────────────────────────────────────────────────────
-function scheduleSync() {
-  // Primera sync 30s después de arrancar
-  setTimeout(() => runSync('startup'), 30000);
-
-  // Luego cada 24h
-  setInterval(() => runSync('daily-cron'), 24 * 60 * 60 * 1000);
-  console.log('[sync] Scheduler activo — primera sync en 30s, luego cada 24h');
-}
-
-// ── RUTAS PÚBLICAS ────────────────────────────────────────────────────────────
-app.post('/api/auth/login', (req, res) => {
-  const { password } = req.body || {};
-  if (!password) return res.status(400).json({ error: 'Falta contraseña' });
-  const { hash, salt } = db.auth;
-  if (hashPwd(password, salt) !== hash) return res.status(401).json({ error: 'Contraseña incorrecta' });
-  res.json({ token: genToken() });
-});
-
-app.get('/api/public/tracks',   (_, res) => res.json(db.tracks));
-app.get('/api/public/albums',   (_, res) => res.json(db.albums));
-app.get('/api/public/videos',   (_, res) => res.json(db.videos));
-app.get('/api/public/products', (_, res) => res.json(
-  db.products.filter(p => p.active).map(p => ({
-    id: p.id, name: p.name, description: p.description,
-    price: p.price, currency: p.currency || 'eur',
-    type: p.type, cover: p.cover, features: p.features || [],
-    stripePriceId: p.stripePriceId
-  }))
-));
-
-app.get('/api/health', (_, res) => res.json({
-  ok: true,
-  tracks: db.tracks.length,
-  albums: db.albums.length,
-  videos: db.videos.length,
-  products: db.products.filter(p=>p.active).length,
-  members: db.members.filter(m=>m.status==='active').length,
-  syncRunning,
-  lastSync: db.syncLog[0]?.finishedAt || null,
-  sc: { configured: !!SC_CLIENT_ID, user: SC_USER_PERMALINK }
-}));
-
-// ── RUTAS PRIVADAS — SYNC ─────────────────────────────────────────────────────
-// Trigger manual desde el admin
-app.post('/api/sync/run', auth, async (req, res) => {
-  if (syncRunning) return res.status(409).json({ error: 'Sync ya en progreso' });
-  // Lanzar async y responder inmediatamente
-  res.json({ ok: true, message: 'Sincronización iniciada' });
-  await runSync('manual');
-});
-
-app.get('/api/sync/status', auth, (req, res) => {
+app.get('/api/sync/status', authMiddleware, (req, res) => {
   res.json({
     running: syncRunning,
-    logs: db.syncLog,
-    totals: {
-      tracks: db.tracks.length,
-      videos: db.videos.length
-    },
+    logs: db.syncLog || [],
     config: {
-      spotifyArtists: SPOTIFY_ARTIST_IDS,
-      youtubeChannels: YOUTUBE_CHANNEL_IDS,
-      hasSpotifyCreds: !!(SPOTIFY_CLIENT_ID && SPOTIFY_CLIENT_SECRET),
-      hasYoutubeCreds: !!YOUTUBE_API_KEY
+      spotifyArtists: CONFIG.spotifyArtistIds,
+      youtubeChannels: CONFIG.youtubeChannelIds,
+      hasSpotifyCreds: !!(CONFIG.spotifyClientId && CONFIG.spotifyClientSecret),
+      hasYoutubeCreds: !!CONFIG.youtubeApiKey,
+      hasSCCreds: !!(CONFIG.scClientId && CONFIG.scClientSecret),
+      scUser: CONFIG.scUser,
+      scPlaylistUrl: CONFIG.scPlaylistUrl
     }
   });
 });
 
-// ── RUTAS PRIVADAS — AUTH ─────────────────────────────────────────────────────
-app.post('/api/auth/change-password', auth, (req, res) => {
-  const { currentPassword, newPassword } = req.body || {};
-  if (!currentPassword || !newPassword) return res.status(400).json({ error: 'Faltan campos' });
-  if (newPassword.length < 8) return res.status(400).json({ error: 'Mínimo 8 caracteres' });
-  const { hash, salt } = db.auth;
-  if (hashPwd(currentPassword, salt) !== hash) return res.status(401).json({ error: 'Contraseña actual incorrecta' });
-  const newSalt = crypto.randomBytes(16).toString('hex');
-  db.auth = { hash: hashPwd(newPassword, newSalt), salt: newSalt };
-  saveDb(db);
-  const cur = (req.headers.authorization || '').slice(7);
-  for (const k of tokens.keys()) if (k !== cur) tokens.delete(k);
+app.post('/api/sync/run', authMiddleware, async (req, res) => {
+  const result = await runFullSync('manual');
+  res.json(result);
+});
+
+// Sync automático cada 6 horas + uno al arrancar (a los 20s para no bloquear el boot)
+setTimeout(() => runFullSync('startup').catch(e => console.error('sync startup error', e)), 20000);
+setInterval(() => runFullSync('scheduled').catch(e => console.error('sync scheduled error', e)), 6 * 60 * 60 * 1000);
+
+// ───────────────────────── RUTAS PÚBLICAS (frontend) ─────────────────────────
+app.get('/api/public/tracks', (req, res) => {
+  res.json((db.tracks || []).slice().sort((a,b)=>(a.order||0)-(b.order||0)));
+});
+app.get('/api/public/albums', (req, res) => res.json(db.albums || []));
+app.get('/api/public/videos', (req, res) => {
+  res.json((db.videos || []).slice().sort((a,b)=>(a.order||0)-(b.order||0)));
+});
+app.get('/api/public/products', (req, res) => res.json(db.products || []));
+
+app.get('/api/public/sc-playlist', (req, res) => {
+  const scTracks = (db.tracks || []).filter(t => t.source === 'soundcloud' || t.scUrl);
+  res.json({ tracks: scTracks });
+});
+
+app.get('/api/health', (req, res) => {
+  res.json({
+    ok: true,
+    tracks: (db.tracks || []).length,
+    albums: (db.albums || []).length,
+    videos: (db.videos || []).length,
+    products: (db.products || []).length,
+    members: (db.members || []).length,
+    syncRunning,
+    lastSync: (db.syncLog && db.syncLog[0] && db.syncLog[0].finishedAt) || null,
+    sc: { configured: !!(CONFIG.scClientId && CONFIG.scClientSecret), user: CONFIG.scUser }
+  });
+});
+
+// ───────────────────────── RUTAS PRIVADAS (admin CRUD) ─────────────────────────
+function crud(entity) {
+  app.get('/api/' + entity, authMiddleware, (req, res) => res.json(db[entity] || []));
+  app.post('/api/' + entity, authMiddleware, (req, res) => {
+    const item = { id: uid(), order: (db[entity]||[]).length, createdAt: new Date().toISOString(), ...req.body };
+    db[entity] = db[entity] || [];
+    db[entity].push(item);
+    saveDB(db);
+    res.json(item);
+  });
+  app.put('/api/' + entity + '/:id', authMiddleware, (req, res) => {
+    const idx = (db[entity]||[]).findIndex(x => x.id === req.params.id);
+    if (idx === -1) return res.status(404).json({ error: 'No encontrado' });
+    db[entity][idx] = { ...db[entity][idx], ...req.body, id: req.params.id };
+    saveDB(db);
+    res.json(db[entity][idx]);
+  });
+  app.delete('/api/' + entity + '/:id', authMiddleware, (req, res) => {
+    db[entity] = (db[entity]||[]).filter(x => x.id !== req.params.id);
+    saveDB(db);
+    res.json({ ok: true });
+  });
+}
+['tracks', 'albums', 'videos', 'products', 'members', 'orders'].forEach(crud);
+
+app.patch('/api/videos/reorder', authMiddleware, (req, res) => {
+  const { orderedIds } = req.body || {};
+  if (!Array.isArray(orderedIds)) return res.status(400).json({ error: 'orderedIds requerido' });
+  orderedIds.forEach((id, i) => {
+    const v = (db.videos || []).find(x => x.id === id);
+    if (v) v.order = i;
+  });
+  saveDB(db);
   res.json({ ok: true });
 });
 
-// ── TRACKS CRUD ───────────────────────────────────────────────────────────────
-app.get('/api/tracks', auth, (_, res) => res.json(db.tracks));
-app.post('/api/tracks', auth, (req, res) => {
-  const t = { id: uid(), createdAt: new Date().toISOString(), source: 'manual', ...req.body };
-  db.tracks.unshift(t); saveDb(db); res.status(201).json(t);
-});
-app.put('/api/tracks/:id', auth, (req, res) => {
-  const i = db.tracks.findIndex(t => t.id === req.params.id);
-  if (i===-1) return res.status(404).json({error:'No encontrado'});
-  db.tracks[i] = { ...db.tracks[i], ...req.body, id: req.params.id }; saveDb(db); res.json(db.tracks[i]);
-});
-app.delete('/api/tracks/:id', auth, (req, res) => {
-  const i = db.tracks.findIndex(t => t.id === req.params.id);
-  if (i===-1) return res.status(404).json({error:'No encontrado'});
-  db.tracks.splice(i,1); saveDb(db); res.json({ok:true});
-});
-
-// ── ALBUMS CRUD ───────────────────────────────────────────────────────────────
-app.get('/api/albums', auth, (_, res) => res.json(db.albums));
-app.post('/api/albums', auth, (req, res) => {
-  const a = { id: uid(), createdAt: new Date().toISOString(), ...req.body };
-  db.albums.unshift(a); saveDb(db); res.status(201).json(a);
-});
-app.put('/api/albums/:id', auth, (req, res) => {
-  const i = db.albums.findIndex(a => a.id === req.params.id);
-  if (i===-1) return res.status(404).json({error:'No encontrado'});
-  db.albums[i] = { ...db.albums[i], ...req.body, id: req.params.id }; saveDb(db); res.json(db.albums[i]);
-});
-app.delete('/api/albums/:id', auth, (req, res) => {
-  const i = db.albums.findIndex(a => a.id === req.params.id);
-  if (i===-1) return res.status(404).json({error:'No encontrado'});
-  db.albums.splice(i,1); saveDb(db); res.json({ok:true});
-});
-
-// ── VIDEOS CRUD ───────────────────────────────────────────────────────────────
-app.get('/api/videos', auth, (_, res) => res.json(db.videos));
-app.post('/api/videos', auth, (req, res) => {
-  const v = { id: uid(), createdAt: new Date().toISOString(), ...req.body };
-  db.videos.unshift(v); saveDb(db); res.status(201).json(v);
-});
-app.put('/api/videos/:id', auth, (req, res) => {
-  const i = db.videos.findIndex(v => v.id === req.params.id);
-  if (i===-1) return res.status(404).json({error:'No encontrado'});
-  db.videos[i] = { ...db.videos[i], ...req.body, id: req.params.id }; saveDb(db); res.json(db.videos[i]);
-});
-app.delete('/api/videos/:id', auth, (req, res) => {
-  const i = db.videos.findIndex(v => v.id === req.params.id);
-  if (i===-1) return res.status(404).json({error:'No encontrado'});
-  db.videos.splice(i,1); saveDb(db); res.json({ok:true});
-});
-app.patch('/api/videos/reorder', auth, (req, res) => {
-  const { ids } = req.body;
-  if (!Array.isArray(ids)) return res.status(400).json({error:'ids required'});
-  db.videos = ids.map(id=>db.videos.find(v=>v.id===id)).filter(Boolean); saveDb(db); res.json({ok:true});
-});
-
-// ── PRODUCTS CRUD ─────────────────────────────────────────────────────────────
-app.get('/api/products', auth, (_, res) => res.json(db.products));
-app.post('/api/products', auth, (req, res) => {
-  const p = { id: uid(), createdAt: new Date().toISOString(), active: true, ...req.body };
-  db.products.unshift(p); saveDb(db); res.status(201).json(p);
-});
-app.put('/api/products/:id', auth, (req, res) => {
-  const i = db.products.findIndex(p => p.id === req.params.id);
-  if (i===-1) return res.status(404).json({error:'No encontrado'});
-  db.products[i] = { ...db.products[i], ...req.body, id: req.params.id }; saveDb(db); res.json(db.products[i]);
-});
-app.delete('/api/products/:id', auth, (req, res) => {
-  const i = db.products.findIndex(p => p.id === req.params.id);
-  if (i===-1) return res.status(404).json({error:'No encontrado'});
-  db.products.splice(i,1); saveDb(db); res.json({ok:true});
-});
-
-// ── MEMBERS & ORDERS ──────────────────────────────────────────────────────────
-app.get('/api/members', auth, (_, res) => res.json(db.members));
-app.get('/api/orders',  auth, (_, res) => res.json(db.orders));
-app.get('/api/stats', auth, (_, res) => {
-  const activeMembers = db.members.filter(m => m.status === 'active').length;
-  const totalRevenue  = db.orders.reduce((s, o) => s + (o.amount || 0), 0);
-  res.json({
-    tracks: db.tracks.length, albums: db.albums.length, videos: db.videos.length,
-    products: db.products.filter(p=>p.active).length,
-    members: activeMembers, orders: db.orders.length,
-    revenueEur: (totalRevenue / 100).toFixed(2),
-    lastSync: db.syncLog[0]?.finishedAt || null,
-    syncRunning
-  });
-});
-
-// ── STRIPE (simplificado — mantener de versión anterior) ──────────────────────
-function stripeReq(method, endpoint, body) {
-  return new Promise((resolve, reject) => {
-    if (!STRIPE_SECRET) return reject(new Error('STRIPE_SECRET_KEY no configurada'));
-    const data = body ? new URLSearchParams(flattenObj(body)).toString() : '';
-    const opts = {
-      hostname: 'api.stripe.com', path: `/v1/${endpoint}`, method,
-      headers: {
-        'Authorization': `Bearer ${STRIPE_SECRET}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Content-Length': Buffer.byteLength(data)
-      }
-    };
-    const req = https.request(opts, res => {
-      let raw = '';
-      res.on('data', d => raw += d);
-      res.on('end', () => {
-        try { resolve({ status: res.statusCode, data: JSON.parse(raw) }); }
-        catch { reject(new Error('Stripe parse error')); }
-      });
-    });
-    req.on('error', reject);
-    if (data) req.write(data);
-    req.end();
-  });
-}
-
-function flattenObj(obj, prefix='') {
-  const flat = {};
-  for (const [k, v] of Object.entries(obj)) {
-    const key = prefix ? `${prefix}[${k}]` : k;
-    if (v !== null && typeof v === 'object' && !Array.isArray(v)) Object.assign(flat, flattenObj(v, key));
-    else if (Array.isArray(v)) v.forEach((item, i) => { if (typeof item==='object') Object.assign(flat, flattenObj(item, `${key}[${i}]`)); else flat[`${key}[${i}]`]=item; });
-    else if (v !== undefined && v !== null) flat[key] = String(v);
-  }
-  return flat;
-}
-
-app.post('/api/checkout/product', async (req, res) => {
-  const { productId, email } = req.body || {};
-  const product = db.products.find(p => p.id === productId && p.active);
-  if (!product) return res.status(404).json({ error: 'Producto no encontrado' });
-  if (!product.stripePriceId) return res.status(400).json({ error: 'Precio Stripe no configurado' });
-  try {
-    const { data } = await stripeReq('POST', 'checkout/sessions', {
-      mode: 'payment', customer_email: email||undefined,
-      line_items: [{ price: product.stripePriceId, quantity: 1 }],
-      success_url: `${SITE_URL}/gracias.html?session_id={CHECKOUT_SESSION_ID}&product=${productId}`,
-      cancel_url: `${SITE_URL}/#beats`, metadata: { productId, type: 'product' }
-    });
-    if (data.error) return res.status(400).json({ error: data.error.message });
-    res.json({ url: data.url });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/checkout/membership', async (req, res) => {
-  const { planId, email } = req.body || {};
-  const plan = db.products.find(p => p.id === planId && p.type === 'membership' && p.active);
-  if (!plan) return res.status(404).json({ error: 'Plan no encontrado' });
-  if (!plan.stripePriceId) return res.status(400).json({ error: 'Precio Stripe no configurado' });
-  try {
-    const { data } = await stripeReq('POST', 'checkout/sessions', {
-      mode: 'subscription', customer_email: email||undefined,
-      line_items: [{ price: plan.stripePriceId, quantity: 1 }],
-      success_url: `${SITE_URL}/gracias.html?session_id={CHECKOUT_SESSION_ID}&plan=${planId}`,
-      cancel_url: `${SITE_URL}/#membership`, metadata: { planId, type: 'membership' }
-    });
-    if (data.error) return res.status(400).json({ error: data.error.message });
-    res.json({ url: data.url });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/products/:id/stripe-price', auth, async (req, res) => {
-  const product = db.products.find(p => p.id === req.params.id);
-  if (!product) return res.status(404).json({ error: 'No encontrado' });
-  try {
-    let stripeProductId = product.stripeProductId;
-    if (!stripeProductId) {
-      const { data: sp } = await stripeReq('POST', 'products', { name: product.name, description: product.description||'' });
-      stripeProductId = sp.id; product.stripeProductId = stripeProductId;
-    }
-    const priceBody = { product: stripeProductId, unit_amount: Math.round(product.price*100), currency: product.currency||'eur' };
-    if (product.type === 'membership') priceBody.recurring = { interval: 'month' };
-    const { data: price } = await stripeReq('POST', 'prices', priceBody);
-    product.stripePriceId = price.id; saveDb(db);
-    res.json({ ok: true, stripePriceId: price.id });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/stripe/webhook', (req, res) => {
-  if (!STRIPE_WEBHOOK_SECRET) return res.json({ received: true });
-  let event;
-  try {
-    const sig = req.headers['stripe-signature'];
-    const parts = sig.split(',').reduce((a,p) => { const [k,v]=p.split('='); a[k]=v; return a; }, {});
-    const payload = `${parts.t}.${req.body.toString()}`;
-    const expected = crypto.createHmac('sha256', STRIPE_WEBHOOK_SECRET).update(payload).digest('hex');
-    if (expected !== parts.v1) return res.status(400).json({ error: 'Firma inválida' });
-    event = JSON.parse(req.body.toString());
-  } catch { return res.status(400).json({ error: 'Webhook error' }); }
-  if (event.type === 'customer.subscription.created' || event.type === 'customer.subscription.updated') {
-    const sub = event.data.object;
-    const ex = db.members.find(m => m.stripeSubscriptionId === sub.id);
-    if (!ex) db.members.push({ id: uid(), stripeCustomerId: sub.customer, stripeSubscriptionId: sub.id, status: sub.status, planId: sub.items?.data?.[0]?.price?.id||'', createdAt: new Date().toISOString(), currentPeriodEnd: new Date(sub.current_period_end*1000).toISOString() });
-    else { ex.status = sub.status; ex.currentPeriodEnd = new Date(sub.current_period_end*1000).toISOString(); }
-    saveDb(db);
-  }
-  if (event.type === 'customer.subscription.deleted') {
-    const m = db.members.find(m => m.stripeSubscriptionId === event.data.object.id);
-    if (m) { m.status = 'canceled'; saveDb(db); }
-  }
-  if (event.type === 'checkout.session.completed' && event.data.object.metadata?.type === 'product') {
-    const s = event.data.object;
-    db.orders.push({ id: uid(), productId: s.metadata.productId, email: s.customer_details?.email||'', stripeSessionId: s.id, amount: s.amount_total, currency: s.currency, createdAt: new Date().toISOString() });
-    saveDb(db);
-  }
-  res.json({ received: true });
-});
-
-// ── SOUNDCLOUD SYNC ──────────────────────────────────────────────────────────
-async function syncSoundCloud() {
-  const results = { added: 0, updated: 0, errors: [] };
-  if (!SC_CLIENT_ID) return { ...results, errors: ['SC_CLIENT_ID no configurado'] };
-
-  try {
-    // Resolver el usuario para obtener su ID numérico
-    const userRes = await httpGet(
-      `https://api.soundcloud.com/resolve?url=https://soundcloud.com/${SC_USER_PERMALINK}&client_id=${SC_CLIENT_ID}`
-    );
-    if (!userRes.data || userRes.data.kind !== 'user') {
-      return { ...results, errors: ['Usuario SC no encontrado'] };
-    }
-    const userId = userRes.data.id;
-
-    // Obtener todos los tracks del usuario paginando
-    let nextUrl = `https://api.soundcloud.com/users/${userId}/tracks?client_id=${SC_CLIENT_ID}&limit=200&linked_partitioning=1`;
-    let totalFetched = 0;
-
-    while (nextUrl) {
-      const res = await httpGet(nextUrl);
-      const trackList = res.data?.collection || res.data || [];
-      if (!Array.isArray(trackList) || !trackList.length) break;
-
-      for (const t of trackList) {
-        if (!t.streamable && !t.permalink_url) continue;
-
-        const scUrl = t.permalink_url;
-        const existing = db.tracks.find(x =>
-          x.platforms?.soundcloud === scUrl ||
-          x.sourceId === String(t.id)
-        );
-
-        const trackData = {
-          title:     t.title,
-          type:      'Single',
-          year:      t.created_at ? t.created_at.slice(0, 4) : '',
-          cover:     t.artwork_url ? t.artwork_url.replace('large', 't300x300') : '',
-          streamUrl: scUrl,
-          source:    'soundcloud',
-          sourceId:  String(t.id),
-          duration:  t.duration,
-          genre:     t.genre || '',
-          platforms: { soundcloud: scUrl, ...(existing?.platforms || {}) },
-          updatedAt: new Date().toISOString()
-        };
-
-        if (existing) {
-          Object.assign(existing, trackData);
-          results.updated++;
-        } else {
-          db.tracks.push({ id: uid(), createdAt: new Date().toISOString(), ...trackData });
-          results.added++;
-        }
-        totalFetched++;
-      }
-
-      // Paginar si hay más
-      nextUrl = res.data?.next_href
-        ? res.data.next_href + `&client_id=${SC_CLIENT_ID}`
-        : null;
-
-      if (totalFetched >= 500) break; // límite de seguridad
-    }
-
-    // También obtener la playlist principal
-    try {
-      const plRes = await httpGet(
-        `https://api.soundcloud.com/resolve?url=${encodeURIComponent(SC_PLAYLIST_URL)}&client_id=${SC_CLIENT_ID}`
-      );
-      if (plRes.data?.tracks) {
-        // Marcar el orden de la playlist en los tracks
-        plRes.data.tracks.forEach((t, i) => {
-          const match = db.tracks.find(x => x.sourceId === String(t.id));
-          if (match) match.playlistOrder = i + 1;
-        });
-      }
-    } catch(e) {
-      results.errors.push('Playlist SC: ' + e.message);
-    }
-
-  } catch(e) {
-    results.errors.push('SC sync: ' + e.message);
-  }
-
-  return results;
-}
-
-// Endpoint público para obtener tracks de SC sin auth (para la radio)
-app.get('/api/public/sc-playlist', async (req, res) => {
-  if (!SC_CLIENT_ID) return res.json({ tracks: [], error: 'SC_CLIENT_ID no configurado' });
-  try {
-    const plRes = await httpGet(
-      `https://api.soundcloud.com/resolve?url=${encodeURIComponent(SC_PLAYLIST_URL)}&client_id=${SC_CLIENT_ID}`
-    );
-    if (!plRes.data?.tracks) return res.json({ tracks: [] });
-
-    const tracks = plRes.data.tracks.map(t => ({
-      id:        String(t.id),
-      title:     t.title,
-      artist:    t.user?.username || 'RAYVER',
-      cover:     t.artwork_url ? t.artwork_url.replace('large','t300x300') : '',
-      permalink: t.permalink_url,
-      duration:  t.duration,
-      streamUrl: t.permalink_url,
-      streamable: t.streamable
-    }));
-
-    res.json({ tracks, total: tracks.length });
-  } catch(e) {
-    res.status(500).json({ tracks: [], error: e.message });
-  }
-});
-
-// Endpoint para obtener tracks del perfil completo
-app.get('/api/public/sc-tracks', async (req, res) => {
-  if (!SC_CLIENT_ID) return res.json({ tracks: [], error: 'SC_CLIENT_ID no configurado' });
-  try {
-    // Resolver user
-    const userRes = await httpGet(
-      `https://api.soundcloud.com/resolve?url=https://soundcloud.com/${SC_USER_PERMALINK}&client_id=${SC_CLIENT_ID}`
-    );
-    if (!userRes.data?.id) return res.json({ tracks: [] });
-
-    const tracksRes = await httpGet(
-      `https://api.soundcloud.com/users/${userRes.data.id}/tracks?client_id=${SC_CLIENT_ID}&limit=200`
-    );
-    const rawTracks = tracksRes.data?.collection || tracksRes.data || [];
-
-    const tracks = rawTracks.map(t => ({
-      id:        String(t.id),
-      title:     t.title,
-      artist:    t.user?.username || 'RAYVER',
-      cover:     t.artwork_url ? t.artwork_url.replace('large','t300x300') : '',
-      permalink: t.permalink_url,
-      duration:  t.duration,
-      genre:     t.genre || '',
-      streamable: t.streamable
-    }));
-
-    res.json({ tracks, total: tracks.length });
-  } catch(e) {
-    res.status(500).json({ tracks: [], error: e.message });
-  }
-});
-
-// ── ARRANCAR ──────────────────────────────────────────────────────────────────
-app.listen(PORT, () => {
-  console.log(`Rayvermusic backend v4 :${PORT}`);
-  scheduleSync();
-});
+app.listen(PORT, () => console.log('Backend escuchando en :' + PORT));

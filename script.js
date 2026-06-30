@@ -490,14 +490,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // ── MINI PLAYER FLOTANTE ─────────────────────────────────────────
   let miniPlaylist = [];
   let miniCurrentIdx = 0;
-  let userPlaylists = JSON.parse(localStorage.getItem('rayver_playlists')||'[]');
   let miniVisible = true;
   let miniMinimized = false;
-  let activeUserPlaylist = null; // null = all videos
-
-  function savePlaylists() {
-    localStorage.setItem('rayver_playlists', JSON.stringify(userPlaylists));
-  }
+  let activeUserPlaylist = null;
 
   function miniPlayerSetPlaylist(videos) {
     miniPlaylist = videos;
@@ -682,107 +677,65 @@ document.addEventListener('DOMContentLoaded', () => {
       </div>`).join('');
   }
 
-  // ── LISTAS DE USUARIO ─────────────────────────────────────────────
-  window.addToPlaylist = function(videoId, title) {
-    if (!userPlaylists.length) {
-      // Crear lista por defecto
-      const name = prompt('Nombre de la nueva lista:','Mis favoritos');
-      if (!name) return;
-      userPlaylists.push({id: Date.now().toString(36), name, videos:[]});
-      savePlaylists();
-    }
-    // Si hay una lista activa, añadir ahí; si no, mostrar selector
-    if (userPlaylists.length === 1) {
-      addVideoToPlaylist(0, videoId, title);
-    } else {
-      showPlaylistSelector(videoId, title);
-    }
+  // ── MINI PLAYER — LISTAS SERVIDOR ────────────────────────────────
+  window.miniCreatePlaylist = function() { openPlaylists(); };
+
+  window.miniDeletePlaylist = async function(id) {
+    const pl = userPlaylists.find(p=>p.id===id);
+    if (!confirm(`¿Eliminar "${pl?.name}"?`)) return;
+    await deletePlaylist(id);
+    miniRenderPlaylists();
   };
 
-  function showPlaylistSelector(videoId, title) {
-    // Abrir panel de listas y mostrar selector
-    const mp = document.getElementById('mini-player');
-    if (mp) mp.style.display = '';
-    createMiniPlayer();
-    miniPanelOpen = true;
-    miniActiveTab = 'playlists';
-    updateMiniPanel();
-    miniRenderPlaylists(videoId, title);
-  }
-
-  function addVideoToPlaylist(plIdx, videoId, title) {
-    const pl = userPlaylists[plIdx];
+  window.miniPlayPlaylist = function(id) {
+    const pl = userPlaylists.find(p=>p.id===id);
     if (!pl) return;
-    if (pl.videos.find(v=>v.videoId===videoId)) {
-      showToast(`Ya está en "${pl.name}"`);
-      return;
-    }
-    pl.videos.push({videoId, title, addedAt: new Date().toISOString()});
-    savePlaylists();
-    showToast(`Añadido a "${pl.name}" ✓`);
-    miniRenderPlaylists();
-  }
-
-  window.miniCreatePlaylist = function() {
-    const name = prompt('Nombre de la nueva lista:');
-    if (!name || !name.trim()) return;
-    userPlaylists.push({id:Date.now().toString(36), name:name.trim(), videos:[]});
-    savePlaylists();
-    miniRenderPlaylists();
-  };
-
-  window.miniDeletePlaylist = function(idx) {
-    if (!confirm(`¿Eliminar "${userPlaylists[idx]?.name}"?`)) return;
-    userPlaylists.splice(idx,1);
-    savePlaylists();
-    miniRenderPlaylists();
-  };
-
-  window.miniPlayPlaylist = function(idx) {
-    const pl = userPlaylists[idx];
-    if (!pl || !pl.videos.length) { showToast('Lista vacía'); return; }
-    miniPlaylist = pl.videos;
+    const videos = (pl.tracks||[]).filter(t=>t.type==='video').map(t=>({videoId:t.itemId, title:t.title}));
+    if (!videos.length) { showToast('Sin videos en esta lista'); return; }
+    miniPlaylist = videos;
     miniCurrentIdx = 0;
     miniPlayVideo(0);
     miniRenderQueue();
   };
 
-  window.miniRemoveFromPlaylist = function(plIdx, vidIdx) {
-    userPlaylists[plIdx].videos.splice(vidIdx,1);
-    savePlaylists();
+  window._miniRemoveTrack = async function(plId, trackId) {
+    await removeTrackFromPlaylist(plId, trackId);
     miniRenderPlaylists();
   };
 
-  function miniRenderPlaylists(addVideoId, addTitle) {
+  function miniRenderPlaylists() {
     const list = document.getElementById('mini-pl-list');
     if (!list) return;
     if (!userPlaylists.length) {
       list.innerHTML = `<div style="padding:16px;text-align:center;color:rgba(255,255,255,.4);font-size:12px">
-        Sin listas aún.<br>Crea tu primera lista para guardar videos.
+        Sin listas aún.<br>
+        <button onclick="openPlaylists()" style="margin-top:8px;background:none;border:1px solid rgba(255,255,255,.2);color:#fff;padding:4px 12px;border-radius:20px;cursor:pointer;font-size:12px">Crear lista</button>
       </div>`;
       return;
     }
-    list.innerHTML = userPlaylists.map((pl,i) => `
-      <div class="mini-pl-item">
-        <div class="mini-pl-header">
-          <i class="fas fa-music" style="color:var(--primary-2);margin-right:6px"></i>
-          <span class="mini-pl-name">${esc(pl.name)}</span>
-          <span class="mini-pl-count">${pl.videos.length} videos</span>
-          <div class="mini-pl-btns">
-            ${addVideoId?`<button onclick="addVideoToPlaylist(${i},'${esc(addVideoId)}','${esc(addTitle||'')}');miniRenderPlaylists()" title="Añadir aquí"><i class="fas fa-plus"></i></button>`:''}
-            <button onclick="miniPlayPlaylist(${i})" title="Reproducir lista"><i class="fas fa-play"></i></button>
-            <button onclick="miniDeletePlaylist(${i})" title="Eliminar lista" style="color:#ef4444"><i class="fas fa-trash"></i></button>
+    list.innerHTML = userPlaylists.map(pl => {
+      const videos = (pl.tracks||[]).filter(t=>t.type==='video');
+      return `
+        <div class="mini-pl-item">
+          <div class="mini-pl-header">
+            <i class="fas fa-music" style="color:var(--primary-2);margin-right:6px"></i>
+            <span class="mini-pl-name">${esc(pl.name)}</span>
+            <span class="mini-pl-count">${(pl.tracks||[]).length} items</span>
+            <div class="mini-pl-btns">
+              <button onclick="miniPlayPlaylist('${esc(pl.id)}')" title="Reproducir"><i class="fas fa-play"></i></button>
+              <button onclick="miniDeletePlaylist('${esc(pl.id)}')" style="color:#ef4444" title="Eliminar"><i class="fas fa-trash"></i></button>
+            </div>
           </div>
-        </div>
-        ${pl.videos.length?`<div class="mini-pl-videos">${pl.videos.slice(0,3).map((v,j)=>`
-          <div class="mini-pl-video">
-            <img src="https://img.youtube.com/vi/${esc(v.videoId)}/default.jpg" alt="">
-            <span>${esc(v.title||v.videoId)}</span>
-            <button onclick="miniRemoveFromPlaylist(${i},${j})" title="Quitar"><i class="fas fa-times"></i></button>
-          </div>`).join('')}
-          ${pl.videos.length>3?`<div style="font-size:11px;color:rgba(255,255,255,.4);padding:4px 8px">+${pl.videos.length-3} más</div>`:''}
-        </div>`:''}
-      </div>`).join('');
+          ${videos.length?`<div class="mini-pl-videos">${videos.slice(0,3).map(v=>`
+            <div class="mini-pl-video">
+              <img src="https://img.youtube.com/vi/${esc(v.itemId)}/default.jpg" alt="">
+              <span>${esc(v.title||v.itemId)}</span>
+              <button onclick="_miniRemoveTrack('${esc(pl.id)}','${esc(v.id)}')" title="Quitar"><i class="fas fa-times"></i></button>
+            </div>`).join('')}
+            ${videos.length>3?`<div style="font-size:11px;color:rgba(255,255,255,.4);padding:4px 8px">+${videos.length-3} más</div>`:''}
+          </div>`:''}
+        </div>`;
+    }).join('');
   }
 
   // ── GÉNEROS DINÁMICOS ─────────────────────────────────────────────

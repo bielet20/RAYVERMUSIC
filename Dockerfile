@@ -11,7 +11,11 @@ RUN apk add --no-cache nodejs
 # Frontend estático — todos los archivos html y assets
 COPY index.html gracias.html admin.html styles.css script.js radio.js \
      robots.txt sitemap.xml logo.jpg hero_bg.png \
+     manifest.json service-worker.js pwa-install.js \
      /usr/share/nginx/html/
+
+# PWA — iconos
+COPY icons/ /usr/share/nginx/html/icons/
 
 # nginx.conf apuntando a localhost (contenedor único)
 COPY nginx-single.conf /etc/nginx/conf.d/default.conf

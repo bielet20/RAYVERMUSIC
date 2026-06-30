@@ -6,7 +6,7 @@
  * que siempre van a red para tener datos frescos.
  */
 
-const CACHE_VERSION = 'rayver-shell-v1';
+const CACHE_VERSION = 'rayver-shell-v2';
 const SHELL_ASSETS = [
   '/',
   '/index.html',
@@ -54,19 +54,18 @@ self.addEventListener('fetch', (event) => {
   // Solo cachear peticiones GET del propio origen
   if (event.request.method !== 'GET' || url.origin !== self.location.origin) return;
 
+  // Network-first: siempre intenta la red para servir la última versión desplegada
+  // (HTML/JS/CSS) — así el reproductor y el resto del código se actualizan en cada
+  // deploy. Solo cae a la copia en cache si no hay red (offline).
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      const networkFetch = fetch(event.request)
-        .then((response) => {
-          if (response && response.ok) {
-            const clone = response.clone();
-            caches.open(CACHE_VERSION).then((cache) => cache.put(event.request, clone));
-          }
-          return response;
-        })
-        .catch(() => cached);
-      // Stale-while-revalidate: sirve cache al instante si existe, refresca en segundo plano
-      return cached || networkFetch;
-    })
+    fetch(event.request)
+      .then((response) => {
+        if (response && response.ok) {
+          const clone = response.clone();
+          caches.open(CACHE_VERSION).then((cache) => cache.put(event.request, clone));
+        }
+        return response;
+      })
+      .catch(() => caches.match(event.request))
   );
 });

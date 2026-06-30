@@ -1,0 +1,61 @@
+<!--
+  INTEGRACIÓN:
+  1. Coloca este bloque de menú justo ENCIMA de tu .radio-player actual (el contenedor de SoundCloud).
+  2. Envuelve tu .radio-player existente con <div id="player-soundcloud">...</div>
+     (todo lo que ya tienes de radio.js sigue funcionando igual dentro de ese div).
+  3. Añade los dos divs vacíos #player-youtube y #player-spotify justo después.
+  4. Al final de body, después de radio.js, añade:
+     <script src="platform-switcher.js"></script>
+-->
+
+<div id="platform-menu" class="platform-menu">
+  <button type="button" data-platform="soundcloud" class="platform-btn active">
+    <i class="fab fa-soundcloud"></i> SoundCloud
+  </button>
+  <button type="button" data-platform="youtube" class="platform-btn">
+    <i class="fab fa-youtube"></i> YouTube
+  </button>
+  <button type="button" data-platform="spotify" class="platform-btn">
+    <i class="fab fa-spotify"></i> Spotify
+  </button>
+</div>
+
+<!-- Tu .radio-player actual va DENTRO de este div -->
+<div id="player-soundcloud">
+  <!-- ... contenido existente del reproductor SoundCloud (no tocar) ... -->
+</div>
+
+<div id="player-youtube" style="display:none"></div>
+<div id="player-spotify" style="display:none"></div>
+
+<style>
+  .platform-menu {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+  }
+  .platform-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(255,255,255,.06);
+    border: 1px solid rgba(255,255,255,.12);
+    color: #e5e5e5;
+    padding: 8px 14px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all .2s ease;
+  }
+  .platform-btn:hover {
+    background: rgba(168,85,247,.15);
+    border-color: rgba(168,85,247,.4);
+  }
+  .platform-btn.active {
+    background: #a855f7;
+    border-color: #a855f7;
+    color: #fff;
+  }
+</style>

@@ -24,6 +24,12 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <script async src="https://plausible.io/js/pa-ax8pbKKZr_jYIfg8t1P28.js"></script>
 <script>window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)};window.plausible.init=window.plausible.init||function(i){window.plausible.o=i||{}};window.plausible.init();</script>
+<!-- PWA -->
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#a855f7">
+<link rel="apple-touch-icon" href="/icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 </head>
 <body>
 
@@ -379,5 +385,12 @@
 
 <script src="script.js"></script>
 <script src="radio.js"></script>
+<!-- PWA: botón flotante de instalación (oculto por defecto, se muestra solo si el navegador soporta instalar) -->
+<button id="pwa-install-btn" style="display:none;position:fixed;bottom:90px;right:20px;z-index:9999;
+  background:#a855f7;color:#fff;border:none;border-radius:999px;padding:12px 18px;
+  font-weight:600;box-shadow:0 4px 16px rgba(168,85,247,.4);cursor:pointer;">
+  <i class="fas fa-download"></i> Instalar app
+</button>
+<script src="pwa-install.js"></script>
 </body>
 </html>

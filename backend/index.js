@@ -34,7 +34,20 @@ let db = loadDB();
 
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
 
-// ───────────────────────── Auth ─────────────────────────
+// Migrate: seed missing collections
+if (!db.users)    { db.users    = []; saveDB(db); }
+if (!db.playlists){ db.playlists= []; saveDB(db); }
+if (!db.genres) {
+  db.genres = [
+    { id:'g1', name:'Trance',       slug:'trance',      color:'#8a2be2', order:0 },
+    { id:'g2', name:'Electrónica',  slug:'electronica', color:'#00e5ff', order:1 },
+    { id:'g3', name:'Orquestal',    slug:'orquestal',   color:'#f59e0b', order:2 },
+    { id:'g4', name:'Pop / Balada', slug:'pop',         color:'#ec4899', order:3 },
+  ];
+  saveDB(db);
+}
+
+// ───────────────────────── Auth (admin) ─────────────────────────
 const SESSIONS = new Set();
 function authMiddleware(req, res, next) {
   const tok = (req.headers.authorization || '').replace('Bearer ', '');
@@ -495,6 +508,140 @@ app.patch('/api/videos/reorder', authMiddleware, (req, res) => {
     const v = (db.videos || []).find(x => x.id === id);
     if (v) v.order = i;
   });
+  saveDB(db);
+  res.json({ ok: true });
+});
+
+// ───────────────────────── USUARIOS & PLAYLISTS ─────────────────────────
+const USER_SESSIONS = new Map(); // token → { userId, email, name }
+
+function userAuth(req, res, next) {
+  const tok = (req.headers.authorization || '').replace('Bearer ', '');
+  const session = tok ? USER_SESSIONS.get(tok) : null;
+  if (!session) return res.status(401).json({ error: 'Debes iniciar sesión' });
+  req.user = session;
+  next();
+}
+
+app.post('/api/user/register', (req, res) => {
+  const { email, password, name } = req.body || {};
+  if (!email || !password || !name) return res.status(400).json({ error: 'Faltan campos' });
+  if (password.length < 6) return res.status(400).json({ error: 'Contraseña mínimo 6 caracteres' });
+  const emailNorm = email.toLowerCase().trim();
+  if ((db.users || []).find(u => u.email === emailNorm))
+    return res.status(409).json({ error: 'Este email ya está registrado' });
+  const passwordHash = crypto.createHash('sha256').update(password).digest('hex');
+  const user = { id: uid(), email: emailNorm, name: name.trim(), passwordHash, createdAt: new Date().toISOString() };
+  db.users.push(user);
+  saveDB(db);
+  const token = crypto.randomBytes(24).toString('hex');
+  USER_SESSIONS.set(token, { userId: user.id, email: user.email, name: user.name });
+  res.json({ token, user: { id: user.id, email: user.email, name: user.name } });
+});
+
+app.post('/api/user/login', (req, res) => {
+  const { email, password } = req.body || {};
+  if (!email || !password) return res.status(400).json({ error: 'Faltan campos' });
+  const emailNorm = email.toLowerCase().trim();
+  const user = (db.users || []).find(u => u.email === emailNorm);
+  const hash = crypto.createHash('sha256').update(password).digest('hex');
+  if (!user || hash !== user.passwordHash)
+    return res.status(401).json({ error: 'Email o contraseña incorrectos' });
+  const token = crypto.randomBytes(24).toString('hex');
+  USER_SESSIONS.set(token, { userId: user.id, email: user.email, name: user.name });
+  res.json({ token, user: { id: user.id, email: user.email, name: user.name } });
+});
+
+app.post('/api/user/logout', userAuth, (req, res) => {
+  const tok = (req.headers.authorization || '').replace('Bearer ', '');
+  USER_SESSIONS.delete(tok);
+  res.json({ ok: true });
+});
+
+app.get('/api/user/me', userAuth, (req, res) => res.json(req.user));
+
+app.get('/api/user/playlists', userAuth, (req, res) => {
+  res.json((db.playlists || []).filter(p => p.userId === req.user.userId));
+});
+
+app.post('/api/user/playlists', userAuth, (req, res) => {
+  const { name } = req.body || {};
+  if (!name || !name.trim()) return res.status(400).json({ error: 'Nombre requerido' });
+  const pl = { id: uid(), userId: req.user.userId, name: name.trim(), tracks: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+  db.playlists.push(pl);
+  saveDB(db);
+  res.json(pl);
+});
+
+app.put('/api/user/playlists/:id', userAuth, (req, res) => {
+  const pl = (db.playlists || []).find(p => p.id === req.params.id && p.userId === req.user.userId);
+  if (!pl) return res.status(404).json({ error: 'No encontrada' });
+  if (req.body.name) pl.name = req.body.name.trim();
+  pl.updatedAt = new Date().toISOString();
+  saveDB(db);
+  res.json(pl);
+});
+
+app.delete('/api/user/playlists/:id', userAuth, (req, res) => {
+  const before = db.playlists.length;
+  db.playlists = db.playlists.filter(p => !(p.id === req.params.id && p.userId === req.user.userId));
+  if (db.playlists.length === before) return res.status(404).json({ error: 'No encontrada' });
+  saveDB(db);
+  res.json({ ok: true });
+});
+
+app.post('/api/user/playlists/:id/tracks', userAuth, (req, res) => {
+  const pl = (db.playlists || []).find(p => p.id === req.params.id && p.userId === req.user.userId);
+  if (!pl) return res.status(404).json({ error: 'No encontrada' });
+  const { type, itemId, title, cover, url } = req.body || {};
+  if (!title) return res.status(400).json({ error: 'Título requerido' });
+  if (pl.tracks.find(t => t.itemId === itemId && t.type === type))
+    return res.status(409).json({ error: 'Ya está en la lista' });
+  const track = { id: uid(), type: type || 'track', itemId: itemId || '', title, cover: cover || '', url: url || '', addedAt: new Date().toISOString() };
+  pl.tracks.push(track);
+  pl.updatedAt = new Date().toISOString();
+  saveDB(db);
+  res.json(track);
+});
+
+app.delete('/api/user/playlists/:id/tracks/:trackId', userAuth, (req, res) => {
+  const pl = (db.playlists || []).find(p => p.id === req.params.id && p.userId === req.user.userId);
+  if (!pl) return res.status(404).json({ error: 'No encontrada' });
+  const before = pl.tracks.length;
+  pl.tracks = pl.tracks.filter(t => t.id !== req.params.trackId);
+  if (pl.tracks.length === before) return res.status(404).json({ error: 'Track no encontrado' });
+  pl.updatedAt = new Date().toISOString();
+  saveDB(db);
+  res.json({ ok: true });
+});
+
+// ───────────────────────── GÉNEROS ─────────────────────────
+app.get('/api/public/genres', (req, res) => {
+  res.json((db.genres || []).slice().sort((a, b) => (a.order || 0) - (b.order || 0)));
+});
+
+app.get('/api/genres', authMiddleware, (req, res) => res.json(db.genres || []));
+
+app.post('/api/genres', authMiddleware, (req, res) => {
+  const { name, slug, color } = req.body || {};
+  if (!name || !slug) return res.status(400).json({ error: 'name y slug requeridos' });
+  const genre = { id: uid(), name, slug, color: color || '#8a2be2', order: (db.genres || []).length };
+  db.genres = db.genres || [];
+  db.genres.push(genre);
+  saveDB(db);
+  res.json(genre);
+});
+
+app.put('/api/genres/:id', authMiddleware, (req, res) => {
+  const g = (db.genres || []).find(x => x.id === req.params.id);
+  if (!g) return res.status(404).json({ error: 'No encontrado' });
+  Object.assign(g, req.body, { id: req.params.id });
+  saveDB(db);
+  res.json(g);
+});
+
+app.delete('/api/genres/:id', authMiddleware, (req, res) => {
+  db.genres = (db.genres || []).filter(x => x.id !== req.params.id);
   saveDB(db);
   res.json({ ok: true });
 });

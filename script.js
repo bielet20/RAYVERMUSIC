@@ -1,4 +1,272 @@
 'use strict';
+
+// ── AUTH STATE ────────────────────────────────────────────────────
+let AUTH = { token: null, user: null };
+
+function getToken() { return localStorage.getItem('rv_token'); }
+function setToken(t, user) {
+  AUTH.token = t;
+  AUTH.user = user;
+  localStorage.setItem('rv_token', t);
+  localStorage.setItem('rv_user', JSON.stringify(user));
+}
+function clearToken() {
+  AUTH.token = null;
+  AUTH.user = null;
+  localStorage.removeItem('rv_token');
+  localStorage.removeItem('rv_user');
+}
+
+async function apiUser(path, opts = {}) {
+  const tok = AUTH.token || getToken();
+  const headers = { 'Content-Type': 'application/json', ...(tok ? { Authorization: 'Bearer ' + tok } : {}) };
+  try {
+    const r = await fetch('/api/user' + path, { headers, ...opts });
+    const json = await r.json().catch(() => ({}));
+    return { ok: r.ok, status: r.status, data: json };
+  } catch { return { ok: false, status: 0, data: {} }; }
+}
+
+// ── AUTH MODAL ────────────────────────────────────────────────────
+window.openAuthModal = function(hint) {
+  document.getElementById('auth-modal').style.display = 'flex';
+  if (hint === 'register') switchAuthTab('register');
+};
+window.closeAuthModal = function() {
+  document.getElementById('auth-modal').style.display = 'none';
+};
+window.switchAuthTab = function(tab) {
+  document.getElementById('form-login').style.display    = tab === 'login'    ? '' : 'none';
+  document.getElementById('form-register').style.display = tab === 'register' ? '' : 'none';
+  document.getElementById('tab-login').classList.toggle('active',    tab === 'login');
+  document.getElementById('tab-register').classList.toggle('active', tab === 'register');
+  document.getElementById('login-error').textContent = '';
+  document.getElementById('reg-error').textContent   = '';
+};
+
+window.submitLogin = async function(e) {
+  e.preventDefault();
+  const btn = document.getElementById('login-btn');
+  const errEl = document.getElementById('login-error');
+  btn.disabled = true; btn.textContent = 'Entrando…';
+  errEl.textContent = '';
+  const r = await apiUser('/login', {
+    method: 'POST',
+    body: JSON.stringify({ email: document.getElementById('login-email').value, password: document.getElementById('login-password').value })
+  });
+  btn.disabled = false; btn.textContent = 'Iniciar sesión';
+  if (!r.ok) { errEl.textContent = r.data.error || 'Error al iniciar sesión'; return; }
+  setToken(r.data.token, r.data.user);
+  closeAuthModal();
+  updateAuthUI();
+  await loadUserPlaylists();
+  showToastGlobal('¡Bienvenido, ' + r.data.user.name + '!');
+};
+
+window.submitRegister = async function(e) {
+  e.preventDefault();
+  const btn = document.getElementById('reg-btn');
+  const errEl = document.getElementById('reg-error');
+  btn.disabled = true; btn.textContent = 'Creando cuenta…';
+  errEl.textContent = '';
+  const r = await apiUser('/register', {
+    method: 'POST',
+    body: JSON.stringify({ name: document.getElementById('reg-name').value, email: document.getElementById('reg-email').value, password: document.getElementById('reg-password').value })
+  });
+  btn.disabled = false; btn.textContent = 'Crear cuenta';
+  if (!r.ok) { errEl.textContent = r.data.error || 'Error al registrarse'; return; }
+  setToken(r.data.token, r.data.user);
+  closeAuthModal();
+  updateAuthUI();
+  await loadUserPlaylists();
+  showToastGlobal('¡Cuenta creada! Bienvenido, ' + r.data.user.name + ' 🎵');
+};
+
+window.logoutUser = async function() {
+  await apiUser('/logout', { method: 'POST' });
+  clearToken();
+  userPlaylists = [];
+  updateAuthUI();
+  closeDropdownUser();
+  showToastGlobal('Sesión cerrada');
+};
+
+function updateAuthUI() {
+  const loginBtn  = document.getElementById('btn-open-auth');
+  const userMenu  = document.getElementById('user-menu');
+  const nameEl    = document.getElementById('nav-user-name');
+  if (AUTH.user) {
+    loginBtn && (loginBtn.style.display = 'none');
+    userMenu && (userMenu.style.display = '');
+    nameEl   && (nameEl.textContent = AUTH.user.name.split(' ')[0]);
+  } else {
+    loginBtn && (loginBtn.style.display = '');
+    userMenu && (userMenu.style.display = 'none');
+  }
+}
+
+window.toggleUserDropdown = function() {
+  const dd = document.getElementById('user-dropdown');
+  if (dd) dd.style.display = dd.style.display === 'none' ? '' : 'none';
+};
+function closeDropdownUser() {
+  const dd = document.getElementById('user-dropdown');
+  if (dd) dd.style.display = 'none';
+}
+document.addEventListener('click', e => {
+  if (!e.target.closest('#user-menu')) closeDropdownUser();
+});
+
+// ── SERVER PLAYLISTS ──────────────────────────────────────────────
+let userPlaylists = [];
+let _pickerPending = null; // { type, itemId, title, cover, url }
+
+async function loadUserPlaylists() {
+  if (!AUTH.token && !getToken()) return;
+  AUTH.token = AUTH.token || getToken();
+  const r = await apiUser('/playlists');
+  if (r.ok) userPlaylists = r.data;
+}
+
+window.addToPlaylist = function(type, itemId, title, cover, url) {
+  if (!AUTH.user && !getToken()) {
+    _pickerPending = { type, itemId, title, cover, url };
+    openAuthModal();
+    return;
+  }
+  _pickerPending = { type, itemId, title, cover, url };
+  openPlaylistPicker();
+};
+
+window.openPlaylists = function() {
+  document.getElementById('playlists-modal').style.display = 'flex';
+  closeDropdownUser();
+  renderPlaylistsModal();
+};
+window.closePlaylists = function() { document.getElementById('playlists-modal').style.display = 'none'; };
+
+function renderPlaylistsModal() {
+  const container = document.getElementById('playlists-list');
+  if (!container) return;
+  if (!userPlaylists.length) {
+    container.innerHTML = '<p style="color:var(--muted);text-align:center;padding:20px 0">Sin listas todavía. Crea tu primera lista.</p>';
+    return;
+  }
+  const TYPE_LABELS = { video: 'Video', track: 'Track', beat: 'Beat' };
+  container.innerHTML = userPlaylists.map(pl => `
+    <div class="playlist-item">
+      <div class="playlist-item-header">
+        <i class="fas fa-music" style="color:var(--primary-2)"></i>
+        <span class="playlist-item-name">${esc(pl.name)}</span>
+        <span class="playlist-item-count">${pl.tracks.length} item${pl.tracks.length !== 1 ? 's' : ''}</span>
+        <div class="playlist-item-btns">
+          <button onclick="deletePlaylist('${esc(pl.id)}')" class="danger" title="Eliminar lista"><i class="fas fa-trash"></i></button>
+        </div>
+      </div>
+      ${pl.tracks.length ? `<div class="playlist-tracks-list">${pl.tracks.map(t => `
+        <div class="playlist-track-row">
+          <span class="track-type-badge">${TYPE_LABELS[t.type] || t.type}</span>
+          <span class="playlist-track-title">${esc(t.title)}</span>
+          ${t.url ? `<a href="${esc(t.url)}" target="_blank" style="color:var(--primary-2);font-size:12px"><i class="fas fa-external-link-alt"></i></a>` : ''}
+          <button onclick="removeTrackFromPlaylist('${esc(pl.id)}','${esc(t.id)}')" title="Quitar"><i class="fas fa-times"></i></button>
+        </div>`).join('')}</div>` : ''}
+    </div>`).join('');
+}
+
+window.createPlaylistModal = async function(fromPicker) {
+  const name = prompt('Nombre de la nueva lista:');
+  if (!name || !name.trim()) return;
+  const r = await apiUser('/playlists', { method: 'POST', body: JSON.stringify({ name }) });
+  if (!r.ok) { showToastGlobal(r.data.error || 'Error al crear lista'); return; }
+  userPlaylists.push(r.data);
+  renderPlaylistsModal();
+  if (fromPicker) { renderPlaylistPicker(); }
+  showToastGlobal('Lista "' + r.data.name + '" creada');
+};
+
+window.deletePlaylist = async function(id) {
+  if (!confirm('¿Eliminar esta lista?')) return;
+  const r = await apiUser('/playlists/' + id, { method: 'DELETE' });
+  if (!r.ok) { showToastGlobal('Error al eliminar'); return; }
+  userPlaylists = userPlaylists.filter(p => p.id !== id);
+  renderPlaylistsModal();
+};
+
+window.removeTrackFromPlaylist = async function(plId, trackId) {
+  const r = await apiUser('/playlists/' + plId + '/tracks/' + trackId, { method: 'DELETE' });
+  if (!r.ok) { showToastGlobal('Error al quitar'); return; }
+  const pl = userPlaylists.find(p => p.id === plId);
+  if (pl) pl.tracks = pl.tracks.filter(t => t.id !== trackId);
+  renderPlaylistsModal();
+};
+
+function openPlaylistPicker() {
+  const modal = document.getElementById('playlist-picker');
+  if (!modal) return;
+  modal.style.display = 'flex';
+  renderPlaylistPicker();
+}
+window.closePlaylistPicker = function() {
+  document.getElementById('playlist-picker').style.display = 'none';
+};
+
+function renderPlaylistPicker() {
+  const info = document.getElementById('picker-item-info');
+  const list = document.getElementById('picker-list');
+  if (!info || !list || !_pickerPending) return;
+  info.textContent = '🎵 ' + _pickerPending.title;
+  if (!userPlaylists.length) {
+    list.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:12px 0">No tienes listas todavía.</p>';
+    return;
+  }
+  list.innerHTML = userPlaylists.map(pl => `
+    <div class="picker-pl-row" onclick="addTrackToPlaylist('${esc(pl.id)}')">
+      <span class="picker-pl-name">${esc(pl.name)}</span>
+      <span class="picker-pl-count">${pl.tracks.length} items</span>
+    </div>`).join('');
+}
+
+async function addTrackToPlaylist(plId) {
+  if (!_pickerPending) return;
+  const r = await apiUser('/playlists/' + plId + '/tracks', {
+    method: 'POST',
+    body: JSON.stringify(_pickerPending)
+  });
+  if (r.status === 409) { showToastGlobal('Ya está en esa lista'); return; }
+  if (!r.ok) { showToastGlobal(r.data.error || 'Error'); return; }
+  const pl = userPlaylists.find(p => p.id === plId);
+  if (pl) pl.tracks.push(r.data);
+  closePlaylistPicker();
+  _pickerPending = null;
+  showToastGlobal('Añadido a "' + (pl ? pl.name : 'la lista') + '" ✓');
+}
+
+function showToastGlobal(msg) {
+  let t = document.getElementById('rayver-toast');
+  if (!t) { t = document.createElement('div'); t.id = 'rayver-toast'; document.body.appendChild(t); }
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.classList.remove('show'), 2800);
+}
+
+// ── INIT AUTH (check stored token) ───────────────────────────────
+async function initAuth() {
+  const tok = getToken();
+  if (!tok) return;
+  AUTH.token = tok;
+  const storedUser = localStorage.getItem('rv_user');
+  if (storedUser) { try { AUTH.user = JSON.parse(storedUser); } catch {} }
+  const r = await apiUser('/me');
+  if (r.ok) {
+    AUTH.user = r.data;
+    updateAuthUI();
+    await loadUserPlaylists();
+  } else {
+    clearToken();
+  }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
 
   // ── NAV SCROLL + ACTIVE ─────────────────────────────────────────
@@ -126,7 +394,8 @@ document.addEventListener('DOMContentLoaded', () => {
       const pills = Object.entries(t.platforms||{}).filter(([,v])=>v).map(([k,v])=>{const p=PLATS[k]||{l:k,c:'ptag-lk',i:'fas fa-link'};return `<a href="${esc(v)}" target="_blank" class="ptag ${p.c}"><i class="${p.i}"></i> ${p.l}</a>`;}).join('');
       const coverStyle = t.cover?`background-image:url(${t.cover});background-size:cover;background-position:center`:`background:${GRADS[i%GRADS.length]}`;
       const coverText = t.cover?'':`<span>${esc(t.title.split(' ').slice(0,2).join(' '))}</span>`;
-      return `<div class="track-card reveal"><div class="track-art" style="${coverStyle}">${coverText}</div><div class="track-info"><div class="track-name">${esc(t.title)}</div><div class="track-meta">${esc(t.type||'Single')}${t.year?' · '+t.year:''}</div><div class="track-platforms">${pills||'<span class="ptag ptag-lk">Próximamente</span>'}</div></div></div>`;
+      const spotifyUrl = t.spotifyUrl || (t.platforms && t.platforms.spotify) || '';
+      return `<div class="track-card reveal"><div class="track-art" style="${coverStyle}">${coverText}</div><div class="track-info"><div class="track-name">${esc(t.title)}</div><div class="track-meta">${esc(t.type||'Single')}${t.year?' · '+t.year:''}</div><div class="track-platforms">${pills||'<span class="ptag ptag-lk">Próximamente</span>'}</div><button class="btn-add-playlist" onclick="addToPlaylist('track','${esc(t.id||t.spotifyId||t.title)}','${esc(t.title)}','${esc(t.cover||'')}','${esc(spotifyUrl)}')" style="margin-top:8px"><i class="fas fa-plus"></i> Mi lista</button></div></div>`;
     }).join('');
     grid.querySelectorAll('.reveal').forEach(el => revealObs.observe(el));
   }
@@ -160,7 +429,7 @@ document.addEventListener('DOMContentLoaded', () => {
           <div class="yt-card-info">
             <div class="yt-card-title">${esc(v.title||v.videoId)}</div>
             <div class="yt-card-desc">${esc(v.desc||'')}</div>
-            <button class="yt-add-playlist" onclick="event.stopPropagation();addToPlaylist('${esc(v.videoId)}','${esc(v.title||v.videoId)}')" title="Añadir a mi lista">
+            <button class="yt-add-playlist btn-add-playlist" onclick="event.stopPropagation();addToPlaylist('video','${esc(v.videoId)}','${esc(v.title||v.videoId)}','https://img.youtube.com/vi/${esc(v.videoId)}/mqdefault.jpg','https://www.youtube.com/watch?v=${esc(v.videoId)}')" title="Añadir a mi lista">
               <i class="fas fa-plus"></i> Mi lista
             </button>
           </div>
@@ -214,7 +483,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const COVERS=['beat-trance','beat-electronic','beat-orquestal','beat-trance2','beat-electronic2','beat-pop'];
     grid.innerHTML = beats.map((p,i)=>{
       const price = p.price?`desde <strong>${p.price}€</strong>`:'Consultar';
-      return `<div class="beat-card" data-genre="${esc(p.genre||'electronica')}"><div class="beat-cover ${COVERS[i%COVERS.length]}"><span class="beat-genre-tag">${esc(p.category||'Beat')}</span>${p.emoji||EMOJIS[i%EMOJIS.length]}</div><div class="beat-body"><div class="beat-title">${esc(p.name)}</div><div class="beat-meta">${esc(p.description||'')}</div><div class="beat-footer"><span class="beat-price">${price}</span><a href="#contact" class="beats-btn" onclick="setMotivo('Licencia de beat — ${esc(p.name)}')">Licenciar</a></div></div></div>`;
+      return `<div class="beat-card" data-genre="${esc(p.genre||'electronica')}"><div class="beat-cover ${COVERS[i%COVERS.length]}"><span class="beat-genre-tag">${esc(p.category||'Beat')}</span>${p.emoji||EMOJIS[i%EMOJIS.length]}</div><div class="beat-body"><div class="beat-title">${esc(p.name)}</div><div class="beat-meta">${esc(p.description||'')}</div><div class="beat-footer"><span class="beat-price">${price}</span><a href="#contact" class="beats-btn" onclick="setMotivo('Licencia de beat — ${esc(p.name)}')">Licenciar</a></div><button class="btn-add-playlist" onclick="addToPlaylist('beat','${esc(p.id)}','${esc(p.name)}','','')" style="margin-top:8px"><i class="fas fa-plus"></i> Mi lista</button></div></div>`;
     }).join('');
   }
 
@@ -409,7 +678,7 @@ document.addEventListener('DOMContentLoaded', () => {
         <div class="mini-queue-info">
           <div class="mini-queue-title">${esc(v.title||v.videoId)}</div>
         </div>
-        <button onclick="event.stopPropagation();addToPlaylist('${esc(v.videoId)}','${esc(v.title||v.videoId)}')" class="mini-add-btn" title="Añadir a lista"><i class="fas fa-plus"></i></button>
+        <button onclick="event.stopPropagation();addToPlaylist('video','${esc(v.videoId)}','${esc(v.title||v.videoId)}','','https://www.youtube.com/watch?v=${esc(v.videoId)}')" class="mini-add-btn" title="Añadir a lista"><i class="fas fa-plus"></i></button>
       </div>`).join('');
   }
 
@@ -516,23 +785,34 @@ document.addEventListener('DOMContentLoaded', () => {
       </div>`).join('');
   }
 
-  // ── TOAST ────────────────────────────────────────────────────────
-  function showToast(msg) {
-    let t = document.getElementById('rayver-toast');
-    if (!t) {
-      t = document.createElement('div');
-      t.id = 'rayver-toast';
-      document.body.appendChild(t);
-    }
-    t.textContent = msg;
-    t.classList.add('show');
-    clearTimeout(t._timer);
-    t._timer = setTimeout(() => t.classList.remove('show'), 2500);
+  // ── GÉNEROS DINÁMICOS ─────────────────────────────────────────────
+  async function loadGenres() {
+    const genres = await apiGet('/genres');
+    const filterEl = document.getElementById('beats-filter');
+    if (!filterEl || !genres || !genres.length) return;
+    filterEl.innerHTML = `<button class="filter-btn active" data-genre="all">Todos</button>` +
+      genres.map(g => `<button class="filter-btn" data-genre="${esc(g.slug)}">${esc(g.name)}</button>`).join('');
+    filterEl.querySelectorAll('.filter-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        filterEl.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const genre = btn.dataset.genre;
+        document.querySelectorAll('.beat-card').forEach(card => {
+          card.style.display = genre === 'all' || card.dataset.genre === genre ? '' : 'none';
+        });
+      });
+    });
   }
 
+  // ── TOAST (alias para el global) ─────────────────────────────────
+  function showToast(msg) { showToastGlobal(msg); }
+
   // ── INIT ─────────────────────────────────────────────────────────
+  initAuth();
+  updateAuthUI();
   createMiniPlayer();
   loadTracks();
   loadVideos();
   loadBeats();
+  loadGenres();
 });

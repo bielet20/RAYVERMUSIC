@@ -47,10 +47,94 @@
     <li><a href="#about" data-section="about">Sobre Mí</a></li>
     <li><a href="#contact" data-section="contact">Contacto</a></li>
   </ul>
+  <div class="nav-user" id="nav-user">
+    <button class="btn-user-login" id="btn-open-auth" onclick="openAuthModal()">
+      <i class="fas fa-user"></i> Entrar
+    </button>
+    <div class="user-menu" id="user-menu" style="display:none">
+      <button class="btn-user-avatar" id="btn-user-avatar" onclick="toggleUserDropdown()">
+        <i class="fas fa-user-circle"></i>
+        <span id="nav-user-name"></span>
+        <i class="fas fa-chevron-down" style="font-size:10px"></i>
+      </button>
+      <div class="user-dropdown" id="user-dropdown" style="display:none">
+        <button onclick="openPlaylists()"><i class="fas fa-list-music"></i> Mis listas</button>
+        <button onclick="logoutUser()" style="color:#ef4444"><i class="fas fa-sign-out-alt"></i> Cerrar sesión</button>
+      </div>
+    </div>
+  </div>
   <button class="hamburger" id="hamburger" aria-label="Menú">
     <span></span><span></span><span></span>
   </button>
 </nav>
+
+<!-- ═══════════════════════════════════════════════════════ AUTH MODAL -->
+<div class="modal-overlay" id="auth-modal" style="display:none" onclick="if(event.target===this)closeAuthModal()">
+  <div class="modal-box glass">
+    <button class="modal-close" onclick="closeAuthModal()"><i class="fas fa-times"></i></button>
+    <div class="auth-tabs">
+      <button class="auth-tab active" id="tab-login" onclick="switchAuthTab('login')">Iniciar sesión</button>
+      <button class="auth-tab" id="tab-register" onclick="switchAuthTab('register')">Registrarse</button>
+    </div>
+
+    <form id="form-login" class="auth-form" onsubmit="submitLogin(event)">
+      <div class="form-group">
+        <label>Email</label>
+        <input type="email" id="login-email" placeholder="tu@email.com" required>
+      </div>
+      <div class="form-group">
+        <label>Contraseña</label>
+        <input type="password" id="login-password" placeholder="••••••" required>
+      </div>
+      <p class="auth-error" id="login-error"></p>
+      <button type="submit" class="btn btn-primary btn-block" id="login-btn">Iniciar sesión</button>
+      <p class="auth-switch">¿No tienes cuenta? <a onclick="switchAuthTab('register')">Regístrate gratis</a></p>
+    </form>
+
+    <form id="form-register" class="auth-form" style="display:none" onsubmit="submitRegister(event)">
+      <div class="form-group">
+        <label>Nombre</label>
+        <input type="text" id="reg-name" placeholder="Tu nombre" required>
+      </div>
+      <div class="form-group">
+        <label>Email</label>
+        <input type="email" id="reg-email" placeholder="tu@email.com" required>
+      </div>
+      <div class="form-group">
+        <label>Contraseña <small>(mínimo 6 caracteres)</small></label>
+        <input type="password" id="reg-password" placeholder="••••••" required minlength="6">
+      </div>
+      <p class="auth-error" id="reg-error"></p>
+      <button type="submit" class="btn btn-primary btn-block" id="reg-btn">Crear cuenta</button>
+      <p class="auth-switch">¿Ya tienes cuenta? <a onclick="switchAuthTab('login')">Inicia sesión</a></p>
+    </form>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ PLAYLISTS MODAL -->
+<div class="modal-overlay" id="playlists-modal" style="display:none" onclick="if(event.target===this)closePlaylists()">
+  <div class="modal-box modal-playlists glass">
+    <button class="modal-close" onclick="closePlaylists()"><i class="fas fa-times"></i></button>
+    <h3 class="modal-title"><i class="fas fa-music"></i> Mis Listas</h3>
+    <button class="btn btn-primary" onclick="createPlaylistModal()" style="margin-bottom:16px">
+      <i class="fas fa-plus"></i> Nueva lista
+    </button>
+    <div id="playlists-list"></div>
+  </div>
+</div>
+
+<!-- ADD TO PLAYLIST PICKER -->
+<div class="modal-overlay" id="playlist-picker" style="display:none" onclick="if(event.target===this)closePlaylistPicker()">
+  <div class="modal-box modal-sm glass">
+    <button class="modal-close" onclick="closePlaylistPicker()"><i class="fas fa-times"></i></button>
+    <h3 class="modal-title"><i class="fas fa-plus"></i> Añadir a lista</h3>
+    <div id="picker-item-info" class="picker-item-info"></div>
+    <div id="picker-list"></div>
+    <button class="btn btn-outline btn-block" onclick="createPlaylistModal(true)" style="margin-top:8px">
+      <i class="fas fa-plus"></i> Nueva lista
+    </button>
+  </div>
+</div>
 
 <!-- ═══════════════════════════════════════════════════════ HERO -->
 <section id="home" class="hero">

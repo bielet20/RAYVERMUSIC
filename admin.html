@@ -1358,3 +1358,203 @@ if (typeof TOKEN !== 'undefined' && TOKEN) {
   setTimeout(loadStoreData, 500);
 }
 </script>
+
+<!-- ══════════════════════════════════════════════════════════
+     GÉNEROS MUSICALES
+     ════════════════════════════════════════════════════════ -->
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  // Nav item
+  const nav = document.querySelector('.sidebar nav');
+  if (nav) {
+    const btn = document.createElement('button');
+    btn.className = 'ni';
+    btn.setAttribute('onclick', "showPage('genres')");
+    btn.innerHTML = `<i class="fas fa-tags"></i> Géneros`;
+    nav.appendChild(btn);
+  }
+
+  // Page
+  const main = document.querySelector('.main');
+  if (main) {
+    main.insertAdjacentHTML('beforeend', `
+      <div id="page-genres" class="page">
+        <div class="ph">
+          <div><div class="ptitle">Géneros musicales</div><div class="psub">Controla los filtros que aparecen en la sección Beats de la web</div></div>
+          <button class="btn btn-p" onclick="openGenreModal()"><i class="fas fa-plus"></i> Nuevo género</button>
+        </div>
+        <div class="gc">
+          <div class="ch"><span class="ct">Géneros activos</span><span style="font-size:12px;color:var(--muted)">Se muestran como filtros en la sección Beats</span></div>
+          <ul class="tlist" id="genre-list"><li class="loading"><i class="fas fa-circle-notch spin"></i> Cargando…</li></ul>
+        </div>
+      </div>
+    `);
+  }
+
+  // Modal
+  document.body.insertAdjacentHTML('beforeend', `
+    <div class="mbg" id="modal-genre">
+      <div class="modal">
+        <div class="mh">
+          <span class="mt" id="mg-title">Nuevo género</span>
+          <button class="mc" onclick="closeModal('modal-genre')"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="mb">
+          <div class="field"><label>Nombre *</label><input type="text" id="g-name" placeholder="Ej: Trance"></div>
+          <div class="field">
+            <label>Slug * <span style="font-weight:400;font-size:11px">(se usa para filtrar, solo minúsculas sin espacios)</span></label>
+            <input type="text" id="g-slug" placeholder="trance">
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <div class="field">
+              <label>Color de acento</label>
+              <div style="display:flex;align-items:center;gap:10px">
+                <input type="color" id="g-color" value="#8a2be2" style="width:48px;height:40px;border-radius:8px;border:1px solid var(--gb);background:none;cursor:pointer;padding:2px">
+                <input type="text" id="g-color-hex" placeholder="#8a2be2" style="flex:1" oninput="syncColorFromHex()">
+              </div>
+            </div>
+            <div class="field"><label>Orden</label><input type="number" id="g-order" placeholder="0" min="0" value="0"></div>
+          </div>
+          <div id="g-preview" style="margin-top:4px;display:flex;gap:8px;align-items:center">
+            <span style="font-size:12px;color:var(--muted)">Vista previa:</span>
+            <button id="g-preview-btn" class="filter-prev" style="padding:7px 18px;border-radius:999px;border:2px solid #8a2be2;background:rgba(138,43,226,.15);color:#8a2be2;font-family:inherit;font-size:13px;font-weight:600;cursor:default">Nuevo género</button>
+          </div>
+        </div>
+        <div class="mf">
+          <button class="btn btn-g" onclick="closeModal('modal-genre')">Cancelar</button>
+          <button class="btn btn-p" onclick="saveGenre()"><i class="fas fa-check"></i> Guardar</button>
+        </div>
+      </div>
+    </div>
+  `);
+
+  // Live preview
+  ['g-name','g-color'].forEach(id => {
+    document.getElementById(id)?.addEventListener('input', updateGenrePreview);
+  });
+  document.getElementById('g-name')?.addEventListener('input', autoSlug);
+  document.getElementById('g-color')?.addEventListener('input', () => {
+    const hex = document.getElementById('g-color').value;
+    document.getElementById('g-color-hex').value = hex;
+    updateGenrePreview();
+  });
+});
+
+let genres = [];
+let editGenreId = null;
+
+window.syncColorFromHex = function() {
+  const hex = document.getElementById('g-color-hex').value.trim();
+  if (/^#[0-9a-f]{6}$/i.test(hex)) {
+    document.getElementById('g-color').value = hex;
+    updateGenrePreview();
+  }
+};
+
+function autoSlug() {
+  const name = document.getElementById('g-name').value;
+  if (!editGenreId) {
+    document.getElementById('g-slug').value = name.toLowerCase()
+      .normalize('NFD').replace(/[̀-ͯ]/g,'')
+      .replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+  }
+  updateGenrePreview();
+}
+
+function updateGenrePreview() {
+  const name  = document.getElementById('g-name').value || 'Nuevo género';
+  const color = document.getElementById('g-color').value || '#8a2be2';
+  const btn   = document.getElementById('g-preview-btn');
+  if (btn) {
+    btn.textContent = name;
+    btn.style.borderColor = color;
+    btn.style.color = color;
+    btn.style.background = color + '26';
+  }
+}
+
+async function loadGenres() {
+  const r = await apiFetch('GET', '/genres');
+  if (r.ok) { genres = r.data; renderGenres(); }
+  else document.getElementById('genre-list').innerHTML = `<li class="empty"><p>Error cargando géneros</p></li>`;
+}
+
+function renderGenres() {
+  const ul = document.getElementById('genre-list');
+  if (!ul) return;
+  if (!genres.length) {
+    ul.innerHTML = `<li class="empty"><i class="fas fa-tags"></i><p>Sin géneros. Añade el primero.</p></li>`;
+    return;
+  }
+  const sorted = [...genres].sort((a,b)=>(a.order||0)-(b.order||0));
+  ul.innerHTML = sorted.map(g => `
+    <li class="trow">
+      <div style="width:36px;height:36px;border-radius:8px;background:${esc(g.color||'#8a2be2')}26;
+        border:2px solid ${esc(g.color||'#8a2be2')};display:flex;align-items:center;justify-content:center;flex-shrink:0">
+        <i class="fas fa-music" style="color:${esc(g.color||'#8a2be2')};font-size:14px"></i>
+      </div>
+      <div class="tinfo">
+        <div class="tname">${esc(g.name)}</div>
+        <div class="tmeta">slug: <code style="background:rgba(255,255,255,.07);padding:1px 6px;border-radius:4px;font-size:11px">${esc(g.slug)}</code> · orden: ${g.order||0}</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <button style="padding:5px 12px;border-radius:20px;border:2px solid ${esc(g.color||'#8a2be2')};
+          color:${esc(g.color||'#8a2be2')};background:${esc(g.color||'#8a2be2')}20;
+          font-family:inherit;font-size:12px;font-weight:600;cursor:default">${esc(g.name)}</button>
+      </div>
+      <div class="tact">
+        <button class="ib" onclick="openGenreModal('${esc(g.id)}')" title="Editar"><i class="fas fa-pen"></i></button>
+        <button class="db" onclick="delGenre('${esc(g.id)}')" title="Eliminar"><i class="fas fa-trash"></i></button>
+      </div>
+    </li>`).join('');
+}
+
+window.openGenreModal = function(id = null) {
+  editGenreId = id;
+  document.getElementById('mg-title').textContent = id ? 'Editar género' : 'Nuevo género';
+  const g = id ? (genres.find(x=>x.id===id)||{}) : {};
+  document.getElementById('g-name').value  = g.name  || '';
+  document.getElementById('g-slug').value  = g.slug  || '';
+  document.getElementById('g-color').value = g.color || '#8a2be2';
+  document.getElementById('g-color-hex').value = g.color || '#8a2be2';
+  document.getElementById('g-order').value = g.order != null ? g.order : (genres.length);
+  updateGenrePreview();
+  document.getElementById('modal-genre').classList.add('open');
+};
+
+window.saveGenre = async function() {
+  const name  = document.getElementById('g-name').value.trim();
+  const slug  = document.getElementById('g-slug').value.trim();
+  const color = document.getElementById('g-color').value.trim();
+  const order = parseInt(document.getElementById('g-order').value) || 0;
+  if (!name || !slug) { toast('Nombre y slug son obligatorios', 'err'); return; }
+  const body = { name, slug, color, order };
+  let r;
+  if (editGenreId) r = await apiFetch('PUT', '/genres/' + editGenreId, body);
+  else             r = await apiFetch('POST', '/genres', body);
+  if (r.ok) {
+    await loadGenres();
+    closeModal('modal-genre');
+    toast(editGenreId ? 'Género actualizado ✓' : 'Género creado ✓');
+  } else toast(r.data?.error || 'Error', 'err');
+};
+
+window.delGenre = async function(id) {
+  const g = genres.find(x=>x.id===id);
+  if (!confirm(`¿Eliminar el género "${g?.name}"?\nLos beats con este género no se borran, solo desaparece el filtro.`)) return;
+  const r = await apiFetch('DELETE', '/genres/' + id);
+  if (r.ok) { await loadGenres(); toast('Género eliminado'); }
+  else toast(r.data?.error || 'Error', 'err');
+};
+
+// Patch showPage para cargar géneros
+const _spGenres = window.showPage;
+window.showPage = function(p) {
+  if (_spGenres) _spGenres(p);
+  if (p === 'genres' && typeof TOKEN !== 'undefined' && TOKEN) loadGenres();
+};
+
+if (typeof TOKEN !== 'undefined' && TOKEN) {
+  setTimeout(loadGenres, 700);
+}
+</script>

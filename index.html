@@ -135,9 +135,8 @@
 
 <!-- ADD TO PLAYLIST PICKER -->
 <div class="modal-overlay" id="playlist-picker" style="display:none" onclick="if(event.target===this)closePlaylistPicker()">
-  <div class="modal-box modal-sm glass">
+  <div class="modal-box modal-sm glass" id="picker-box">
     <button class="modal-close" onclick="closePlaylistPicker()"><i class="fas fa-times"></i></button>
-    <h3 class="modal-title"><i class="fas fa-plus"></i> Añadir a lista</h3>
     <div id="picker-item-info" class="picker-item-info"></div>
     <div id="picker-list"></div>
   </div>

@@ -1968,12 +1968,23 @@ body { padding-bottom: 72px; }
   flex-direction: column;
 }
 
-/* Auth modal and picker: scroll the whole box */
-#auth-modal .modal-box,
-#playlist-picker .modal-box {
+/* Auth modal: scroll the whole box */
+#auth-modal .modal-box {
   padding: 32px;
   display: block;
   overflow-y: auto;
+}
+
+/* Playlist picker como popover emergente */
+.picker-popover {
+  padding: 10px !important;
+  max-width: none !important;
+  max-height: 400px !important;
+  overflow-y: auto !important;
+  animation: fadeUp .14s ease !important;
+}
+.picker-popover .modal-close {
+  top: 6px; right: 8px; width: 26px; height: 26px; font-size: 12px;
 }
 
 .modal-playlists { max-width: 540px; }
@@ -2269,29 +2280,31 @@ body { padding-bottom: 72px; }
 /* ── PICKER "AÑADIR A LISTA" ─────────────────────────────────────── */
 .picker-track-chip {
   display: flex; align-items: center; gap: 8px;
-  font-size: 13px; color: var(--text); font-weight: 600;
-  padding: 10px 12px; background: rgba(168,85,247,.08);
-  border: 1px solid rgba(168,85,247,.2); border-radius: 10px; margin-bottom: 14px;
+  font-size: 12px; color: var(--muted); font-weight: 600;
+  padding: 7px 10px; background: rgba(168,85,247,.07);
+  border-bottom: 1px solid rgba(168,85,247,.15); border-radius: 8px 8px 0 0;
+  margin: -10px -10px 8px;
 }
-.picker-track-chip i { color: var(--primary-2); flex-shrink: 0; }
+.picker-track-chip i { color: var(--primary-2); flex-shrink: 0; font-size: 11px; }
 .picker-track-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .picker-pl-row {
-  display: flex; align-items: center; gap: 10px;
-  padding: 11px 12px; border-radius: 10px; cursor: pointer;
-  transition: background .13s; border: 1px solid transparent; margin-bottom: 4px;
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 10px; border-radius: 9px; cursor: pointer;
+  transition: background .13s; border: 1px solid transparent; margin-bottom: 3px;
 }
 .picker-pl-row:hover { background: rgba(168,85,247,.12); border-color: rgba(168,85,247,.25); }
 .picker-pl-row:active { background: rgba(168,85,247,.22); }
 .picker-pl-icon {
-  width: 36px; height: 36px; background: rgba(168,85,247,.15);
-  border-radius: 8px; display: flex; align-items: center; justify-content: center;
-  color: var(--primary-2); flex-shrink: 0; font-size: 13px;
+  width: 30px; height: 30px; background: rgba(168,85,247,.15);
+  border-radius: 7px; display: flex; align-items: center; justify-content: center;
+  color: var(--primary-2); flex-shrink: 0; font-size: 12px;
 }
 .picker-pl-info { flex: 1; min-width: 0; }
-.picker-pl-name { display: block; font-size: 14px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.picker-pl-name { display: block; font-size: 13px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .picker-pl-count { display: block; font-size: 11px; color: var(--muted); }
 .picker-pl-add { color: rgba(168,85,247,.6); font-size: 12px; flex-shrink: 0; }
+.picker-pl-in { opacity: .55; cursor: default !important; }
 
 .picker-empty { color: var(--muted); font-size: 13px; text-align: center; padding: 14px 0 8px; }
 

@@ -379,18 +379,30 @@ window.plSearchTracks = function(plId, query) {
   const pl = userPlaylists.find(p => p.id === plId);
   const existingKeys = new Set((pl?.tracks || []).map(t => t.type + ':' + t.itemId));
   const results = [];
+  const seen = new Set();
 
+  // 1. Coincidencias en título (orden del web)
   for (const t of allTracks) {
-    if (results.length >= 8) break;
-    if ((t.title || '').toLowerCase().includes(q) || (t.artist || '').toLowerCase().includes(q)) {
+    if ((t.title || '').toLowerCase().includes(q)) {
       const itemId = String(t.id || '');
+      seen.add(itemId);
       results.push({ type: 'track', itemId, title: t.title || '—', sub: t.artist || '',
         cover: t.cover || '', url: t.spotifyUrl || t.platforms?.spotify || t.scUrl || '',
         exists: existingKeys.has('track:' + itemId) });
     }
   }
+  // 2. Coincidencias solo en artista (no repetir las del título)
+  for (const t of allTracks) {
+    const itemId = String(t.id || '');
+    if (seen.has(itemId)) continue;
+    if ((t.artist || '').toLowerCase().includes(q)) {
+      results.push({ type: 'track', itemId, title: t.title || '—', sub: t.artist || '',
+        cover: t.cover || '', url: t.spotifyUrl || t.platforms?.spotify || t.scUrl || '',
+        exists: existingKeys.has('track:' + itemId) });
+    }
+  }
+  // 3. Vídeos de YouTube
   for (const v of allVideos) {
-    if (results.length >= 12) break;
     if ((v.title || '').toLowerCase().includes(q)) {
       const vid = v.videoId || v.id || '';
       results.push({ type: 'video', itemId: vid, title: v.title || vid, sub: 'YouTube',
@@ -400,14 +412,15 @@ window.plSearchTracks = function(plId, query) {
     }
   }
 
-  _plSearchCache[plId] = results;
+  _plSearchCache[plId] = results.slice(0, 25);
 
   if (!results.length) {
     resultsEl.innerHTML = '<div class="pl-sr-empty">Sin resultados</div>';
     return;
   }
 
-  resultsEl.innerHTML = results.map((r, i) => `
+  const display = _plSearchCache[plId];
+  resultsEl.innerHTML = display.map((r, i) => `
     <div class="pl-sr-row${r.exists ? ' pl-sr-exists' : ''}" data-idx="${i}" data-plid="${esc(plId)}">
       ${r.cover
         ? `<img class="pl-sr-cover" src="${esc(r.cover)}" alt="" onerror="this.style.display='none'">`
@@ -452,18 +465,40 @@ async function plAddSearchResult(plId, r) {
 
 async function openPlaylistPicker() {
   const modal = document.getElementById('playlist-picker');
-  if (!modal) return;
-  // Refrescar listas si están vacías o si no se han cargado aún
+  const box   = document.getElementById('picker-box');
+  if (!modal || !box) return;
   if (!userPlaylists.length) await loadUserPlaylists();
-  modal.style.display = 'flex';
+
+  // Overlay transparente (captura clicks fuera del box para cerrar)
+  modal.style.cssText = 'display:block;background:transparent;backdrop-filter:none;padding:0;pointer-events:all';
+  box.className = 'modal-box glass picker-popover';
   renderPlaylistPicker();
-  // Focus al input de nueva lista si no hay listas
+
+  // Posicionar junto al botón "+" que lo abrió
+  const pw = 272;
+  const btn = window._lastPickerTrigger;
+  if (btn && document.contains(btn)) {
+    const r = btn.getBoundingClientRect();
+    let left = r.left;
+    if (left + pw > window.innerWidth - 8) left = window.innerWidth - pw - 8;
+    if (left < 8) left = 8;
+    const below = window.innerHeight - r.bottom > 200;
+    box.style.cssText = below
+      ? `position:fixed;left:${left}px;top:${r.bottom + 6}px;width:${pw}px`
+      : `position:fixed;left:${left}px;bottom:${window.innerHeight - r.top + 6}px;width:${pw}px`;
+  } else {
+    box.style.cssText = `position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:${pw}px`;
+  }
+
   setTimeout(() => {
     if (!userPlaylists.length) document.getElementById('picker-new-name')?.focus();
-  }, 150);
+  }, 100);
 }
 window.closePlaylistPicker = function() {
-  document.getElementById('playlist-picker').style.display = 'none';
+  const modal = document.getElementById('playlist-picker');
+  const box   = document.getElementById('picker-box');
+  if (modal) modal.style.display = 'none';
+  if (box) { box.style.cssText = ''; box.className = 'modal-box modal-sm glass'; }
   _pickerPending = null;
 };
 
@@ -471,20 +506,28 @@ function renderPlaylistPicker() {
   const info = document.getElementById('picker-item-info');
   const list = document.getElementById('picker-list');
   if (!info || !list) return;
-  if (_pickerPending) {
-    info.innerHTML = `<div class="picker-track-chip"><i class="fas fa-music"></i><span>${esc(_pickerPending.title)}</span></div>`;
-  }
-  const rows = userPlaylists.map(pl => `
-    <div class="picker-pl-row" onclick="addTrackToPlaylist('${esc(pl.id)}')">
+
+  info.innerHTML = _pickerPending?.title
+    ? `<div class="picker-track-chip"><i class="fas fa-music"></i><span>${esc(_pickerPending.title)}</span></div>`
+    : '';
+
+  const rows = userPlaylists.map(pl => {
+    const alreadyIn = pl.tracks.some(t => t.itemId === _pickerPending?.itemId && t.type === _pickerPending?.type);
+    return `
+    <div class="picker-pl-row${alreadyIn ? ' picker-pl-in' : ''}" onclick="${alreadyIn ? '' : `addTrackToPlaylist('${esc(pl.id)}')`}">
       <div class="picker-pl-icon"><i class="fas fa-music"></i></div>
       <div class="picker-pl-info">
         <span class="picker-pl-name">${esc(pl.name)}</span>
         <span class="picker-pl-count">${pl.tracks.length} canción${pl.tracks.length !== 1 ? 'es' : ''}</span>
       </div>
-      <i class="fas fa-plus picker-pl-add"></i>
-    </div>`).join('');
+      ${alreadyIn
+        ? '<i class="fas fa-check" style="color:#4ade80;font-size:12px;flex-shrink:0"></i>'
+        : '<i class="fas fa-plus picker-pl-add"></i>'}
+    </div>`;
+  }).join('');
+
   list.innerHTML = `
-    ${rows || '<p class="picker-empty">Crea tu primera lista para guardar canciones.</p>'}
+    ${rows || '<p class="picker-empty">No tienes listas todavía.</p>'}
     <div class="picker-new-list">
       <input type="text" id="picker-new-name" placeholder="Nueva lista…" maxlength="60"
         onkeydown="if(event.key==='Enter')createPlaylistInline()" autocomplete="off">
@@ -540,6 +583,11 @@ async function initAuth() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+
+  // Captura qué botón "+" disparó el picker para posicionar el popover
+  document.addEventListener('click', e => {
+    if (e.target.closest('.btn-add-playlist')) window._lastPickerTrigger = e.target.closest('.btn-add-playlist');
+  }, true);
 
   // ── NAV SCROLL + ACTIVE ─────────────────────────────────────────
   const navbar = document.getElementById('navbar');
@@ -835,8 +883,24 @@ document.addEventListener('DOMContentLoaded', () => {
   let _tsTrack     = null;
   let _holdTimer   = null;
 
-  // Exponer índice → track para onclick en HTML
-  window._openTSByIdx = idx => openTrackSheet(_renderedTracks[idx]);
+  // Botón "+" en card → picker emergente (el long-press sigue usando openTrackSheet)
+  window._openTSByIdx = function(idx) {
+    const track = _renderedTracks[idx];
+    if (!track) return;
+    if (!(AUTH.token || getToken())) {
+      window._pendingTSTrack = track;
+      openAuthModal();
+      return;
+    }
+    _pickerPending = {
+      type: 'track',
+      itemId: String(track.id || ''),
+      title: track.title || '',
+      cover: track.cover || '',
+      url: track.spotifyUrl || track.platforms?.spotify || track.scUrl || ''
+    };
+    openPlaylistPicker();
+  };
 
   function openTrackSheet(track) {
     if (!track) return;

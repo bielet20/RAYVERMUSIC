@@ -1689,25 +1689,7 @@ body { padding-bottom: 72px; }
 }
 @media (hover: none) { .track-hold-hint { display: block; } }
 
-/* ── BOTONES PLAYLIST MODAL ──────────────────────────────────────── */
-.playlist-item-btns { display: flex; gap: 6px; }
-.playlist-item-btns button {
-  background: rgba(255,255,255,.06);
-  border: 1px solid var(--glass-b);
-  border-radius: 7px;
-  color: var(--muted);
-  width: 30px;
-  height: 30px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  transition: all .15s;
-}
-.pl-rename-btn:hover { background: rgba(168,85,247,.2) !important; color: #c084fc !important; border-color: rgba(168,85,247,.4) !important; }
-.pl-merge-btn:hover  { background: rgba(99,102,241,.2) !important; color: #818cf8 !important; border-color: rgba(99,102,241,.4) !important; }
-.playlist-item-btns .danger:hover { background: rgba(239,68,68,.2) !important; color: #f87171 !important; border-color: rgba(239,68,68,.4) !important; }
+/* ── BOTONES PLAYLIST MODAL (estilos definitivos en bloque inferior) ─ */
 
 /* Panel de fusión */
 .pl-merge-panel {
@@ -2010,56 +1992,95 @@ body { padding-bottom: 72px; }
 .playlist-item {
   background: rgba(255,255,255,.04);
   border: 1px solid var(--glass-b);
-  border-radius: 10px;
-  padding: 14px 16px;
+  border-radius: 14px;
   margin-bottom: 10px;
+  overflow: hidden;
+  transition: border-color .2s;
 }
+.playlist-item:hover { border-color: rgba(168,85,247,.3); }
+
 .playlist-item-header {
   display: flex;
   align-items: center;
   gap: 10px;
+  padding: 13px 14px;
+  cursor: pointer;
+  user-select: none;
 }
-.playlist-item-name {
-  flex: 1;
-  font-weight: 600;
-  font-size: 14px;
+.playlist-item-header.pl-expanded { background: rgba(168,85,247,.06); }
+
+.pl-icon {
+  width: 38px; height: 38px; border-radius: 9px; flex-shrink: 0;
+  background: rgba(168,85,247,.15);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--primary-2); font-size: 14px;
 }
-.playlist-item-count { font-size: 12px; color: var(--muted); }
-.playlist-item-btns { display: flex; gap: 6px; }
-.playlist-item-btns button {
+.pl-info { flex: 1; min-width: 0; }
+.playlist-item-name { display: block; font-weight: 700; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.playlist-item-count { display: block; font-size: 11px; color: var(--muted); margin-top: 1px; }
+.pl-chevron { color: rgba(255,255,255,.3); font-size: 11px; transition: transform .2s; flex-shrink: 0; }
+.playlist-item-header.pl-expanded .pl-chevron { transform: rotate(180deg); }
+
+.playlist-item-btns { display: flex; gap: 5px; flex-shrink: 0; }
+.playlist-item-btns button, .pl-rename-btn, .pl-merge-btn, .pl-delete-btn {
   background: none;
   border: 1px solid var(--glass-b);
   color: var(--muted);
-  padding: 5px 8px;
-  border-radius: 6px;
+  width: 30px; height: 30px;
+  border-radius: 8px;
   cursor: pointer;
   font-size: 12px;
-  transition: all var(--transition);
+  display: flex; align-items: center; justify-content: center;
+  transition: all .13s;
 }
-.playlist-item-btns button:hover { color: var(--text); border-color: rgba(255,255,255,.3); }
-.playlist-item-btns button.danger:hover { color: #ef4444; border-color: #ef4444; }
+.pl-rename-btn:hover { background: rgba(168,85,247,.15); color: #c084fc; border-color: rgba(168,85,247,.4); }
+.pl-merge-btn:hover  { background: rgba(99,102,241,.15); color: #818cf8; border-color: rgba(99,102,241,.4); }
+.pl-delete-btn:hover { background: rgba(239,68,68,.15); color: #f87171; border-color: rgba(239,68,68,.4); }
 
-.playlist-tracks-list { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+/* Inline delete confirm */
+.pl-confirm-label { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.pl-confirm-yes {
+  background: rgba(239,68,68,.2) !important; color: #f87171 !important;
+  border-color: rgba(239,68,68,.4) !important; padding: 0 10px !important;
+  width: auto !important; font-size: 12px !important;
+}
+.pl-confirm-no { color: var(--muted); }
+
+/* Tracks list */
+.playlist-tracks-list {
+  border-top: 1px solid var(--glass-b);
+  display: flex; flex-direction: column;
+}
 .playlist-track-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  border-radius: 6px;
-  background: rgba(255,255,255,.03);
-  font-size: 13px;
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 14px;
+  border-bottom: 1px solid rgba(255,255,255,.04);
+  transition: background .13s;
 }
-.playlist-track-row .track-type-badge {
-  font-size: 10px;
-  padding: 2px 6px;
-  border-radius: 4px;
-  background: rgba(168,85,247,.2);
-  color: var(--primary-2);
-  white-space: nowrap;
+.playlist-track-row:last-child { border-bottom: none; }
+.playlist-track-row:hover { background: rgba(255,255,255,.04); }
+
+.ptr-cover {
+  width: 34px; height: 34px; border-radius: 7px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
 }
-.playlist-track-row .track-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.playlist-track-row button { background: none; border: none; color: var(--muted); cursor: pointer; padding: 2px 4px; font-size: 12px; }
-.playlist-track-row button:hover { color: #ef4444; }
+.playlist-track-title { flex: 1; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ptr-link {
+  color: rgba(168,85,247,.6); font-size: 11px; padding: 4px;
+  transition: color .13s; flex-shrink: 0;
+}
+.ptr-link:hover { color: var(--primary-2); }
+.ptr-remove {
+  background: none; border: none; color: rgba(255,255,255,.25);
+  cursor: pointer; padding: 4px 6px; font-size: 13px;
+  border-radius: 6px; transition: all .13s; flex-shrink: 0;
+}
+.ptr-remove:hover { color: #ef4444; background: rgba(239,68,68,.12); }
+.pl-empty-tracks {
+  padding: 14px 16px; font-size: 12px; color: rgba(255,255,255,.25);
+  font-style: italic; display: flex; align-items: center; gap: 8px;
+}
+.pl-empty-msg { color: var(--muted); text-align: center; padding: 24px 0; line-height: 1.8; font-size: 14px; }
 
 /* Add-to-playlist button (shared) */
 .btn-add-playlist {
@@ -2154,8 +2175,7 @@ body { padding-bottom: 72px; }
   min-width: 0; flex: 1;
 }
 
-/* Empty state en lista de tracks de una playlist */
-.pl-empty-tracks { font-size: 11px; color: rgba(255,255,255,.25); padding: 6px 0 2px; font-style: italic; }
+/* .pl-empty-tracks redefinido en bloque playlist más abajo */
 
 @media (max-width: 700px) {
   #mini-player-bar { padding: 6px 12px; gap: 8px; }

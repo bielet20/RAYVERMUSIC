@@ -141,9 +141,13 @@ window.addToPlaylist = function(type, itemId, title, cover, url) {
   openPlaylistPicker();
 };
 
-window.openPlaylists = function() {
-  document.getElementById('playlists-modal').style.display = 'flex';
+window.openPlaylists = async function() {
+  const modal = document.getElementById('playlists-modal');
+  if (!modal) return;
+  modal.style.display = 'flex';
   closeDropdownUser();
+  if (!(AUTH.token || getToken())) { renderPlaylistsModal(); return; }
+  await loadUserPlaylists();
   renderPlaylistsModal();
 };
 window.closePlaylists = function() { document.getElementById('playlists-modal').style.display = 'none'; };
@@ -151,32 +155,64 @@ window.closePlaylists = function() { document.getElementById('playlists-modal').
 function renderPlaylistsModal() {
   const container = document.getElementById('playlists-list');
   if (!container) return;
-  if (!userPlaylists.length) {
-    container.innerHTML = '<p style="color:var(--muted);text-align:center;padding:20px 0">Sin listas todavía. Crea tu primera lista.</p>';
+  if (!(AUTH.token || getToken())) {
+    container.innerHTML = '<p class="pl-empty-msg">Inicia sesión para ver tus listas.</p>';
     return;
   }
-  const TYPE_LABELS = { video: 'Video', track: 'Track', beat: 'Beat' };
+  if (!userPlaylists.length) {
+    container.innerHTML = '<p class="pl-empty-msg">Sin listas todavía.<br>Escribe un nombre arriba y pulsa Crear.</p>';
+    return;
+  }
   container.innerHTML = userPlaylists.map(pl => `
     <div class="playlist-item" data-plid="${esc(pl.id)}">
-      <div class="playlist-item-header">
-        <i class="fas fa-music" style="color:var(--primary-2);flex-shrink:0"></i>
-        <span class="playlist-item-name">${esc(pl.name)}</span>
-        <span class="playlist-item-count">${pl.tracks.length} canción${pl.tracks.length !== 1 ? 'es' : ''}</span>
-        <div class="playlist-item-btns">
+      <div class="playlist-item-header" onclick="togglePlaylistTracks('${esc(pl.id)}')">
+        <div class="pl-icon"><i class="fas fa-music"></i></div>
+        <div class="pl-info">
+          <span class="playlist-item-name">${esc(pl.name)}</span>
+          <span class="playlist-item-count">${pl.tracks.length} canción${pl.tracks.length !== 1 ? 'es' : ''}</span>
+        </div>
+        <i class="fas fa-chevron-down pl-chevron"></i>
+        <div class="playlist-item-btns" onclick="event.stopPropagation()">
           <button onclick="renamePlaylist('${esc(pl.id)}')" class="pl-rename-btn" title="Renombrar"><i class="fas fa-edit"></i></button>
-          <button onclick="mergePlaylistModal('${esc(pl.id)}')" class="pl-merge-btn" title="Fusionar con otra lista"><i class="fas fa-layer-group"></i></button>
-          <button onclick="deletePlaylist('${esc(pl.id)}')" class="danger" title="Eliminar lista"><i class="fas fa-trash"></i></button>
+          <button onclick="mergePlaylistModal('${esc(pl.id)}')" class="pl-merge-btn" title="Fusionar"><i class="fas fa-layer-group"></i></button>
+          <button onclick="confirmDeletePlaylist('${esc(pl.id)}')" class="pl-delete-btn" title="Eliminar lista"><i class="fas fa-trash"></i></button>
         </div>
       </div>
-      ${pl.tracks.length ? `<div class="playlist-tracks-list">${pl.tracks.map(t => `
-        <div class="playlist-track-row">
-          <span class="track-type-badge">${TYPE_LABELS[t.type] || t.type}</span>
-          <span class="playlist-track-title">${esc(t.title)}</span>
-          ${t.url ? `<a href="${esc(t.url)}" target="_blank" style="color:var(--primary-2);font-size:12px"><i class="fas fa-external-link-alt"></i></a>` : ''}
-          <button onclick="removeTrackFromPlaylist('${esc(pl.id)}','${esc(t.id)}')" title="Quitar"><i class="fas fa-times"></i></button>
-        </div>`).join('')}</div>` : '<div class="pl-empty-tracks">Sin canciones todavía</div>'}
+      <div class="playlist-tracks-list" id="pl-tracks-${esc(pl.id)}" style="display:none">
+        ${pl.tracks.length ? pl.tracks.map(t => `
+          <div class="playlist-track-row" id="ptr-${esc(t.id)}">
+            <div class="ptr-cover" style="${t.cover ? `background-image:url('${t.cover.replace(/'/g,"\\'")}');background-size:cover;background-position:center` : 'background:rgba(168,85,247,.15)'}">
+              ${t.cover ? '' : '<i class="fas fa-music" style="color:var(--primary-2);font-size:9px"></i>'}
+            </div>
+            <span class="playlist-track-title">${esc(t.title)}</span>
+            ${t.url ? `<a href="${esc(t.url)}" target="_blank" class="ptr-link" title="Abrir enlace"><i class="fas fa-external-link-alt"></i></a>` : ''}
+            <button class="ptr-remove" onclick="removeTrackFromPlaylist('${esc(pl.id)}','${esc(t.id)}')" title="Quitar de la lista"><i class="fas fa-times"></i></button>
+          </div>`).join('')
+        : '<div class="pl-empty-tracks"><i class="fas fa-plus-circle"></i> Lista vacía — añade canciones desde la sección Música</div>'}
+      </div>
     </div>`).join('');
 }
+
+window.togglePlaylistTracks = function(plId) {
+  const el   = document.getElementById('pl-tracks-' + plId);
+  const hdr  = document.querySelector(`.playlist-item[data-plid="${plId}"] .playlist-item-header`);
+  if (!el) return;
+  const open = el.style.display !== 'none';
+  el.style.display = open ? 'none' : 'block';
+  hdr?.classList.toggle('pl-expanded', !open);
+};
+
+window.confirmDeletePlaylist = function(id) {
+  const item = document.querySelector(`.playlist-item[data-plid="${id}"]`);
+  if (!item) return;
+  const btns = item.querySelector('.playlist-item-btns');
+  if (!btns) return;
+  btns.innerHTML = `
+    <span class="pl-confirm-label">¿Eliminar?</span>
+    <button class="pl-confirm-yes" onclick="deletePlaylist('${esc(id)}')">Sí</button>
+    <button class="pl-confirm-no" onclick="renderPlaylistsModal()"><i class="fas fa-times"></i></button>
+  `;
+};
 
 // Crear lista desde el picker (input inline, sin prompt)
 window.createPlaylistInline = async function() {
@@ -217,19 +253,36 @@ window.createPlaylistDirect = async function() {
 window.createPlaylistModal = function() { openPlaylists(); };
 
 window.deletePlaylist = async function(id) {
-  if (!confirm('¿Eliminar esta lista?')) return;
   const r = await apiUser('/playlists/' + id, { method: 'DELETE' });
-  if (!r.ok) { showToastGlobal('Error al eliminar'); return; }
+  if (!r.ok) { showToastGlobal('Error al eliminar'); renderPlaylistsModal(); return; }
   userPlaylists = userPlaylists.filter(p => p.id !== id);
   renderPlaylistsModal();
+  showToastGlobal('Lista eliminada');
 };
 
 window.removeTrackFromPlaylist = async function(plId, trackId) {
+  // Feedback visual inmediato
+  const rowEl = document.getElementById('ptr-' + trackId);
+  if (rowEl) { rowEl.style.opacity = '.4'; rowEl.style.pointerEvents = 'none'; }
   const r = await apiUser('/playlists/' + plId + '/tracks/' + trackId, { method: 'DELETE' });
-  if (!r.ok) { showToastGlobal('Error al quitar'); return; }
+  if (!r.ok) {
+    if (rowEl) { rowEl.style.opacity = ''; rowEl.style.pointerEvents = ''; }
+    showToastGlobal('Error al quitar');
+    return;
+  }
   const pl = userPlaylists.find(p => p.id === plId);
   if (pl) pl.tracks = pl.tracks.filter(t => t.id !== trackId);
-  renderPlaylistsModal();
+  // Actualizar solo la sección de tracks de esta lista
+  const tracksEl = document.getElementById('pl-tracks-' + plId);
+  const countEl  = document.querySelector(`.playlist-item[data-plid="${plId}"] .playlist-item-count`);
+  if (countEl && pl) countEl.textContent = pl.tracks.length + ' canción' + (pl.tracks.length !== 1 ? 'es' : '');
+  if (tracksEl) {
+    if (!pl || !pl.tracks.length) {
+      tracksEl.innerHTML = '<div class="pl-empty-tracks"><i class="fas fa-plus-circle"></i> Lista vacía — añade canciones desde la sección Música</div>';
+    } else {
+      rowEl?.remove();
+    }
+  }
 };
 
 async function openPlaylistPicker() {

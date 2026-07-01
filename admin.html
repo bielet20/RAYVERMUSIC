@@ -523,6 +523,22 @@ function doLogout() {
 // ── DATABASE PAGE ─────────────────────────────────────────────────────────────
 let dbUsers = [];
 
+async function runDiag() {
+  const el = document.getElementById('diag-result');
+  el.textContent = 'Cargando…';
+  const r = await apiFetch('GET', '/admin/diag');
+  if (!r.ok) { el.textContent = 'Error al obtener diagnóstico'; return; }
+  const d = r.data;
+  const isMounted = d.mountInfo !== 'NOT MOUNTED' && !d.mountInfo.startsWith('error');
+  el.innerHTML = [
+    `<span style="color:${d.fileExists?'#4ade80':'#f87171'}">● db.json ${d.fileExists ? 'EXISTE ('+Math.round(d.fileSize/1024*10)/10+' KB)' : 'NO EXISTE — datos no persistidos'}</span>`,
+    `<span style="color:${isMounted?'#4ade80':'#f87171'}">● Volumen /app/data: ${isMounted ? 'MONTADO ✓' : 'NO MONTADO ✗ — datos se perderán en cada redeploy'}</span>`,
+    `  Montaje: ${esc(d.mountInfo)}`,
+    `  Archivos en ${esc(d.DATA_DIR)}: [${(d.files||[]).join(', ')}]`,
+    `  Usuarios: ${d.users} | Listas: ${d.playlists}`,
+  ].join('\n');
+}
+
 async function loadDatabase() {
   const r = await apiFetch('GET', '/admin/users');
   if (r.ok) dbUsers = r.data;
@@ -1159,6 +1175,16 @@ document.addEventListener('DOMContentLoaded', () => {
           </div>
         </div>
         <div id="db-stats-row" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:20px"></div>
+
+        <!-- DIAGNÓSTICO -->
+        <div class="gc" style="margin-bottom:16px">
+          <div class="ch">
+            <span class="ct"><i class="fas fa-stethoscope"></i> Diagnóstico del volumen</span>
+            <button class="btn" style="font-size:12px;padding:4px 10px" onclick="runDiag()"><i class="fas fa-search"></i> Comprobar</button>
+          </div>
+          <div id="diag-result" style="padding:16px;font-size:12px;font-family:monospace;color:var(--muted);white-space:pre-wrap">Pulsa "Comprobar" para ver el estado del sistema de ficheros.</div>
+        </div>
+
         <div class="gc" style="margin-bottom:16px">
           <div class="ch"><span class="ct"><i class="fas fa-users"></i> Usuarios registrados</span></div>
           <div id="db-users-wrap"></div>

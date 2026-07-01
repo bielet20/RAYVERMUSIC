@@ -11,21 +11,42 @@ const PORT = process.env.BACKEND_PORT || 3001;
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const DATA_FILE = path.join(DATA_DIR, 'db.json');
 
+// ── DIAGNÓSTICO DE ARRANQUE ──────────────────────────────────────
+function bootDiag() {
+  console.log('=== RAYVER BOOT DIAG ===');
+  console.log(`DATA_DIR  : ${DATA_DIR}`);
+  console.log(`DATA_FILE : ${DATA_FILE}`);
+  console.log(`DIR exists: ${fs.existsSync(DATA_DIR)}`);
+  console.log(`FILE exists: ${fs.existsSync(DATA_FILE)}`);
+  if (fs.existsSync(DATA_FILE)) {
+    try { console.log(`FILE size : ${fs.statSync(DATA_FILE).size} bytes`); } catch(e) {}
+  }
+  // ¿Está /app/data montado como volumen?
+  try {
+    const mounts = fs.readFileSync('/proc/mounts', 'utf8');
+    const hit = mounts.split('\n').find(l => l.includes('/app/data') || l.includes(DATA_DIR));
+    console.log(`MOUNT /app/data: ${hit ? 'SI → ' + hit.trim() : 'NO (sin volumen montado)'}`);
+  } catch(e) { console.log('MOUNT check: error leyendo /proc/mounts'); }
+  // Contenido del directorio
+  try {
+    const files = fs.readdirSync(DATA_DIR);
+    console.log(`DIR contents: [${files.join(', ')}]`);
+  } catch(e) { console.log('DIR contents: error -', e.message); }
+  console.log('========================');
+}
+
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
-// Seed from DB_INIT env var (base64 JSON) if no db.json exists yet.
-// Allows data to survive Coolify redeployments without SSH:
-//   1. Call GET /api/admin/db-export → copy the "base64" value
-//   2. Set DB_INIT=<value> in Coolify environment variables
-//   3. Next deploy starts with that data as the initial state
+bootDiag();
+
 if (!fs.existsSync(DATA_FILE) && process.env.DB_INIT) {
   try {
     const decoded = Buffer.from(process.env.DB_INIT.trim(), 'base64').toString('utf8');
-    JSON.parse(decoded); // validate
+    JSON.parse(decoded);
     fs.writeFileSync(DATA_FILE, decoded);
-    console.log('[DB] Seeded db.json from DB_INIT env var');
+    console.log('[DB] Restaurado desde DB_INIT env var');
   } catch (e) {
-    console.warn('[DB] DB_INIT parse error, ignoring:', e.message);
+    console.warn('[DB] DB_INIT parse error:', e.message);
   }
 }
 
@@ -768,6 +789,22 @@ app.get('/api/admin/db-export', authMiddleware, (req, res) => {
   const json = JSON.stringify(db, null, 2);
   const base64 = Buffer.from(json).toString('base64');
   res.json({ base64, size: json.length, users: (db.users || []).length, playlists: (db.playlists || []).length });
+});
+
+// Diagnóstico del sistema de ficheros
+app.get('/api/admin/diag', authMiddleware, (req, res) => {
+  const info = { DATA_DIR, DATA_FILE, fileExists: false, fileSize: 0, files: [], mountInfo: 'unknown', users: 0, playlists: 0 };
+  info.fileExists = fs.existsSync(DATA_FILE);
+  if (info.fileExists) try { info.fileSize = fs.statSync(DATA_FILE).size; } catch(e) {}
+  try { info.files = fs.readdirSync(DATA_DIR); } catch(e) { info.files = ['ERR:' + e.message]; }
+  try {
+    const mounts = fs.readFileSync('/proc/mounts', 'utf8');
+    const hit = mounts.split('\n').find(l => l.includes('/app/data') || l.includes(DATA_DIR));
+    info.mountInfo = hit ? hit.trim() : 'NOT MOUNTED';
+  } catch(e) { info.mountInfo = 'error: ' + e.message; }
+  info.users = (db.users || []).length;
+  info.playlists = (db.playlists || []).length;
+  res.json(info);
 });
 
 // Lista usuarios (sin passwords) con conteo de listas

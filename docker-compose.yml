@@ -24,8 +24,10 @@ services:
       YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}
       YOUTUBE_CHANNEL_IDS: ${YOUTUBE_CHANNEL_IDS:-}
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-*}
+      TOKEN_SECRET: ${TOKEN_SECRET:-rayver-secret-2025-change-me}
+      DATA_DIR: ${DATA_DIR:-/app/data}
     volumes:
-      - backend_data:/app/data
+      - ${RAYVER_DATA_DIR:-/opt/rayvermusic/data}:/app/data
     networks:
       - app_net
     healthcheck:
@@ -38,6 +40,3 @@ services:
 networks:
   app_net:
     driver: bridge
-
-volumes:
-  backend_data:

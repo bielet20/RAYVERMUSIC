@@ -137,6 +137,26 @@
   </div>
 </div>
 
+<!-- TRACK ACTION SHEET -->
+<div id="ts-backdrop" class="ts-backdrop" onclick="window.closeTrackSheet()"></div>
+<div id="track-sheet" class="track-sheet glass">
+  <div class="ts-handle"></div>
+  <div id="ts-header" class="ts-header"></div>
+  <button class="ts-play-btn" id="ts-play-btn" onclick="window.tsPlay()">
+    <i class="fas fa-play"></i> Reproducir en radio
+  </button>
+  <div class="ts-divider"></div>
+  <div class="ts-section-label">Guardar en lista</div>
+  <div class="ts-new-pl-row">
+    <i class="fas fa-plus-circle ts-new-icon"></i>
+    <input type="text" id="ts-new-name" class="ts-new-input"
+      placeholder="Nueva lista…" maxlength="60"
+      onkeydown="if(event.key==='Enter')window.tsCreateList()">
+    <button class="ts-create-btn" onclick="window.tsCreateList()">Crear</button>
+  </div>
+  <div id="ts-pl-list" class="ts-pl-list"></div>
+</div>
+
 <!-- ═══════════════════════════════════════════════════════ HERO -->
 <section id="home" class="hero">
   <canvas id="hero-canvas" aria-hidden="true"></canvas>

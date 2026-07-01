@@ -61,6 +61,7 @@ window.submitLogin = async function(e) {
   updateAuthUI();
   await loadUserPlaylists();
   showToastGlobal('¡Bienvenido, ' + r.data.user.name + '!');
+  if (window._pendingTSTrack) { window.openTrackSheet(window._pendingTSTrack); window._pendingTSTrack = null; }
 };
 
 window.submitRegister = async function(e) {
@@ -80,6 +81,7 @@ window.submitRegister = async function(e) {
   updateAuthUI();
   await loadUserPlaylists();
   showToastGlobal('¡Cuenta creada! Bienvenido, ' + r.data.user.name + ' 🎵');
+  if (window._pendingTSTrack) { window.openTrackSheet(window._pendingTSTrack); window._pendingTSTrack = null; }
 };
 
 window.logoutUser = async function() {
@@ -603,7 +605,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="track-platforms">${pills||'<span class="ptag ptag-lk">Próximamente</span>'}</div>
             <div class="track-actions">
               ${playBtn}
-              <button class="btn-add-playlist" onclick="event.stopPropagation();addToPlaylist('track','${esc(t.id||t.spotifyId||t.title)}','${esc(t.title)}','${esc(t.cover||'')}','${esc(spotifyUrl)}')" title="Añadir a lista"><i class="fas fa-plus"></i></button>
+              <button class="btn-add-playlist" onclick="event.stopPropagation();window._openTSByIdx(${i})" title="Añadir a lista"><i class="fas fa-plus"></i></button>
             </div>
           </div>
           <div class="track-hold-hint">Mantén pulsado para más opciones</div>
@@ -612,94 +614,143 @@ document.addEventListener('DOMContentLoaded', () => {
     grid.querySelectorAll('.reveal').forEach(el => revealObs.observe(el));
   }
 
-  // ── MENÚ CONTEXTUAL DE TRACKS (long-press / clic derecho) ────────
-  let _ctxTrack      = null;
-  let _ctxHoldTimer  = null;
+  // ── TRACK ACTION SHEET (bottom sheet) ────────────────────────────
+  let _tsTrack     = null;
+  let _holdTimer   = null;
 
-  function buildTrackCtxMenu() {
-    if (document.getElementById('track-ctx-menu')) return;
-    const el = document.createElement('div');
-    el.id = 'track-ctx-menu';
-    el.innerHTML = `
-      <button id="ctx-play"><i class="fas fa-play"></i> Reproducir en radio</button>
-      <button id="ctx-add"><i class="fas fa-plus"></i> Añadir a una lista</button>
-      <button id="ctx-newlist"><i class="fas fa-list-ul"></i> Crear lista con esta canción</button>
+  // Exponer índice → track para onclick en HTML
+  window._openTSByIdx = idx => openTrackSheet(_renderedTracks[idx]);
+
+  function openTrackSheet(track) {
+    if (!track) return;
+    if (!(AUTH.token || getToken())) {
+      window._pendingTSTrack = track;
+      openAuthModal();
+      return;
+    }
+    _tsTrack = track;
+    // Header: cover + título + artista
+    const art = track.cover
+      ? `background-image:url('${track.cover.replace(/'/g,"\\'")}');background-size:cover;background-position:center`
+      : GRADS[Math.abs((track.title||'').charCodeAt(0)||0) % GRADS.length];
+    const hdr = document.getElementById('ts-header');
+    if (hdr) hdr.innerHTML = `
+      <div class="ts-cover" style="${art}"></div>
+      <div class="ts-title-block">
+        <div class="ts-track-title">${esc(track.title)}</div>
+        <div class="ts-track-artist">${esc(track.artist || 'RAYVER')}</div>
+      </div>
+      <button class="ts-close-btn" onclick="window.closeTrackSheet()"><i class="fas fa-times"></i></button>
     `;
-    document.body.appendChild(el);
-
-    el.querySelector('#ctx-play').onclick = () => {
-      if (_ctxTrack) {
-        if (window.RADIO_PLAYER?.addAndPlay) window.RADIO_PLAYER.addAndPlay({..._ctxTrack});
-        else if (window.RADIO_PLAYER?.skip) window.RADIO_PLAYER.skip(0);
-        document.getElementById('radio')?.scrollIntoView({behavior:'smooth'});
-      }
-      hideTrackCtxMenu();
-    };
-    el.querySelector('#ctx-add').onclick = () => {
-      if (_ctxTrack) addToPlaylist('track', _ctxTrack.id||_ctxTrack.spotifyId||_ctxTrack.title, _ctxTrack.title, _ctxTrack.cover||'', _ctxTrack.spotifyUrl||_ctxTrack.platforms?.spotify||'');
-      hideTrackCtxMenu();
-    };
-    el.querySelector('#ctx-newlist').onclick = async () => {
-      if (_ctxTrack) {
-        _pickerPending = { type:'track', itemId: _ctxTrack.id||_ctxTrack.spotifyId||_ctxTrack.title, title: _ctxTrack.title, cover: _ctxTrack.cover||'', url: _ctxTrack.spotifyUrl||_ctxTrack.platforms?.spotify||'' };
-        await createPlaylistModal(true);
-      }
-      hideTrackCtxMenu();
-    };
-
-    document.addEventListener('pointerdown', e => {
-      if (!e.target.closest('#track-ctx-menu')) hideTrackCtxMenu();
-    }, true);
-    document.addEventListener('keydown', e => { if (e.key === 'Escape') hideTrackCtxMenu(); });
+    // Refresh playlists then render
+    if (!userPlaylists.length) {
+      loadUserPlaylists().then(renderTSPlaylists);
+    } else {
+      renderTSPlaylists();
+    }
+    // Show sheet
+    document.getElementById('ts-backdrop')?.classList.add('visible');
+    document.getElementById('track-sheet')?.classList.add('open');
+    document.getElementById('ts-new-name').value = '';
   }
 
-  function showTrackCtxMenu(e, track) {
-    buildTrackCtxMenu();
-    _ctxTrack = track;
-    const menu = document.getElementById('track-ctx-menu');
-    if (!menu) return;
-    const x = e.clientX ?? e.touches?.[0]?.clientX ?? 100;
-    const y = e.clientY ?? e.touches?.[0]?.clientY ?? 100;
-    menu.style.left = Math.min(x, window.innerWidth  - 230) + 'px';
-    menu.style.top  = Math.min(y, window.innerHeight - 130) + 'px';
-    menu.classList.add('visible');
-    e.target.closest('.track-card')?.classList.add('ctx-active');
+  window.openTrackSheet = openTrackSheet;
+
+  window.closeTrackSheet = function() {
+    document.getElementById('ts-backdrop')?.classList.remove('visible');
+    document.getElementById('track-sheet')?.classList.remove('open');
+    _tsTrack = null;
+  };
+
+  function renderTSPlaylists() {
+    const list = document.getElementById('ts-pl-list');
+    if (!list) return;
+    if (!userPlaylists.length) {
+      list.innerHTML = '<p class="ts-pl-empty">Aún no tienes listas.<br>Escribe un nombre arriba para crear una.</p>';
+      setTimeout(() => document.getElementById('ts-new-name')?.focus(), 100);
+      return;
+    }
+    list.innerHTML = userPlaylists.map(pl => `
+      <div class="ts-pl-row" id="ts-row-${esc(pl.id)}" onclick="window.tsAddToList('${esc(pl.id)}')">
+        <div class="ts-pl-icon"><i class="fas fa-music"></i></div>
+        <div class="ts-pl-info">
+          <span class="ts-pl-name">${esc(pl.name)}</span>
+          <span class="ts-pl-count">${pl.tracks.length} canción${pl.tracks.length !== 1 ? 'es' : ''}</span>
+        </div>
+        <i class="fas fa-plus ts-pl-add-icon"></i>
+      </div>
+    `).join('');
   }
 
-  function hideTrackCtxMenu() {
-    document.getElementById('track-ctx-menu')?.classList.remove('visible');
-    document.querySelectorAll('.track-card.ctx-active').forEach(c => c.classList.remove('ctx-active'));
-    _ctxTrack = null;
-  }
+  window.tsPlay = function() {
+    if (!_tsTrack) return;
+    const t = _tsTrack;
+    window.closeTrackSheet();
+    if (window.RADIO_PLAYER?.skip !== undefined) {
+      document.getElementById('radio')?.scrollIntoView({behavior:'smooth'});
+    }
+  };
+
+  window.tsAddToList = async function(plId) {
+    if (!_tsTrack) return;
+    const t = _tsTrack;
+    const row = document.getElementById('ts-row-' + plId);
+    if (row) { row.style.opacity = '.5'; row.style.pointerEvents = 'none'; }
+    const r = await apiUser('/playlists/' + plId + '/tracks', {
+      method: 'POST',
+      body: JSON.stringify({ type: 'track', itemId: t.id||t.spotifyId||t.title, title: t.title, cover: t.cover||'', url: t.spotifyUrl||t.platforms?.spotify||'' })
+    });
+    if (row) { row.style.opacity = ''; row.style.pointerEvents = ''; }
+    if (r.status === 409) { showToastGlobal('Ya está en esa lista'); return; }
+    if (!r.ok) { showToastGlobal('Error al añadir'); return; }
+    const pl = userPlaylists.find(p => p.id === plId);
+    if (pl) pl.tracks.push(r.data);
+    window.closeTrackSheet();
+    showToastGlobal('Añadido a "' + (pl?.name || 'lista') + '" ✓');
+  };
+
+  window.tsCreateList = async function() {
+    const input = document.getElementById('ts-new-name');
+    const name  = input?.value?.trim();
+    if (!name) { input?.focus(); return; }
+    input.disabled = true;
+    const r = await apiUser('/playlists', { method: 'POST', body: JSON.stringify({ name }) });
+    input.disabled = false;
+    if (!r.ok) { showToastGlobal(r.data?.error || 'Error al crear lista'); return; }
+    userPlaylists.push(r.data);
+    showToastGlobal('Lista "' + r.data.name + '" creada ✓');
+    await window.tsAddToList(r.data.id);
+  };
 
   function attachTrackCtxMenu() {
     const grid = document.getElementById('music-grid');
-    if (!grid || grid._ctxAttached) return;
-    grid._ctxAttached = true;
+    if (!grid || grid._tsAttached) return;
+    grid._tsAttached = true;
 
     grid.addEventListener('pointerdown', e => {
       const card = e.target.closest('.track-card');
       if (!card || e.target.closest('a, button')) return;
       const track = _renderedTracks[+card.dataset.tidx];
       if (!track) return;
-      clearTimeout(_ctxHoldTimer);
+      clearTimeout(_holdTimer);
       card.classList.add('holding');
-      _ctxHoldTimer = setTimeout(() => {
+      _holdTimer = setTimeout(() => {
         card.classList.remove('holding');
-        showTrackCtxMenu(e, track);
-      }, 700);
+        openTrackSheet(track);
+      }, 600);
     });
-    grid.addEventListener('pointerup',     () => { clearTimeout(_ctxHoldTimer); document.querySelectorAll('.track-card.holding').forEach(c => c.classList.remove('holding')); });
-    grid.addEventListener('pointermove',   () => { clearTimeout(_ctxHoldTimer); document.querySelectorAll('.track-card.holding').forEach(c => c.classList.remove('holding')); });
-    grid.addEventListener('pointercancel', () => { clearTimeout(_ctxHoldTimer); document.querySelectorAll('.track-card.holding').forEach(c => c.classList.remove('holding')); });
+    const clearHold = () => { clearTimeout(_holdTimer); document.querySelectorAll('.track-card.holding').forEach(c => c.classList.remove('holding')); };
+    grid.addEventListener('pointerup',     clearHold);
+    grid.addEventListener('pointermove',   clearHold);
+    grid.addEventListener('pointercancel', clearHold);
     grid.addEventListener('contextmenu', e => {
       const card = e.target.closest('.track-card');
       if (!card) return;
       e.preventDefault();
       const track = _renderedTracks[+card.dataset.tidx];
-      if (!track) return;
-      showTrackCtxMenu(e, track);
+      if (track) openTrackSheet(track);
     });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') window.closeTrackSheet(); });
   }
 
   // ── RENOMBRAR + FUSIONAR PLAYLISTS ────────────────────────────────

@@ -1571,56 +1571,121 @@ body {
 body { padding-bottom: 72px; }
 #mini-player + * { margin-top: 0; }
 
-/* ── MENÚ CONTEXTUAL DE TRACKS ──────────────────────────────────── */
-#track-ctx-menu {
-  position: fixed;
-  z-index: 9990;
-  background: rgba(18,18,28,.97);
-  border: 1px solid rgba(168,85,247,.3);
-  border-radius: 14px;
-  padding: 6px;
-  min-width: 210px;
-  box-shadow: 0 12px 40px rgba(0,0,0,.6), 0 0 0 1px rgba(168,85,247,.1);
-  backdrop-filter: blur(20px);
-  opacity: 0;
-  pointer-events: none;
-  transform: scale(.95) translateY(-4px);
-  transition: opacity .15s, transform .15s;
+/* ── TRACK ACTION SHEET (bottom sheet) ───────────────────────────── */
+.ts-backdrop {
+  position: fixed; inset: 0; z-index: 8000;
+  background: rgba(0,0,0,.55); backdrop-filter: blur(4px);
+  opacity: 0; pointer-events: none; transition: opacity .28s;
 }
-#track-ctx-menu.visible {
-  opacity: 1;
-  pointer-events: auto;
-  transform: scale(1) translateY(0);
+.ts-backdrop.visible { opacity: 1; pointer-events: auto; }
+
+.track-sheet {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 8001;
+  background: rgba(14,14,22,.97) !important;
+  border-top: 1px solid rgba(168,85,247,.25);
+  border-radius: 22px 22px 0 0;
+  padding: 0 0 env(safe-area-inset-bottom,0);
+  max-height: 88vh; overflow-y: auto;
+  transform: translateY(100%);
+  transition: transform .32s cubic-bezier(.32,1,.4,1);
+  box-shadow: 0 -8px 48px rgba(0,0,0,.6);
 }
-#track-ctx-menu button {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 10px 14px;
-  background: none;
-  border: none;
-  color: var(--text);
-  font-size: 13px;
-  font-family: 'Outfit', sans-serif;
-  cursor: pointer;
-  border-radius: 9px;
-  text-align: left;
-  transition: background .13s;
+.track-sheet.open { transform: translateY(0); }
+
+.ts-handle {
+  width: 40px; height: 4px;
+  background: rgba(255,255,255,.18); border-radius: 2px;
+  margin: 12px auto 4px; flex-shrink: 0;
 }
-#track-ctx-menu button:hover { background: rgba(168,85,247,.2); color: #e0aaff; }
-#track-ctx-menu button i { width: 16px; text-align: center; color: var(--primary-2); flex-shrink: 0; }
+
+/* Header: cover + title */
+.ts-header {
+  display: flex; align-items: center; gap: 14px;
+  padding: 16px 20px 12px;
+}
+.ts-cover {
+  width: 56px; height: 56px; border-radius: 10px; flex-shrink: 0;
+  background: linear-gradient(135deg,#1a0a2e,#4c1d95);
+}
+.ts-title-block { flex: 1; min-width: 0; }
+.ts-track-title {
+  font-size: 16px; font-weight: 700; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ts-track-artist { font-size: 13px; color: var(--muted); margin-top: 2px; }
+.ts-close-btn {
+  background: rgba(255,255,255,.08); border: 1px solid var(--glass-b);
+  color: var(--muted); border-radius: 50%; width: 32px; height: 32px;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  font-size: 13px; flex-shrink: 0; transition: all .13s;
+}
+.ts-close-btn:hover { background: rgba(255,255,255,.15); color: var(--text); }
+
+/* Play button */
+.ts-play-btn {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  width: calc(100% - 40px); margin: 0 20px 14px;
+  background: linear-gradient(135deg, var(--primary), var(--primary-2));
+  border: none; border-radius: 12px; color: #fff;
+  font-family: 'Outfit', sans-serif; font-size: 15px; font-weight: 600;
+  padding: 13px; cursor: pointer; transition: opacity .13s;
+}
+.ts-play-btn:hover { opacity: .85; }
+
+.ts-divider { height: 1px; background: var(--glass-b); margin: 0 20px 14px; }
+
+/* Section label */
+.ts-section-label {
+  font-size: 11px; font-weight: 700; letter-spacing: .08em;
+  color: var(--muted); text-transform: uppercase;
+  padding: 0 20px 10px;
+}
+
+/* New playlist input row */
+.ts-new-pl-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 0 20px 14px;
+}
+.ts-new-icon { color: var(--primary-2); font-size: 18px; flex-shrink: 0; }
+.ts-new-input {
+  flex: 1; background: rgba(255,255,255,.07);
+  border: 1px solid var(--glass-b); border-radius: 10px;
+  color: var(--text); font-family: 'Outfit', sans-serif; font-size: 14px;
+  padding: 10px 12px; outline: none; transition: border .15s;
+}
+.ts-new-input:focus { border-color: var(--primary-2); background: rgba(168,85,247,.08); }
+.ts-create-btn {
+  background: var(--primary); border: none; color: #fff;
+  border-radius: 10px; padding: 10px 16px; font-family: 'Outfit', sans-serif;
+  font-size: 13px; font-weight: 600; cursor: pointer; flex-shrink: 0; transition: background .13s;
+}
+.ts-create-btn:hover { background: var(--primary-2); }
+
+/* Playlist rows */
+.ts-pl-list { padding: 0 12px 80px; } /* 80px bottom para no quedar bajo el mini-player */
+.ts-pl-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 10px; border-radius: 12px; cursor: pointer;
+  transition: background .13s; border: 1px solid transparent; margin-bottom: 2px;
+}
+.ts-pl-row:hover, .ts-pl-row:active { background: rgba(168,85,247,.12); border-color: rgba(168,85,247,.2); }
+.ts-pl-icon {
+  width: 40px; height: 40px; border-radius: 9px; flex-shrink: 0;
+  background: rgba(168,85,247,.15); display: flex; align-items: center;
+  justify-content: center; color: var(--primary-2); font-size: 14px;
+}
+.ts-pl-info { flex: 1; min-width: 0; }
+.ts-pl-name { display: block; font-size: 14px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ts-pl-count { display: block; font-size: 11px; color: var(--muted); margin-top: 1px; }
+.ts-pl-add-icon { color: rgba(168,85,247,.5); font-size: 14px; flex-shrink: 0; }
+.ts-pl-empty { color: var(--muted); font-size: 13px; text-align: center; padding: 20px 0; line-height: 1.6; }
 
 /* Long-press visual feedback */
 .track-card { user-select: none; touch-action: manipulation; }
 .track-card.holding { outline: 2px solid rgba(168,85,247,.5); outline-offset: 2px; }
-.track-card.ctx-active { outline: 2px solid var(--primary-2); outline-offset: 2px; }
 .track-hold-hint {
-  font-size: 10px;
-  color: rgba(255,255,255,.25);
-  text-align: center;
-  padding: 4px 0 2px;
-  display: none;
+  font-size: 10px; color: rgba(255,255,255,.25);
+  text-align: center; padding: 4px 0 2px; display: none;
 }
 @media (hover: none) { .track-hold-hint { display: block; } }
 

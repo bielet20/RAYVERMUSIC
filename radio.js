@@ -419,6 +419,148 @@
   };
   window.radioPlayIdx = idx => window.RADIO_PLAYER.skip(idx);
 
+  // ── PLAYLIST SELECTOR ────────────────────────────────────────────
+  let activeRadioPlaylist = null; // null = sistema SC
+  let customTrackList = [];
+  let rplDropOpen = false;
+
+  window.toggleRadioPlSelector = function() {
+    rplDropOpen = !rplDropOpen;
+    const drop = document.getElementById('radio-pl-dropdown');
+    const chev = document.getElementById('radio-pl-chevron');
+    if (!drop) return;
+    drop.style.display = rplDropOpen ? '' : 'none';
+    if (chev) chev.style.transform = rplDropOpen ? 'rotate(180deg)' : '';
+    if (rplDropOpen) renderRplDropdown();
+  };
+
+  function closeRplDropdown() {
+    rplDropOpen = false;
+    const drop = document.getElementById('radio-pl-dropdown');
+    const chev = document.getElementById('radio-pl-chevron');
+    if (drop) drop.style.display = 'none';
+    if (chev) chev.style.transform = '';
+  }
+
+  window.renderRplDropdown = function() {
+    const drop = document.getElementById('radio-pl-dropdown');
+    if (!drop) return;
+    const q = (document.getElementById('rpl-search')?.value || '').trim().toLowerCase();
+    const playlists = (window.userPlaylists || []).filter(pl =>
+      !q || pl.name.toLowerCase().includes(q)
+    );
+    const loggedIn = !!(window.getToken?.());
+
+    drop.innerHTML = `
+      <div class="rpl-search-wrap">
+        <i class="fas fa-search rpl-search-icon"></i>
+        <input type="text" id="rpl-search" class="rpl-search" placeholder="Buscar lista…"
+          oninput="window.renderRplDropdown()" autocomplete="off">
+      </div>
+      <div class="rpl-list">
+        <div class="rpl-item${activeRadioPlaylist === null ? ' rpl-active' : ''}"
+          onclick="window.selectRadioPlaylist(null)">
+          <span class="rpl-icon"><i class="fas fa-broadcast-tower"></i></span>
+          <span class="rpl-name">RAYVER Radio</span>
+          <span class="rpl-count">${scSounds.length} tracks</span>
+        </div>
+        ${!loggedIn
+          ? '<div class="rpl-login-hint"><i class="fas fa-lock"></i> Inicia sesión para ver tus listas</div>'
+          : !playlists.length && !q
+            ? '<div class="rpl-empty">Sin listas guardadas</div>'
+            : playlists.map(pl => `
+                <div class="rpl-item${activeRadioPlaylist === pl.id ? ' rpl-active' : ''}"
+                  onclick="window.selectRadioPlaylist('${esc(pl.id)}')">
+                  <span class="rpl-icon"><i class="fas fa-music"></i></span>
+                  <span class="rpl-name">${esc(pl.name)}</span>
+                  <span class="rpl-count">${pl.tracks.length} tracks</span>
+                </div>`).join('')
+        }
+      </div>`;
+    // Keep focus on search input
+    setTimeout(() => document.getElementById('rpl-search')?.focus(), 0);
+  };
+
+  window.selectRadioPlaylist = function(id) {
+    activeRadioPlaylist = id;
+    closeRplDropdown();
+    const nameEl = document.getElementById('radio-pl-name');
+    if (id === null) {
+      if (nameEl) nameEl.textContent = 'RAYVER Radio';
+      customTrackList = [];
+      renderList();
+      highlight(currentIdx);
+    } else {
+      const pl = (window.userPlaylists || []).find(p => p.id === id);
+      if (nameEl) nameEl.textContent = pl?.name || 'Lista';
+      renderCustomTracklist(pl?.tracks || []);
+    }
+  };
+
+  function renderCustomTracklist(tracks) {
+    if (!listBody) return;
+    customTrackList = tracks;
+    if (!tracks.length) {
+      listBody.innerHTML = '<div class="radio-empty"><i class="fas fa-music"></i><p>Lista vacía</p></div>';
+      return;
+    }
+    listBody.innerHTML = tracks.map((t, i) => {
+      const isVideo = t.type === 'video';
+      const vid = t.itemId || '';
+      const coverHtml = isVideo
+        ? `<img class="rtitem-cover" src="https://img.youtube.com/vi/${esc(vid)}/default.jpg" alt="" onerror="this.style.display='none'">`
+        : t.cover
+          ? `<img class="rtitem-cover" src="${esc(t.cover)}" alt="" onerror="this.style.display='none'">`
+          : `<span class="rtitem-cover rtitem-cover-grad" style="background:${GRADS[i%GRADS.length]}">${esc((t.title||'?')[0].toUpperCase())}</span>`;
+      const badge = isVideo
+        ? `<span class="rtitem-plat-badge" style="color:#ff4444"><i class="fab fa-youtube"></i></span>`
+        : `<span class="rtitem-plat-badge ptag-soundcloud"><i class="fab fa-soundcloud"></i></span>`;
+      return `
+        <div class="radio-track-item" onclick="window.playCustomTrack(${i})">
+          <span class="rtitem-num">${i + 1}</span>
+          ${coverHtml}
+          <div class="rtitem-info">
+            <div class="rtitem-title">${esc(t.title || '—')}</div>
+            <div class="rtitem-sub">${isVideo ? 'YouTube' : 'SoundCloud'}</div>
+          </div>
+          ${badge}
+        </div>`;
+    }).join('');
+  }
+
+  window.playCustomTrack = function(idx) {
+    const t = customTrackList[idx];
+    if (!t) return;
+
+    // Highlight clicked row
+    listBody?.querySelectorAll('.radio-track-item').forEach((el, i) => {
+      el.classList.toggle('active', i === idx);
+    });
+
+    if (t.type === 'video') {
+      // Load all videos from this playlist into mini player, start at this one
+      const videosBefore = customTrackList.slice(0, idx + 1).filter(x => x.type === 'video').length - 1;
+      const allVideos = customTrackList.filter(x => x.type === 'video').map(x => ({ videoId: x.itemId, title: x.title }));
+      if (window.MINI_PLAYER?.loadAndPlay) {
+        window.MINI_PLAYER.loadAndPlay(allVideos, Math.max(0, videosBefore));
+      }
+    } else {
+      // SC track — try to find in widget by title match
+      const title = (t.title || '').toLowerCase();
+      const scIdx = enriched.findIndex(e => (e.title||'').toLowerCase() === title);
+      if (scIdx >= 0) {
+        window.RADIO_PLAYER.skip(scIdx);
+      }
+    }
+  };
+
+  // Close dropdown when clicking outside
+  document.addEventListener('click', e => {
+    if (rplDropOpen && !e.target.closest('#radio-pl-dropdown') && !e.target.closest('#radio-pl-selector-btn')) {
+      closeRplDropdown();
+    }
+  });
+
   // ── INIT ─────────────────────────────────────────────────────────
   function init() {
     addRepeatBtn();

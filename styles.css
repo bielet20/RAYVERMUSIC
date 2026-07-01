@@ -591,7 +591,7 @@ body {
 }
 
 .radio-tracklist-head {
-  padding: 14px 16px;
+  padding: 10px 14px;
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 1px;
@@ -600,7 +600,58 @@ body {
   border-bottom: 1px solid var(--glass-b);
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
+}
+.rthead-label { display: flex; align-items: center; gap: 6px; }
+
+.radio-pl-switch-btn {
+  display: flex; align-items: center; gap: 6px;
+  background: rgba(168,85,247,.1); border: 1px solid rgba(168,85,247,.25);
+  color: var(--primary-2); border-radius: 8px;
+  padding: 5px 10px; font-size: 11px; font-weight: 600;
+  cursor: pointer; text-transform: none; letter-spacing: 0;
+  transition: all .15s; white-space: nowrap; max-width: 160px;
+}
+.radio-pl-switch-btn:hover { background: rgba(168,85,247,.2); }
+.radio-pl-switch-btn #radio-pl-name {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.radio-pl-switch-btn i { flex-shrink: 0; transition: transform .2s; font-size: 10px; }
+
+/* Dropdown del selector */
+#radio-pl-dropdown {
+  border-bottom: 1px solid var(--glass-b);
+  background: rgba(0,0,0,.18);
+}
+.rpl-search-wrap {
+  position: relative; padding: 10px 12px 6px;
+}
+.rpl-search-icon {
+  position: absolute; left: 22px; top: 50%; transform: translateY(-50%);
+  color: rgba(255,255,255,.25); font-size: 12px; pointer-events: none;
+}
+.rpl-search {
+  width: 100%; padding: 8px 10px 8px 30px;
+  background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1);
+  border-radius: 8px; color: var(--text); font-family: inherit; font-size: 12px;
+  outline: none; transition: border-color .15s;
+}
+.rpl-search:focus { border-color: rgba(168,85,247,.5); }
+.rpl-search::placeholder { color: rgba(255,255,255,.25); }
+.rpl-list { max-height: 200px; overflow-y: auto; padding: 4px 8px 8px; }
+.rpl-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: 8px; cursor: pointer; transition: background .12s;
+}
+.rpl-item:hover { background: rgba(255,255,255,.06); }
+.rpl-item.rpl-active { background: rgba(168,85,247,.12); }
+.rpl-icon { color: var(--primary-2); font-size: 13px; flex-shrink: 0; width: 18px; text-align: center; }
+.rpl-name { flex: 1; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rpl-count { font-size: 11px; color: var(--muted); flex-shrink: 0; }
+.rpl-login-hint, .rpl-empty {
+  font-size: 12px; color: var(--muted); padding: 10px 10px; text-align: center;
+  display: flex; align-items: center; gap: 6px; justify-content: center;
 }
 
 #radio-tracklist-body {

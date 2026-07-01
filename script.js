@@ -130,6 +130,9 @@ let _pickerPending = null; // { type, itemId, title, cover, url }
 let allTracks = [];
 let allVideos = [];
 
+// Expose for radio.js (runs in same global scope but accesses via window)
+Object.defineProperty(window, 'userPlaylists', { get: () => userPlaylists, enumerable: true });
+
 async function loadUserPlaylists() {
   if (!AUTH.token && !getToken()) return;
   AUTH.token = AUTH.token || getToken();
@@ -1373,6 +1376,13 @@ document.addEventListener('DOMContentLoaded', () => {
       miniPlaying = false;
     },
     isPlaying: () => miniPlaying,
+    loadAndPlay: (videos, startIdx = 0) => {
+      if (!videos?.length) return;
+      miniPlaylist = videos;
+      miniCurrentIdx = startIdx;
+      miniPlayVideo(startIdx);
+      miniRenderQueue();
+    },
   };
 
   // ── INIT ─────────────────────────────────────────────────────────

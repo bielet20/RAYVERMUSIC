@@ -258,8 +258,13 @@
     <!-- Tracklist -->
     <div class="radio-tracklist glass" id="radio-tracklist">
       <div class="radio-tracklist-head">
-        <i class="fas fa-list-music"></i> Playlist
+        <span class="rthead-label"><i class="fas fa-list-music"></i> Playlist</span>
+        <button class="radio-pl-switch-btn" id="radio-pl-selector-btn" onclick="window.toggleRadioPlSelector()">
+          <span id="radio-pl-name">RAYVER Radio</span>
+          <i class="fas fa-chevron-down" id="radio-pl-chevron"></i>
+        </button>
       </div>
+      <div id="radio-pl-dropdown" style="display:none"></div>
       <div id="radio-tracklist-body"></div>
     </div>
   </div>

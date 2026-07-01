@@ -160,6 +160,8 @@ function renderPlaylistsModal() {
         <span class="playlist-item-name">${esc(pl.name)}</span>
         <span class="playlist-item-count">${pl.tracks.length} item${pl.tracks.length !== 1 ? 's' : ''}</span>
         <div class="playlist-item-btns">
+          <button onclick="renamePlaylist('${esc(pl.id)}')" class="pl-rename-btn" title="Renombrar lista"><i class="fas fa-edit"></i></button>
+          <button onclick="mergePlaylistModal('${esc(pl.id)}')" class="pl-merge-btn" title="Fusionar con otra lista"><i class="fas fa-layer-group"></i></button>
           <button onclick="deletePlaylist('${esc(pl.id)}')" class="danger" title="Eliminar lista"><i class="fas fa-trash"></i></button>
         </div>
       </div>
@@ -376,9 +378,10 @@ document.addEventListener('DOMContentLoaded', () => {
   function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 
   // ── TRACKS + FILTROS DINÁMICOS ────────────────────────────────────
-  let allTracks   = [];
-  let trackGenres = [];
-  let filterState = { q: '', genre: 'all', type: 'all', sort: 'default' };
+  let allTracks      = [];
+  let _renderedTracks = []; // copia del array visible actualmente en el grid
+  let trackGenres    = [];
+  let filterState    = { q: '', genre: 'all', type: 'all', sort: 'default' };
 
   function buildFilterBar() {
     if (document.getElementById('music-filter-bar')) return;
@@ -511,15 +514,17 @@ document.addEventListener('DOMContentLoaded', () => {
       grid.innerHTML = `<div class="music-empty"><i class="fas fa-search" style="font-size:2rem;margin-bottom:12px;opacity:.3"></i><p>Sin resultados. Prueba otro filtro.</p></div>`;
       return;
     }
+    _renderedTracks = tracks;
     grid.innerHTML = tracks.map((t, i) => {
-      const pills = Object.entries(t.platforms||{}).filter(([,v])=>v).map(([k,v])=>{
+      const pillsArr = Object.entries(t.platforms||{}).filter(([,v])=>v).map(([k,v])=>{
         const p = PLATS[k]||{l:k,c:'ptag-lk',i:'fas fa-link'};
         return `<a href="${esc(v)}" target="_blank" class="ptag ${p.c}"><i class="${p.i}"></i> ${p.l}</a>`;
-      }).join('');
+      });
       if (t.spotifyUrl && !t.platforms?.spotify) {
         const p = PLATS.spotify;
-        pills.length || (pills === '' && true); // ensure pills is string
+        pillsArr.push(`<a href="${esc(t.spotifyUrl)}" target="_blank" class="ptag ${p.c}"><i class="${p.i}"></i> ${p.l}</a>`);
       }
+      const pills = pillsArr.join('');
       const coverStyle = t.cover
         ? `background-image:url(${esc(t.cover)});background-size:cover;background-position:center`
         : `background:${GRADS[i % GRADS.length]}`;
@@ -539,7 +544,7 @@ document.addEventListener('DOMContentLoaded', () => {
         : '';
 
       return `
-        <div class="track-card reveal" data-genre="${esc(t.genre||'')}" data-type="${esc((t.type||'single').toLowerCase())}">
+        <div class="track-card reveal" data-tidx="${i}" data-genre="${esc(t.genre||'')}" data-type="${esc((t.type||'single').toLowerCase())}">
           <div class="track-art" style="${coverStyle}">${coverText}</div>
           <div class="track-info">
             <div class="track-name">${esc(t.title)}</div>
@@ -548,13 +553,154 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="track-platforms">${pills||'<span class="ptag ptag-lk">Próximamente</span>'}</div>
             <div class="track-actions">
               ${playBtn}
-              <button class="btn-add-playlist" onclick="addToPlaylist('track','${esc(t.id||t.spotifyId||t.title)}','${esc(t.title)}','${esc(t.cover||'')}','${esc(spotifyUrl)}')" title="Añadir a mi lista"><i class="fas fa-plus"></i> Mi lista</button>
+              <button class="btn-add-playlist" onclick="event.stopPropagation();addToPlaylist('track','${esc(t.id||t.spotifyId||t.title)}','${esc(t.title)}','${esc(t.cover||'')}','${esc(spotifyUrl)}')" title="Añadir a lista"><i class="fas fa-plus"></i></button>
             </div>
           </div>
+          <div class="track-hold-hint">Mantén pulsado para más opciones</div>
         </div>`;
     }).join('');
     grid.querySelectorAll('.reveal').forEach(el => revealObs.observe(el));
   }
+
+  // ── MENÚ CONTEXTUAL DE TRACKS (long-press / clic derecho) ────────
+  let _ctxTrack      = null;
+  let _ctxHoldTimer  = null;
+
+  function buildTrackCtxMenu() {
+    if (document.getElementById('track-ctx-menu')) return;
+    const el = document.createElement('div');
+    el.id = 'track-ctx-menu';
+    el.innerHTML = `
+      <button id="ctx-play"><i class="fas fa-play"></i> Reproducir en radio</button>
+      <button id="ctx-add"><i class="fas fa-plus"></i> Añadir a una lista</button>
+      <button id="ctx-newlist"><i class="fas fa-list-ul"></i> Crear lista con esta canción</button>
+    `;
+    document.body.appendChild(el);
+
+    el.querySelector('#ctx-play').onclick = () => {
+      if (_ctxTrack) {
+        if (window.RADIO_PLAYER?.addAndPlay) window.RADIO_PLAYER.addAndPlay({..._ctxTrack});
+        else if (window.RADIO_PLAYER?.skip) window.RADIO_PLAYER.skip(0);
+        document.getElementById('radio')?.scrollIntoView({behavior:'smooth'});
+      }
+      hideTrackCtxMenu();
+    };
+    el.querySelector('#ctx-add').onclick = () => {
+      if (_ctxTrack) addToPlaylist('track', _ctxTrack.id||_ctxTrack.spotifyId||_ctxTrack.title, _ctxTrack.title, _ctxTrack.cover||'', _ctxTrack.spotifyUrl||_ctxTrack.platforms?.spotify||'');
+      hideTrackCtxMenu();
+    };
+    el.querySelector('#ctx-newlist').onclick = async () => {
+      if (_ctxTrack) {
+        _pickerPending = { type:'track', itemId: _ctxTrack.id||_ctxTrack.spotifyId||_ctxTrack.title, title: _ctxTrack.title, cover: _ctxTrack.cover||'', url: _ctxTrack.spotifyUrl||_ctxTrack.platforms?.spotify||'' };
+        await createPlaylistModal(true);
+      }
+      hideTrackCtxMenu();
+    };
+
+    document.addEventListener('pointerdown', e => {
+      if (!e.target.closest('#track-ctx-menu')) hideTrackCtxMenu();
+    }, true);
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') hideTrackCtxMenu(); });
+  }
+
+  function showTrackCtxMenu(e, track) {
+    buildTrackCtxMenu();
+    _ctxTrack = track;
+    const menu = document.getElementById('track-ctx-menu');
+    if (!menu) return;
+    const x = e.clientX ?? e.touches?.[0]?.clientX ?? 100;
+    const y = e.clientY ?? e.touches?.[0]?.clientY ?? 100;
+    menu.style.left = Math.min(x, window.innerWidth  - 230) + 'px';
+    menu.style.top  = Math.min(y, window.innerHeight - 130) + 'px';
+    menu.classList.add('visible');
+    e.target.closest('.track-card')?.classList.add('ctx-active');
+  }
+
+  function hideTrackCtxMenu() {
+    document.getElementById('track-ctx-menu')?.classList.remove('visible');
+    document.querySelectorAll('.track-card.ctx-active').forEach(c => c.classList.remove('ctx-active'));
+    _ctxTrack = null;
+  }
+
+  function attachTrackCtxMenu() {
+    const grid = document.getElementById('music-grid');
+    if (!grid || grid._ctxAttached) return;
+    grid._ctxAttached = true;
+
+    grid.addEventListener('pointerdown', e => {
+      const card = e.target.closest('.track-card');
+      if (!card || e.target.closest('a, button')) return;
+      const track = _renderedTracks[+card.dataset.tidx];
+      if (!track) return;
+      clearTimeout(_ctxHoldTimer);
+      card.classList.add('holding');
+      _ctxHoldTimer = setTimeout(() => {
+        card.classList.remove('holding');
+        showTrackCtxMenu(e, track);
+      }, 700);
+    });
+    grid.addEventListener('pointerup',     () => { clearTimeout(_ctxHoldTimer); document.querySelectorAll('.track-card.holding').forEach(c => c.classList.remove('holding')); });
+    grid.addEventListener('pointermove',   () => { clearTimeout(_ctxHoldTimer); document.querySelectorAll('.track-card.holding').forEach(c => c.classList.remove('holding')); });
+    grid.addEventListener('pointercancel', () => { clearTimeout(_ctxHoldTimer); document.querySelectorAll('.track-card.holding').forEach(c => c.classList.remove('holding')); });
+    grid.addEventListener('contextmenu', e => {
+      const card = e.target.closest('.track-card');
+      if (!card) return;
+      e.preventDefault();
+      const track = _renderedTracks[+card.dataset.tidx];
+      if (!track) return;
+      showTrackCtxMenu(e, track);
+    });
+  }
+
+  // ── RENOMBRAR + FUSIONAR PLAYLISTS ────────────────────────────────
+  window.renamePlaylist = async function(id) {
+    const pl = userPlaylists.find(p => p.id === id);
+    if (!pl) return;
+    const name = prompt('Nuevo nombre:', pl.name);
+    if (!name || !name.trim() || name.trim() === pl.name) return;
+    const r = await apiUser('/playlists/' + id, { method: 'PUT', body: JSON.stringify({ name: name.trim() }) });
+    if (!r.ok) { showToastGlobal('Error al renombrar'); return; }
+    pl.name = name.trim();
+    renderPlaylistsModal();
+    showToastGlobal('Lista renombrada ✓');
+  };
+
+  window.mergePlaylistModal = function(sourceId) {
+    const targets = userPlaylists.filter(p => p.id !== sourceId);
+    if (!targets.length) { showToastGlobal('Necesitas al menos 2 listas para fusionar'); return; }
+    const source = userPlaylists.find(p => p.id === sourceId);
+    document.getElementById('pl-merge-ui')?.remove();
+    const ui = document.createElement('div');
+    ui.id = 'pl-merge-ui';
+    ui.innerHTML = `
+      <div class="pl-merge-panel">
+        <p>Fusionar <strong>${esc(source.name)}</strong> con:</p>
+        <div class="pl-merge-list">
+          ${targets.map(t => `<button class="pl-merge-target" onclick="executePlaylistMerge('${esc(sourceId)}','${esc(t.id)}')">${esc(t.name)} <span>(${t.tracks.length})</span></button>`).join('')}
+        </div>
+        <button class="pl-merge-cancel" onclick="document.getElementById('pl-merge-ui').remove()"><i class="fas fa-times"></i> Cancelar</button>
+      </div>`;
+    const box = document.querySelector('#playlists-modal .modal-box');
+    if (box) box.prepend(ui); else document.getElementById('playlists-modal').prepend(ui);
+  };
+
+  window.executePlaylistMerge = async function(sourceId, targetId) {
+    const source = userPlaylists.find(p => p.id === sourceId);
+    const target = userPlaylists.find(p => p.id === targetId);
+    if (!source || !target) return;
+    document.getElementById('pl-merge-ui')?.remove();
+    let added = 0, skipped = 0;
+    for (const track of source.tracks) {
+      const r = await apiUser('/playlists/' + targetId + '/tracks', {
+        method: 'POST',
+        body: JSON.stringify({ type: track.type, itemId: track.itemId, title: track.title, cover: track.cover, url: track.url })
+      });
+      if (r.status === 409) skipped++;
+      else if (r.ok) { added++; target.tracks.push(r.data); }
+    }
+    renderPlaylistsModal();
+    showToastGlobal(`Fusionadas: ${added} añadidas${skipped ? ', ' + skipped + ' ya existían' : ''} ✓`);
+  };
 
   async function loadTracks() {
     const tracks = await apiGet('/tracks');
@@ -574,6 +720,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     buildFilterBar();
     applyFilters();
+    attachTrackCtxMenu();
   }
 
   // ── VIDEOS + MINI PLAYER ─────────────────────────────────────────

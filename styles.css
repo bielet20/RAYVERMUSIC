@@ -1571,6 +1571,113 @@ body {
 body { padding-bottom: 72px; }
 #mini-player + * { margin-top: 0; }
 
+/* ── MENÚ CONTEXTUAL DE TRACKS ──────────────────────────────────── */
+#track-ctx-menu {
+  position: fixed;
+  z-index: 9990;
+  background: rgba(18,18,28,.97);
+  border: 1px solid rgba(168,85,247,.3);
+  border-radius: 14px;
+  padding: 6px;
+  min-width: 210px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.6), 0 0 0 1px rgba(168,85,247,.1);
+  backdrop-filter: blur(20px);
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(.95) translateY(-4px);
+  transition: opacity .15s, transform .15s;
+}
+#track-ctx-menu.visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: scale(1) translateY(0);
+}
+#track-ctx-menu button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 14px;
+  background: none;
+  border: none;
+  color: var(--text);
+  font-size: 13px;
+  font-family: 'Outfit', sans-serif;
+  cursor: pointer;
+  border-radius: 9px;
+  text-align: left;
+  transition: background .13s;
+}
+#track-ctx-menu button:hover { background: rgba(168,85,247,.2); color: #e0aaff; }
+#track-ctx-menu button i { width: 16px; text-align: center; color: var(--primary-2); flex-shrink: 0; }
+
+/* Long-press visual feedback */
+.track-card { user-select: none; touch-action: manipulation; }
+.track-card.holding { outline: 2px solid rgba(168,85,247,.5); outline-offset: 2px; }
+.track-card.ctx-active { outline: 2px solid var(--primary-2); outline-offset: 2px; }
+.track-hold-hint {
+  font-size: 10px;
+  color: rgba(255,255,255,.25);
+  text-align: center;
+  padding: 4px 0 2px;
+  display: none;
+}
+@media (hover: none) { .track-hold-hint { display: block; } }
+
+/* ── BOTONES PLAYLIST MODAL ──────────────────────────────────────── */
+.playlist-item-btns { display: flex; gap: 6px; }
+.playlist-item-btns button {
+  background: rgba(255,255,255,.06);
+  border: 1px solid var(--glass-b);
+  border-radius: 7px;
+  color: var(--muted);
+  width: 30px;
+  height: 30px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  transition: all .15s;
+}
+.pl-rename-btn:hover { background: rgba(168,85,247,.2) !important; color: #c084fc !important; border-color: rgba(168,85,247,.4) !important; }
+.pl-merge-btn:hover  { background: rgba(99,102,241,.2) !important; color: #818cf8 !important; border-color: rgba(99,102,241,.4) !important; }
+.playlist-item-btns .danger:hover { background: rgba(239,68,68,.2) !important; color: #f87171 !important; border-color: rgba(239,68,68,.4) !important; }
+
+/* Panel de fusión */
+.pl-merge-panel {
+  background: rgba(99,102,241,.07);
+  border: 1px solid rgba(99,102,241,.25);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+.pl-merge-panel p { margin: 0 0 12px; font-size: 13px; color: var(--text); }
+.pl-merge-list { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.pl-merge-target {
+  background: rgba(99,102,241,.15);
+  border: 1px solid rgba(99,102,241,.3);
+  color: #a5b4fc;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-family: 'Outfit', sans-serif;
+  cursor: pointer;
+  transition: background .13s;
+}
+.pl-merge-target:hover { background: rgba(99,102,241,.3); }
+.pl-merge-target span { opacity: .6; font-size: 11px; }
+.pl-merge-cancel {
+  background: none;
+  border: 1px solid rgba(255,255,255,.12);
+  color: var(--muted);
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-family: 'Outfit', sans-serif;
+  cursor: pointer;
+}
+
 /* ── TOAST ──────────────────────────────────────────────────────── */
 #rayver-toast {
   position: fixed;
@@ -1896,16 +2003,18 @@ body { padding-bottom: 72px; }
   border-radius: 6px;
   color: var(--primary-2);
   font-family: inherit;
-  font-size: 11px;
-  font-weight: 600;
+  font-size: 13px;
   cursor: pointer;
-  padding: 5px 10px;
+  padding: 6px 8px;
   transition: all .15s;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
 }
-.btn-add-playlist:hover { background: rgba(168,85,247,.25); }
+.btn-add-playlist:hover { background: rgba(168,85,247,.3); color: #e0aaff; }
 
 /* Picker list */
 .picker-item-info { font-size: 13px; color: var(--muted); margin-bottom: 14px; padding: 10px 12px; background: rgba(255,255,255,.04); border-radius: 8px; }

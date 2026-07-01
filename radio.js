@@ -20,18 +20,19 @@
   ];
 
   // ── STATE ────────────────────────────────────────────────────────
-  let widget     = null;
-  let widgetRdy  = false;
-  let scSounds   = [];   // raw de getSounds() — fuente de verdad de SC
-  let enriched   = [];   // scSounds + covers/links de la API
-  let apiTracks  = [];   // de /api/public/tracks
-  let currentIdx = 0;
-  let playing    = false;
-  let shuffle    = false;
-  let repeat     = 'none';
-  let muted      = false;
-  let iframe     = null;
+  let widget      = null;
+  let widgetRdy   = false;
+  let scSounds    = [];   // raw de getSounds() — fuente de verdad de SC
+  let enriched    = [];   // scSounds + covers/links de la API
+  let apiTracks   = [];   // de /api/public/tracks
+  let currentIdx  = 0;
+  let playing     = false;
+  let shuffle     = false;
+  let repeat      = 'none';
+  let muted       = false;
+  let iframe      = null;
   let pendingPlay = false;
+  let userPlayed  = false; // true cuando el usuario ha pulsado play explícitamente
 
   // ── DOM ──────────────────────────────────────────────────────────
   const $        = id => document.getElementById(id);
@@ -234,33 +235,52 @@
   function bindWidget() {
     widget = SC.Widget(iframe);
 
+    function loadSounds(onDone) {
+      widget.getSounds(sounds => {
+        if (!sounds?.length) return;
+        scSounds = sounds;
+        buildEnriched();
+        renderList();
+        if (counter) counter.textContent = `— / ${scSounds.length}`;
+        if (pendingPlay) { pendingPlay = false; widget.play(); }
+        if (onDone) { onDone(); }
+        else if (!playing) { showTrack(0); }
+        // Si hay títulos nulos, reintentar en 2 segundos (bug de timing del Widget API)
+        if (sounds.some(s => !s.title)) {
+          setTimeout(() => {
+            widget.getSounds(fresh => {
+              if (!fresh?.length) return;
+              scSounds = fresh;
+              buildEnriched();
+              renderList();
+              if (!playing) showTrack(currentIdx);
+            });
+          }, 2000);
+        }
+      });
+    }
+
     widget.bind(SC.Widget.Events.READY, () => {
       widgetRdy = true;
       iframe.style.height = '116px';
       widget.setVolume(muted ? 0 : vol());
-      console.log('[RADIO] Widget listo');
-
-      widget.getSounds(sounds => {
-        if (!sounds?.length) { console.warn('[RADIO] getSounds vacío'); return; }
-        scSounds = sounds;
-        console.log('[RADIO] getSounds:', scSounds.length, 'tracks. Primero:', scSounds[0]?.title);
-        buildEnriched();
-        renderList();
-        showTrack(0);
-        if (counter) counter.textContent = `— / ${scSounds.length}`;
-        if (pendingPlay) { pendingPlay = false; widget.play(); }
-      });
+      loadSounds();
     });
 
     widget.bind(SC.Widget.Events.PLAY, () => {
       iframe.style.height = '116px';
       setPlaying(true);
+      // Ignorar PLAY automático del widget al inicializar (antes de que el usuario pulse play)
+      if (!userPlayed) return;
       widget.getCurrentSoundIndex(idx => {
-        if (typeof idx !== 'number') { console.warn('[RADIO] getCurrentSoundIndex inválido:', idx); return; }
-        console.log('[RADIO] PLAY idx:', idx, 'título SC:', scSounds[idx]?.title, 'currentIdx era:', currentIdx);
+        if (typeof idx !== 'number') return;
         currentIdx = idx;
-        showTrack(idx);
-        highlight(idx);
+        if (!scSounds[idx]?.title) {
+          loadSounds(() => { showTrack(idx); highlight(idx); });
+        } else {
+          showTrack(idx);
+          highlight(idx);
+        }
         if (counter) counter.textContent = `${idx + 1} / ${scSounds.length}`;
       });
     });
@@ -289,6 +309,7 @@
   function doShuffle() {
     let r = Math.floor(Math.random() * scSounds.length);
     if (r === currentIdx && scSounds.length > 1) r = (r+1) % scSounds.length;
+    userPlayed = true;
     widget.skip(r); widget.play();
   }
 
@@ -311,17 +332,20 @@
   // ── CONTROLS ─────────────────────────────────────────────────────
   playBtn && playBtn.addEventListener('click', () => {
     if (!widgetRdy) { pendingPlay = true; return; }
+    userPlayed = true;
     if (playing) { widget.pause(); iframe.style.height = '0px'; }
     else         { widget.play();  iframe.style.height = '116px'; }
   });
 
   prevBtn && prevBtn.addEventListener('click', () => {
     if (!widgetRdy) return;
+    userPlayed = true;
     if (shuffle) doShuffle(); else widget.prev();
   });
 
   nextBtn && nextBtn.addEventListener('click', () => {
     if (!widgetRdy) return;
+    userPlayed = true;
     if (shuffle) doShuffle(); else widget.next();
   });
 
@@ -351,7 +375,7 @@
   window.RADIO_PLAYER = {
     skip: idx => {
       if (!widget || !widgetRdy || !scSounds[idx]) return;
-      // Actualizar UI inmediatamente con scSounds[idx] — fuente de verdad
+      userPlayed = true;
       currentIdx = idx;
       showTrack(idx);
       highlight(idx);

@@ -2016,22 +2016,81 @@ body { padding-bottom: 72px; }
 }
 .btn-add-playlist:hover { background: rgba(168,85,247,.3); color: #e0aaff; }
 
-/* Picker list */
-.picker-item-info { font-size: 13px; color: var(--muted); margin-bottom: 14px; padding: 10px 12px; background: rgba(255,255,255,.04); border-radius: 8px; }
-.picker-pl-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 12px;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: background var(--transition);
-  border: 1px solid transparent;
-  margin-bottom: 6px;
+/* ── PICKER "AÑADIR A LISTA" ─────────────────────────────────────── */
+.picker-track-chip {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; color: var(--text); font-weight: 600;
+  padding: 10px 12px; background: rgba(168,85,247,.08);
+  border: 1px solid rgba(168,85,247,.2); border-radius: 10px; margin-bottom: 14px;
 }
-.picker-pl-row:hover { background: rgba(168,85,247,.1); border-color: rgba(168,85,247,.2); }
-.picker-pl-name { font-size: 14px; font-weight: 600; }
-.picker-pl-count { font-size: 12px; color: var(--muted); }
+.picker-track-chip i { color: var(--primary-2); flex-shrink: 0; }
+.picker-track-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.picker-pl-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 11px 12px; border-radius: 10px; cursor: pointer;
+  transition: background .13s; border: 1px solid transparent; margin-bottom: 4px;
+}
+.picker-pl-row:hover { background: rgba(168,85,247,.12); border-color: rgba(168,85,247,.25); }
+.picker-pl-row:active { background: rgba(168,85,247,.22); }
+.picker-pl-icon {
+  width: 36px; height: 36px; background: rgba(168,85,247,.15);
+  border-radius: 8px; display: flex; align-items: center; justify-content: center;
+  color: var(--primary-2); flex-shrink: 0; font-size: 13px;
+}
+.picker-pl-info { flex: 1; min-width: 0; }
+.picker-pl-name { display: block; font-size: 14px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.picker-pl-count { display: block; font-size: 11px; color: var(--muted); }
+.picker-pl-add { color: rgba(168,85,247,.6); font-size: 12px; flex-shrink: 0; }
+
+.picker-empty { color: var(--muted); font-size: 13px; text-align: center; padding: 14px 0 8px; }
+
+/* Input inline para nueva lista dentro del picker */
+.picker-new-list {
+  display: flex; gap: 6px; margin-top: 10px;
+  padding-top: 10px; border-top: 1px solid var(--glass-b);
+}
+.picker-new-list input {
+  flex: 1; background: rgba(255,255,255,.06); border: 1px solid var(--glass-b);
+  border-radius: 8px; color: var(--text); font-family: 'Outfit', sans-serif;
+  font-size: 13px; padding: 9px 12px; outline: none; transition: border .15s;
+}
+.picker-new-list input:focus { border-color: var(--primary-2); background: rgba(168,85,247,.07); }
+.picker-new-btn {
+  background: var(--primary); border: none; color: #fff; border-radius: 8px;
+  padding: 0 14px; font-size: 14px; cursor: pointer; flex-shrink: 0; transition: background .13s;
+}
+.picker-new-btn:hover { background: var(--primary-2); }
+
+/* ── MODAL "MIS LISTAS" — input de nueva lista ───────────────────── */
+.pl-new-form {
+  display: flex; gap: 8px; margin-bottom: 16px;
+}
+.pl-new-form input {
+  flex: 1; background: rgba(255,255,255,.06); border: 1px solid var(--glass-b);
+  border-radius: 10px; color: var(--text); font-family: 'Outfit', sans-serif;
+  font-size: 14px; padding: 10px 14px; outline: none; transition: border .15s;
+}
+.pl-new-form input:focus { border-color: var(--primary-2); background: rgba(168,85,247,.07); }
+.pl-new-btn {
+  background: linear-gradient(135deg, var(--primary), var(--primary-2));
+  border: none; color: #fff; border-radius: 10px; padding: 0 18px;
+  font-size: 13px; font-family: 'Outfit', sans-serif; font-weight: 600;
+  cursor: pointer; white-space: nowrap; display: flex; align-items: center; gap: 6px;
+  flex-shrink: 0; transition: opacity .13s;
+}
+.pl-new-btn:hover { opacity: .85; }
+
+/* Edición inline del nombre de playlist */
+.pl-name-edit-input {
+  background: rgba(168,85,247,.12); border: 1px solid var(--primary-2);
+  border-radius: 6px; color: var(--text); font-family: 'Outfit', sans-serif;
+  font-size: 14px; font-weight: 600; padding: 2px 8px; outline: none;
+  min-width: 0; flex: 1;
+}
+
+/* Empty state en lista de tracks de una playlist */
+.pl-empty-tracks { font-size: 11px; color: rgba(255,255,255,.25); padding: 6px 0 2px; font-style: italic; }
 
 @media (max-width: 700px) {
   #mini-player-bar { padding: 6px 12px; gap: 8px; }

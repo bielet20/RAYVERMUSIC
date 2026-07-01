@@ -116,9 +116,13 @@
   <div class="modal-box modal-playlists glass">
     <button class="modal-close" onclick="closePlaylists()"><i class="fas fa-times"></i></button>
     <h3 class="modal-title"><i class="fas fa-music"></i> Mis Listas</h3>
-    <button class="btn btn-primary" onclick="createPlaylistModal()" style="margin-bottom:16px">
-      <i class="fas fa-plus"></i> Nueva lista
-    </button>
+    <div class="pl-new-form">
+      <input type="text" id="pl-new-name" placeholder="Nombre de la nueva lista…" maxlength="60"
+        onkeydown="if(event.key==='Enter')createPlaylistDirect()" autocomplete="off">
+      <button class="pl-new-btn" onclick="createPlaylistDirect()" title="Crear lista">
+        <i class="fas fa-plus"></i> Crear
+      </button>
+    </div>
     <div id="playlists-list"></div>
   </div>
 </div>
@@ -130,9 +134,6 @@
     <h3 class="modal-title"><i class="fas fa-plus"></i> Añadir a lista</h3>
     <div id="picker-item-info" class="picker-item-info"></div>
     <div id="picker-list"></div>
-    <button class="btn btn-outline btn-block" onclick="createPlaylistModal(true)" style="margin-top:8px">
-      <i class="fas fa-plus"></i> Nueva lista
-    </button>
   </div>
 </div>
 

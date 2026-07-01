@@ -129,7 +129,8 @@ async function loadUserPlaylists() {
 }
 
 window.addToPlaylist = function(type, itemId, title, cover, url) {
-  if (!AUTH.user && !getToken()) {
+  // Verificar por token, no por objeto de usuario (puede no estar cargado aún)
+  if (!(AUTH.token || getToken())) {
     _pickerPending = { type, itemId, title, cover, url };
     openAuthModal();
     return;
@@ -154,13 +155,13 @@ function renderPlaylistsModal() {
   }
   const TYPE_LABELS = { video: 'Video', track: 'Track', beat: 'Beat' };
   container.innerHTML = userPlaylists.map(pl => `
-    <div class="playlist-item">
+    <div class="playlist-item" data-plid="${esc(pl.id)}">
       <div class="playlist-item-header">
-        <i class="fas fa-music" style="color:var(--primary-2)"></i>
+        <i class="fas fa-music" style="color:var(--primary-2);flex-shrink:0"></i>
         <span class="playlist-item-name">${esc(pl.name)}</span>
-        <span class="playlist-item-count">${pl.tracks.length} item${pl.tracks.length !== 1 ? 's' : ''}</span>
+        <span class="playlist-item-count">${pl.tracks.length} canción${pl.tracks.length !== 1 ? 'es' : ''}</span>
         <div class="playlist-item-btns">
-          <button onclick="renamePlaylist('${esc(pl.id)}')" class="pl-rename-btn" title="Renombrar lista"><i class="fas fa-edit"></i></button>
+          <button onclick="renamePlaylist('${esc(pl.id)}')" class="pl-rename-btn" title="Renombrar"><i class="fas fa-edit"></i></button>
           <button onclick="mergePlaylistModal('${esc(pl.id)}')" class="pl-merge-btn" title="Fusionar con otra lista"><i class="fas fa-layer-group"></i></button>
           <button onclick="deletePlaylist('${esc(pl.id)}')" class="danger" title="Eliminar lista"><i class="fas fa-trash"></i></button>
         </div>
@@ -171,20 +172,47 @@ function renderPlaylistsModal() {
           <span class="playlist-track-title">${esc(t.title)}</span>
           ${t.url ? `<a href="${esc(t.url)}" target="_blank" style="color:var(--primary-2);font-size:12px"><i class="fas fa-external-link-alt"></i></a>` : ''}
           <button onclick="removeTrackFromPlaylist('${esc(pl.id)}','${esc(t.id)}')" title="Quitar"><i class="fas fa-times"></i></button>
-        </div>`).join('')}</div>` : ''}
+        </div>`).join('')}</div>` : '<div class="pl-empty-tracks">Sin canciones todavía</div>'}
     </div>`).join('');
 }
 
-window.createPlaylistModal = async function(fromPicker) {
-  const name = prompt('Nombre de la nueva lista:');
-  if (!name || !name.trim()) return;
+// Crear lista desde el picker (input inline, sin prompt)
+window.createPlaylistInline = async function() {
+  const input = document.getElementById('picker-new-name');
+  const name = input?.value?.trim();
+  if (!name) { input?.focus(); return; }
+  input.disabled = true;
   const r = await apiUser('/playlists', { method: 'POST', body: JSON.stringify({ name }) });
+  input.disabled = false;
   if (!r.ok) { showToastGlobal(r.data.error || 'Error al crear lista'); return; }
   userPlaylists.push(r.data);
-  renderPlaylistsModal();
-  if (fromPicker) { renderPlaylistPicker(); }
-  showToastGlobal('Lista "' + r.data.name + '" creada');
+  showToastGlobal('Lista "' + r.data.name + '" creada ✓');
+  if (_pickerPending) {
+    // Añadir la canción pendiente automáticamente a la nueva lista
+    await addTrackToPlaylist(r.data.id);
+  } else {
+    renderPlaylistPicker();
+    renderPlaylistsModal();
+  }
 };
+
+// Crear lista desde el modal "Mis Listas"
+window.createPlaylistDirect = async function() {
+  const input = document.getElementById('pl-new-name');
+  const name = input?.value?.trim();
+  if (!name) { input?.focus(); return; }
+  input.disabled = true;
+  const r = await apiUser('/playlists', { method: 'POST', body: JSON.stringify({ name }) });
+  input.disabled = false;
+  if (!r.ok) { showToastGlobal(r.data.error || 'Error al crear lista'); return; }
+  userPlaylists.push(r.data);
+  input.value = '';
+  renderPlaylistsModal();
+  showToastGlobal('Lista "' + r.data.name + '" creada ✓');
+};
+
+// Compat: algunos botones aún llaman a esto
+window.createPlaylistModal = function() { openPlaylists(); };
 
 window.deletePlaylist = async function(id) {
   if (!confirm('¿Eliminar esta lista?')) return;
@@ -202,30 +230,48 @@ window.removeTrackFromPlaylist = async function(plId, trackId) {
   renderPlaylistsModal();
 };
 
-function openPlaylistPicker() {
+async function openPlaylistPicker() {
   const modal = document.getElementById('playlist-picker');
   if (!modal) return;
+  // Refrescar listas si están vacías o si no se han cargado aún
+  if (!userPlaylists.length) await loadUserPlaylists();
   modal.style.display = 'flex';
   renderPlaylistPicker();
+  // Focus al input de nueva lista si no hay listas
+  setTimeout(() => {
+    if (!userPlaylists.length) document.getElementById('picker-new-name')?.focus();
+  }, 150);
 }
 window.closePlaylistPicker = function() {
   document.getElementById('playlist-picker').style.display = 'none';
+  _pickerPending = null;
 };
 
 function renderPlaylistPicker() {
   const info = document.getElementById('picker-item-info');
   const list = document.getElementById('picker-list');
-  if (!info || !list || !_pickerPending) return;
-  info.textContent = '🎵 ' + _pickerPending.title;
-  if (!userPlaylists.length) {
-    list.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:12px 0">No tienes listas todavía.</p>';
-    return;
+  if (!info || !list) return;
+  if (_pickerPending) {
+    info.innerHTML = `<div class="picker-track-chip"><i class="fas fa-music"></i><span>${esc(_pickerPending.title)}</span></div>`;
   }
-  list.innerHTML = userPlaylists.map(pl => `
+  const rows = userPlaylists.map(pl => `
     <div class="picker-pl-row" onclick="addTrackToPlaylist('${esc(pl.id)}')">
-      <span class="picker-pl-name">${esc(pl.name)}</span>
-      <span class="picker-pl-count">${pl.tracks.length} items</span>
+      <div class="picker-pl-icon"><i class="fas fa-music"></i></div>
+      <div class="picker-pl-info">
+        <span class="picker-pl-name">${esc(pl.name)}</span>
+        <span class="picker-pl-count">${pl.tracks.length} canción${pl.tracks.length !== 1 ? 'es' : ''}</span>
+      </div>
+      <i class="fas fa-plus picker-pl-add"></i>
     </div>`).join('');
+  list.innerHTML = `
+    ${rows || '<p class="picker-empty">Crea tu primera lista para guardar canciones.</p>'}
+    <div class="picker-new-list">
+      <input type="text" id="picker-new-name" placeholder="Nueva lista…" maxlength="60"
+        onkeydown="if(event.key==='Enter')createPlaylistInline()" autocomplete="off">
+      <button class="picker-new-btn" onclick="createPlaylistInline()" title="Crear lista">
+        <i class="fas fa-plus"></i>
+      </button>
+    </div>`;
 }
 
 async function addTrackToPlaylist(plId) {
@@ -262,11 +308,15 @@ async function initAuth() {
   const r = await apiUser('/me');
   if (r.ok) {
     AUTH.user = r.data;
+    if (r.data) localStorage.setItem('rv_user', JSON.stringify(r.data));
     updateAuthUI();
     await loadUserPlaylists();
-  } else {
+  } else if (r.status === 401) {
+    // Solo limpiar en 401 explícito, no en error de red (status 0)
     clearToken();
+    updateAuthUI();
   }
+  // En error de red: conservar token y datos almacenados
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -653,16 +703,28 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ── RENOMBRAR + FUSIONAR PLAYLISTS ────────────────────────────────
-  window.renamePlaylist = async function(id) {
+  window.renamePlaylist = function(id) {
     const pl = userPlaylists.find(p => p.id === id);
     if (!pl) return;
-    const name = prompt('Nuevo nombre:', pl.name);
-    if (!name || !name.trim() || name.trim() === pl.name) return;
-    const r = await apiUser('/playlists/' + id, { method: 'PUT', body: JSON.stringify({ name: name.trim() }) });
-    if (!r.ok) { showToastGlobal('Error al renombrar'); return; }
-    pl.name = name.trim();
-    renderPlaylistsModal();
-    showToastGlobal('Lista renombrada ✓');
+    // Edición inline: reemplazar el span del nombre con un input
+    const nameEl = document.querySelector(`.playlist-item[data-plid="${id}"] .playlist-item-name`);
+    if (!nameEl) return;
+    const input = document.createElement('input');
+    input.type = 'text'; input.value = pl.name; input.maxLength = 60;
+    input.className = 'pl-name-edit-input';
+    nameEl.replaceWith(input);
+    input.focus(); input.select();
+    const save = async () => {
+      const name = input.value.trim();
+      if (name && name !== pl.name) {
+        const r = await apiUser('/playlists/' + id, { method: 'PUT', body: JSON.stringify({ name }) });
+        if (r.ok) { pl.name = name; showToastGlobal('Lista renombrada ✓'); }
+        else showToastGlobal('Error al renombrar');
+      }
+      renderPlaylistsModal();
+    };
+    input.addEventListener('blur', save);
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); input.blur(); } if (e.key === 'Escape') renderPlaylistsModal(); });
   };
 
   window.mergePlaylistModal = function(sourceId) {

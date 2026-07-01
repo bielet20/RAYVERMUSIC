@@ -126,7 +126,7 @@ document.addEventListener('click', e => {
 
 // ── SERVER PLAYLISTS ──────────────────────────────────────────────
 let userPlaylists = [];
-let _pickerPending = null; // { type, itemId, title, cover, url }
+let _pickerPending = null; // { type, itemId, title, cover, url, scUrl }
 let allTracks = [];
 let allVideos = [];
 
@@ -897,7 +897,8 @@ document.addEventListener('DOMContentLoaded', () => {
       itemId: String(track.id || ''),
       title: track.title || '',
       cover: track.cover || '',
-      url: track.spotifyUrl || track.platforms?.spotify || track.scUrl || ''
+      url: track.spotifyUrl || track.platforms?.spotify || track.scUrl || '',
+      scUrl: track.scUrl || ''
     };
     openPlaylistPicker();
   };

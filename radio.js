@@ -704,21 +704,34 @@
       // Pausar SC mientras reproduce vídeo
       if (playing) { widget.pause(); iframe.style.height = '0px'; setPlaying(false); }
     } else {
-      // Track SC: buscar en la playlist SC por título
+      // Track SC: buscar en la playlist SC por URL (fiable) o título normalizado
       if (window.MINI_PLAYER?.pause) window.MINI_PLAYER.pause();
-      const title = (t.title || '').toLowerCase();
-      const scIdx = enriched.findIndex(e => (e.title || '').toLowerCase() === title);
+
+      // Si enriched no está listo aún, reintentar en 500ms
+      if (!enriched.length) {
+        setTimeout(() => window.playCustomTrack(idx), 500);
+        return;
+      }
+
+      let scIdx = -1;
+      // 1. Coincidencia por URL de SC (más fiable, sin depender del título)
+      if (t.scUrl) {
+        scIdx = enriched.findIndex(e => e.scUrl === t.scUrl);
+      }
+      // 2. Fallback: título normalizado (quita feat., paréntesis, caracteres especiales)
+      if (scIdx < 0) {
+        const nt = norm(t.title);
+        if (nt) scIdx = enriched.findIndex(e => norm(e.title) === nt);
+      }
+
       if (scIdx >= 0) {
         userPlayed = true;
         currentIdx = scIdx;
         iframe.style.height = '116px';
         widget.skip(scIdx);
         widget.play();
-      } else {
-        // No encontrado en SC: saltar al siguiente
-        const next = idx + 1;
-        if (next < customTrackList.length) setTimeout(() => window.playCustomTrack(next), 200);
       }
+      // Si no se encuentra, simplemente mostramos la info pero no se reproduce por SC
     }
   };
 

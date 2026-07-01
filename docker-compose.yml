@@ -26,8 +26,9 @@ services:
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-*}
       TOKEN_SECRET: ${TOKEN_SECRET:-rayver-secret-2025-change-me}
       DATA_DIR: /app/data
-    volumes:
-      - rayver_data:/app/data
+    # Sin volumen aquí — Coolify gestiona /app/data desde la pestaña Storages.
+    # Tener volumen aquí Y en Coolify Storages causa conflicto: el de compose
+    # se borra en cada redeploy y sobreescribe el persistente de Coolify.
     networks:
       - app_net
     healthcheck:
@@ -40,9 +41,3 @@ services:
 networks:
   app_net:
     driver: bridge
-
-# Named volume con nombre fijo — NO depende del project name de Coolify.
-# Docker no lo elimina con "docker compose down" (solo con "down -v").
-volumes:
-  rayver_data:
-    name: rayvermusic_data

@@ -646,7 +646,11 @@ app.get('/api/user/playlists', userAuth, (req, res) => {
 app.post('/api/user/playlists', userAuth, (req, res) => {
   const { name } = req.body || {};
   if (!name || !name.trim()) return res.status(400).json({ error: 'Nombre requerido' });
-  const pl = { id: uid(), userId: req.user.userId, name: name.trim(), tracks: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+  const trimmed = name.trim();
+  const userLists = (db.playlists || []).filter(p => p.userId === req.user.userId);
+  if (userLists.find(p => p.name.toLowerCase() === trimmed.toLowerCase()))
+    return res.status(409).json({ error: 'Ya tienes una lista con ese nombre' });
+  const pl = { id: uid(), userId: req.user.userId, name: trimmed, tracks: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
   db.playlists.push(pl);
   saveDB(db);
   res.json(pl);
@@ -655,7 +659,12 @@ app.post('/api/user/playlists', userAuth, (req, res) => {
 app.put('/api/user/playlists/:id', userAuth, (req, res) => {
   const pl = (db.playlists || []).find(p => p.id === req.params.id && p.userId === req.user.userId);
   if (!pl) return res.status(404).json({ error: 'No encontrada' });
-  if (req.body.name) pl.name = req.body.name.trim();
+  if (req.body.name) {
+    const trimmed = req.body.name.trim();
+    const conflict = (db.playlists || []).find(p => p.userId === req.user.userId && p.id !== req.params.id && p.name.toLowerCase() === trimmed.toLowerCase());
+    if (conflict) return res.status(409).json({ error: 'Ya tienes una lista con ese nombre' });
+    pl.name = trimmed;
+  }
   pl.updatedAt = new Date().toISOString();
   saveDB(db);
   res.json(pl);

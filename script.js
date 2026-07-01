@@ -178,6 +178,7 @@ function renderPlaylistsModal() {
         </div>
         <i class="fas fa-chevron-down pl-chevron"></i>
         <div class="playlist-item-btns" onclick="event.stopPropagation()">
+          <button onclick="playPlaylist('${esc(pl.id)}')" class="pl-play-btn" title="Reproducir en radio"><i class="fas fa-play"></i></button>
           <button onclick="renamePlaylist('${esc(pl.id)}')" class="pl-rename-btn" title="Renombrar"><i class="fas fa-edit"></i></button>
           <button onclick="mergePlaylistModal('${esc(pl.id)}')" class="pl-merge-btn" title="Fusionar"><i class="fas fa-layer-group"></i></button>
           <button onclick="confirmDeletePlaylist('${esc(pl.id)}')" class="pl-delete-btn" title="Eliminar lista"><i class="fas fa-trash"></i></button>
@@ -219,42 +220,43 @@ window.confirmDeletePlaylist = function(id) {
   `;
 };
 
-// Crear lista desde el picker (input inline, sin prompt)
+// Helper: crea una playlist asegurando nombre único
+async function _createPlaylist(name, inputEl) {
+  const trimmed = (name || '').trim();
+  if (!trimmed) { inputEl?.focus(); return null; }
+  if (userPlaylists.find(p => p.name.toLowerCase() === trimmed.toLowerCase())) {
+    showToastGlobal('Ya tienes una lista con ese nombre');
+    inputEl?.select();
+    return null;
+  }
+  if (inputEl) inputEl.disabled = true;
+  const r = await apiUser('/playlists', { method: 'POST', body: JSON.stringify({ name: trimmed }) });
+  if (inputEl) { inputEl.disabled = false; inputEl.value = ''; }
+  if (r.status === 409) { showToastGlobal('Ya tienes una lista con ese nombre'); return null; }
+  if (!r.ok)  { showToastGlobal(r.data?.error || 'Error al crear lista'); return null; }
+  userPlaylists.push(r.data);
+  return r.data;
+}
+
+// Crear lista desde el picker (input inline)
 window.createPlaylistInline = async function() {
   const input = document.getElementById('picker-new-name');
-  const name = input?.value?.trim();
-  if (!name) { input?.focus(); return; }
-  input.disabled = true;
-  const r = await apiUser('/playlists', { method: 'POST', body: JSON.stringify({ name }) });
-  input.disabled = false;
-  if (!r.ok) { showToastGlobal(r.data.error || 'Error al crear lista'); return; }
-  userPlaylists.push(r.data);
-  showToastGlobal('Lista "' + r.data.name + '" creada ✓');
-  if (_pickerPending) {
-    // Añadir la canción pendiente automáticamente a la nueva lista
-    await addTrackToPlaylist(r.data.id);
-  } else {
-    renderPlaylistPicker();
-    renderPlaylistsModal();
-  }
+  const pl = await _createPlaylist(input?.value, input);
+  if (!pl) return;
+  showToastGlobal('Lista "' + pl.name + '" creada ✓');
+  if (_pickerPending) await addTrackToPlaylist(pl.id);
+  else { renderPlaylistPicker(); renderPlaylistsModal(); }
 };
 
 // Crear lista desde el modal "Mis Listas"
 window.createPlaylistDirect = async function() {
   const input = document.getElementById('pl-new-name');
-  const name = input?.value?.trim();
-  if (!name) { input?.focus(); return; }
-  input.disabled = true;
-  const r = await apiUser('/playlists', { method: 'POST', body: JSON.stringify({ name }) });
-  input.disabled = false;
-  if (!r.ok) { showToastGlobal(r.data.error || 'Error al crear lista'); return; }
-  userPlaylists.push(r.data);
-  input.value = '';
+  const pl = await _createPlaylist(input?.value, input);
+  if (!pl) return;
   renderPlaylistsModal();
-  showToastGlobal('Lista "' + r.data.name + '" creada ✓');
+  showToastGlobal('Lista "' + pl.name + '" creada ✓');
 };
 
-// Compat: algunos botones aún llaman a esto
 window.createPlaylistModal = function() { openPlaylists(); };
 
 window.deletePlaylist = async function(id) {
@@ -700,16 +702,14 @@ document.addEventListener('DOMContentLoaded', () => {
       </div>
       <button class="ts-close-btn" onclick="window.closeTrackSheet()"><i class="fas fa-times"></i></button>
     `;
-    // Refresh playlists then render
-    if (!userPlaylists.length) {
-      loadUserPlaylists().then(renderTSPlaylists);
-    } else {
-      renderTSPlaylists();
-    }
+    // Mostrar las listas que tenemos y refrescar en background
+    renderTSPlaylists();
+    loadUserPlaylists().then(renderTSPlaylists);
     // Show sheet
     document.getElementById('ts-backdrop')?.classList.add('visible');
     document.getElementById('track-sheet')?.classList.add('open');
-    document.getElementById('ts-new-name').value = '';
+    const tsInput = document.getElementById('ts-new-name');
+    if (tsInput) tsInput.value = '';
   }
 
   window.openTrackSheet = openTrackSheet;
@@ -771,15 +771,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   window.tsCreateList = async function() {
     const input = document.getElementById('ts-new-name');
-    const name  = input?.value?.trim();
-    if (!name) { input?.focus(); return; }
-    input.disabled = true;
-    const r = await apiUser('/playlists', { method: 'POST', body: JSON.stringify({ name }) });
-    input.disabled = false;
-    if (!r.ok) { showToastGlobal(r.data?.error || 'Error al crear lista'); return; }
-    userPlaylists.push(r.data);
-    showToastGlobal('Lista "' + r.data.name + '" creada ✓');
-    await window.tsAddToList(r.data.id);
+    const pl = await _createPlaylist(input?.value, input);
+    if (!pl) return;
+    showToastGlobal('Lista "' + pl.name + '" creada ✓');
+    await window.tsAddToList(pl.id);
   };
 
   function attachTrackCtxMenu() {
@@ -828,14 +823,49 @@ document.addEventListener('DOMContentLoaded', () => {
     const save = async () => {
       const name = input.value.trim();
       if (name && name !== pl.name) {
+        if (userPlaylists.find(p => p.id !== id && p.name.toLowerCase() === name.toLowerCase())) {
+          showToastGlobal('Ya tienes una lista con ese nombre');
+          renderPlaylistsModal();
+          return;
+        }
         const r = await apiUser('/playlists/' + id, { method: 'PUT', body: JSON.stringify({ name }) });
         if (r.ok) { pl.name = name; showToastGlobal('Lista renombrada ✓'); }
-        else showToastGlobal('Error al renombrar');
+        else { showToastGlobal(r.data?.error || 'Error al renombrar'); }
       }
       renderPlaylistsModal();
     };
     input.addEventListener('blur', save);
     input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); input.blur(); } if (e.key === 'Escape') renderPlaylistsModal(); });
+  };
+
+  // Reproducir la playlist del usuario en el radio
+  window.playPlaylist = function(plId) {
+    const pl = userPlaylists.find(p => p.id === plId);
+    if (!pl || !pl.tracks.length) { showToastGlobal('La lista está vacía — añade canciones primero'); return; }
+    const radioList = window.RADIO_PLAYER?.getPlaylist?.() || [];
+    // Intentar encontrar cada canción en el radio por título
+    for (const track of pl.tracks) {
+      const title = (track.title || '').toLowerCase();
+      const idx   = radioList.findIndex(t => (t.title || '').toLowerCase() === title);
+      if (idx >= 0) {
+        window.RADIO_PLAYER.skip(idx);
+        document.getElementById('radio')?.scrollIntoView({behavior:'smooth'});
+        closePlaylists();
+        showToastGlobal('Reproduciendo "' + pl.name + '" en radio');
+        return;
+      }
+    }
+    // Fallback: addAndPlay con el primer track
+    if (window.RADIO_PLAYER?.addAndPlay) {
+      window.RADIO_PLAYER.addAndPlay(pl.tracks[0]);
+      document.getElementById('radio')?.scrollIntoView({behavior:'smooth'});
+      closePlaylists();
+      showToastGlobal('Reproduciendo en radio...');
+    } else {
+      const url = pl.tracks[0]?.url;
+      if (url) { window.open(url, '_blank'); closePlaylists(); }
+      else showToastGlobal('No hay pistas reproducibles en esta lista');
+    }
   };
 
   window.mergePlaylistModal = function(sourceId) {

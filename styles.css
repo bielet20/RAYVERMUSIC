@@ -2081,6 +2081,8 @@ body { padding-bottom: 72px; }
   display: flex; align-items: center; justify-content: center;
   transition: all .13s;
 }
+.pl-play-btn { color: var(--primary-2) !important; border-color: rgba(168,85,247,.3) !important; }
+.pl-play-btn:hover   { background: rgba(168,85,247,.2) !important; color: #fff !important; }
 .pl-rename-btn:hover { background: rgba(168,85,247,.15); color: #c084fc; border-color: rgba(168,85,247,.4); }
 .pl-merge-btn:hover  { background: rgba(99,102,241,.15); color: #818cf8; border-color: rgba(99,102,241,.4); }
 .pl-delete-btn:hover { background: rgba(239,68,68,.15); color: #f87171; border-color: rgba(239,68,68,.4); }

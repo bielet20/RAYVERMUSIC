@@ -338,23 +338,15 @@ body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--text);min-
             <div class="pwd-section" style="margin-top:24px">
               <div class="pwd-title"><i class="fas fa-database"></i> Backup de datos</div>
               <p style="font-size:13px;color:var(--muted);margin-bottom:16px">
-                Guarda el estado actual de la base de datos (usuarios, listas, contenido) en Coolify.<br>
-                Así los datos sobreviven cualquier redeploy aunque el volumen falle.
+                Los datos se guardan automáticamente en el servidor (bind mount).<br>
+                Descarga el backup para tenerlo a mano en caso de emergencia.
               </p>
-              <ol style="font-size:13px;color:var(--muted);margin-bottom:16px;padding-left:18px;line-height:2">
-                <li>Pulsa <strong style="color:var(--text)">Exportar backup</strong> → copia el valor que aparece</li>
-                <li>Ve a Coolify → tu servicio → <strong style="color:var(--text)">Environment Variables</strong></li>
-                <li>Añade o edita: <code style="background:rgba(255,255,255,.08);padding:2px 6px;border-radius:4px">DB_INIT = &lt;el valor copiado&gt;</code></li>
-                <li>Guarda en Coolify (no hace falta redesplegar)</li>
-              </ol>
-              <button class="btn btn-p" onclick="exportDB()"><i class="fas fa-download"></i> Exportar backup</button>
-              <div id="db-export-out" style="display:none;margin-top:16px">
-                <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:6px">Valor para DB_INIT en Coolify (copia todo):</label>
-                <textarea id="db-export-b64" readonly rows="4"
-                  style="width:100%;background:rgba(255,255,255,.05);border:1px solid var(--gb);border-radius:8px;color:var(--text);padding:10px;font-family:monospace;font-size:11px;resize:vertical;box-sizing:border-box"></textarea>
-                <button class="btn" style="margin-top:8px;font-size:12px" onclick="copyDBExport()"><i class="fas fa-copy"></i> Copiar al portapapeles</button>
-                <span id="db-export-info" style="font-size:12px;color:var(--muted);margin-left:12px"></span>
-              </div>
+              <p style="font-size:12px;color:var(--muted);margin-bottom:16px;background:rgba(255,255,255,.04);border:1px solid var(--gb);border-radius:8px;padding:10px 12px">
+                <i class="fas fa-info-circle" style="color:var(--purple)"></i>
+                Para restaurar: ve a Coolify → tu servicio → <strong style="color:var(--text)">Files</strong> → crea <code style="background:rgba(255,255,255,.08);padding:1px 5px;border-radius:3px">/app/data/db.json</code> con el contenido del backup.
+              </p>
+              <button class="btn btn-p" onclick="exportDB()"><i class="fas fa-download"></i> Descargar backup (db.json)</button>
+              <span id="db-export-info" style="font-size:12px;color:var(--muted);margin-left:12px"></span>
             </div>
           </div>
         </div>
@@ -527,17 +519,18 @@ function doLogout() {
 async function exportDB() {
   const r = await apiFetch('GET', '/admin/db-export');
   if (!r.ok) { toast('Error al exportar', 'err'); return; }
-  document.getElementById('db-export-b64').value = r.data.base64;
-  document.getElementById('db-export-out').style.display = 'block';
+  const json = atob(r.data.base64);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const date = new Date().toISOString().slice(0,10);
+  a.href = url;
+  a.download = `rayvermusic-db-${date}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
   document.getElementById('db-export-info').textContent =
     `${r.data.users} usuarios · ${r.data.playlists} listas · ${Math.round(r.data.size/1024*10)/10} KB`;
-}
-
-function copyDBExport() {
-  const ta = document.getElementById('db-export-b64');
-  ta.select();
-  document.execCommand('copy');
-  toast('Copiado al portapapeles ✓');
+  toast('Backup descargado ✓');
 }
 
 async function changePassword() {

@@ -1927,3 +1927,146 @@ body { padding-top: 56px; }
   #mini-title { max-width: 120px; }
   #mini-yt-wrap iframe { height: 160px; }
 }
+
+/* ══ MUSIC FILTER BAR ═══════════════════════════════════════════════ */
+#music-filter-bar {
+  max-width: 1100px;
+  margin: 0 auto 28px;
+  padding: 0 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.mf-search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.mf-search-icon {
+  position: absolute;
+  left: 16px;
+  color: var(--muted);
+  font-size: 14px;
+  pointer-events: none;
+}
+.mf-search-input {
+  width: 100%;
+  padding: 12px 44px 12px 44px;
+  background: rgba(255,255,255,.05);
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 50px;
+  color: #fff;
+  font-size: 15px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color .2s, background .2s;
+}
+.mf-search-input:focus { border-color: var(--primary); background: rgba(168,85,247,.08); }
+.mf-search-input::placeholder { color: var(--muted); }
+.mf-clear-btn {
+  position: absolute;
+  right: 14px;
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 4px 6px;
+  font-size: 13px;
+  transition: color .2s;
+}
+.mf-clear-btn:hover { color: #fff; }
+.mf-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+.mf-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.mf-group + .mf-group { padding-left: 10px; border-left: 1px solid rgba(255,255,255,.08); }
+.mf-select {
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.12);
+  color: #fff;
+  padding: 6px 14px;
+  border-radius: 50px;
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  cursor: pointer;
+}
+.mf-select option { background: #1a0a2e; color: #fff; }
+.mf-results-info { font-size: 12px; color: var(--muted); padding-left: 4px; }
+
+/* ══ TRACK BADGES (genre, BPM, key) ════════════════════════════════ */
+.track-badges { display: flex; flex-wrap: wrap; gap: 5px; margin: 6px 0; }
+.track-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 50px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+.track-badge-genre { background: rgba(168,85,247,.2); color: #c084fc; border: 1px solid rgba(168,85,247,.3); }
+.track-badge-bpm   { background: rgba(0,229,255,.1);  color: #67e8f9; border: 1px solid rgba(0,229,255,.2); }
+.track-badge-key   { background: rgba(245,158,11,.1); color: #fcd34d; border: 1px solid rgba(245,158,11,.2); }
+
+/* ══ TRACK ACTIONS ══════════════════════════════════════════════════ */
+.track-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.btn-play-radio {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  border-radius: 50px;
+  padding: 5px 13px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background .2s, transform .15s;
+}
+.btn-play-radio:hover { background: #9333ea; transform: scale(1.04); }
+
+/* ══ TRACKLIST PLATFORM BADGE ═══════════════════════════════════════ */
+.rtitem-plat-badge {
+  flex-shrink: 0;
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid;
+}
+.rtitem-plat-badge.ptag-youtube    { background: rgba(255,0,0,.15);  color: #f87171; border-color: rgba(255,0,0,.25); }
+.rtitem-plat-badge.ptag-soundcloud { background: rgba(255,85,0,.15); color: #fb923c; border-color: rgba(255,85,0,.25); }
+.rtitem-plat-badge.ptag-s          { background: rgba(29,185,84,.15);color: #4ade80; border-color: rgba(29,185,84,.25); }
+
+/* ══ RADIO PLATFORM TAGS ════════════════════════════════════════════ */
+.ptag-youtube { background: rgba(255,0,0,.15); color: #f87171; border: 1px solid rgba(255,0,0,.25); }
+
+/* ══ RADIO REPEAT BUTTON ════════════════════════════════════════════ */
+#radio-repeat.active { color: var(--primary); }
+
+/* ══ MUSIC EMPTY STATE ══════════════════════════════════════════════ */
+.music-empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--muted);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}

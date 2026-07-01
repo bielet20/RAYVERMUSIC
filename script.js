@@ -375,29 +375,205 @@ document.addEventListener('DOMContentLoaded', () => {
   const GRADS = ['linear-gradient(135deg,#1a0a2e,#4c1d95)','linear-gradient(135deg,#0f0520,#3b0764)','linear-gradient(135deg,#071424,#0c2d54)','linear-gradient(135deg,#200820,#451540)','linear-gradient(135deg,#0a1a08,#1a3510)','linear-gradient(135deg,#1a1008,#352a08)'];
   function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 
-  // ── TRACKS ───────────────────────────────────────────────────────
-  async function loadTracks() {
-    const tracks = await apiGet('/tracks');
+  // ── TRACKS + FILTROS DINÁMICOS ────────────────────────────────────
+  let allTracks   = [];
+  let trackGenres = [];
+  let filterState = { q: '', genre: 'all', type: 'all', sort: 'default' };
+
+  function buildFilterBar() {
+    if (document.getElementById('music-filter-bar')) return;
+    const bar = document.createElement('div');
+    bar.id = 'music-filter-bar';
+    bar.innerHTML = `
+      <div class="mf-search-wrap">
+        <i class="fas fa-search mf-search-icon"></i>
+        <input type="search" id="mf-search" placeholder="Buscar por título, artista, género…" autocomplete="off" class="mf-search-input">
+        <button id="mf-search-clear" class="mf-clear-btn" style="display:none" title="Limpiar"><i class="fas fa-times"></i></button>
+      </div>
+      <div class="mf-row">
+        <div class="mf-group" id="mf-genres">
+          <button class="filter-btn active" data-genre="all">Todos</button>
+        </div>
+        <div class="mf-group" id="mf-types">
+          <button class="filter-btn active" data-type="all">Todo</button>
+          <button class="filter-btn" data-type="single">Singles</button>
+          <button class="filter-btn" data-type="ep">EPs</button>
+          <button class="filter-btn" data-type="album">Álbumes</button>
+          <button class="filter-btn" data-type="remix">Remixes</button>
+        </div>
+        <div class="mf-group">
+          <select id="mf-sort" class="mf-select">
+            <option value="default">Orden original</option>
+            <option value="newest">Más recientes</option>
+            <option value="az">A → Z</option>
+            <option value="bpm_asc">BPM ↑</option>
+            <option value="bpm_desc">BPM ↓</option>
+          </select>
+        </div>
+      </div>
+      <div id="mf-results-info" class="mf-results-info"></div>`;
+    const grid = document.getElementById('music-grid');
+    if (grid) grid.parentNode.insertBefore(bar, grid);
+
+    // Search
+    const searchEl = document.getElementById('mf-search');
+    const clearBtn = document.getElementById('mf-search-clear');
+    searchEl.addEventListener('input', () => {
+      filterState.q = searchEl.value.trim().toLowerCase();
+      clearBtn.style.display = filterState.q ? '' : 'none';
+      applyFilters();
+    });
+    clearBtn.addEventListener('click', () => {
+      searchEl.value = '';
+      filterState.q = '';
+      clearBtn.style.display = 'none';
+      applyFilters();
+    });
+
+    // Genre buttons (base + from API)
+    populateGenreFilters();
+
+    // Type buttons
+    document.getElementById('mf-types').querySelectorAll('.filter-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.getElementById('mf-types').querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        filterState.type = btn.dataset.type;
+        applyFilters();
+      });
+    });
+
+    // Sort
+    document.getElementById('mf-sort').addEventListener('change', e => {
+      filterState.sort = e.target.value;
+      applyFilters();
+    });
+  }
+
+  function populateGenreFilters() {
+    const container = document.getElementById('mf-genres');
+    if (!container) return;
+    const genres = trackGenres.length ? trackGenres : [...new Set(allTracks.map(t => t.genre).filter(Boolean))];
+    const extra   = genres.map(g => `<button class="filter-btn" data-genre="${esc(g)}">${esc(g)}</button>`).join('');
+    container.innerHTML = `<button class="filter-btn active" data-genre="all">Todos</button>${extra}`;
+    container.querySelectorAll('.filter-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        container.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        filterState.genre = btn.dataset.genre;
+        applyFilters();
+      });
+    });
+  }
+
+  function applyFilters() {
+    let tracks = [...allTracks];
+
+    if (filterState.q) {
+      tracks = tracks.filter(t =>
+        (t.title  || '').toLowerCase().includes(filterState.q) ||
+        (t.artist || '').toLowerCase().includes(filterState.q) ||
+        (t.genre  || '').toLowerCase().includes(filterState.q) ||
+        (t.tags   || []).some(tag => tag.toLowerCase().includes(filterState.q))
+      );
+    }
+    if (filterState.genre !== 'all') {
+      tracks = tracks.filter(t => (t.genre || '').toLowerCase() === filterState.genre.toLowerCase());
+    }
+    if (filterState.type !== 'all') {
+      tracks = tracks.filter(t => {
+        const type = (t.type || 'single').toLowerCase();
+        return type === filterState.type ||
+          (filterState.type === 'single' && !['ep','album','remix'].includes(type));
+      });
+    }
+
+    switch (filterState.sort) {
+      case 'newest':   tracks.sort((a,b) => new Date(b.releaseDate||b.updatedAt||0) - new Date(a.releaseDate||a.updatedAt||0)); break;
+      case 'az':       tracks.sort((a,b) => (a.title||'').localeCompare(b.title||'')); break;
+      case 'bpm_asc':  tracks.sort((a,b) => (a.bpm||0) - (b.bpm||0)); break;
+      case 'bpm_desc': tracks.sort((a,b) => (b.bpm||0) - (a.bpm||0)); break;
+    }
+
+    renderMusicGrid(tracks);
+
+    const info = document.getElementById('mf-results-info');
+    if (info) {
+      const hasFilter = filterState.q || filterState.genre !== 'all' || filterState.type !== 'all' || filterState.sort !== 'default';
+      info.textContent = hasFilter ? `${tracks.length} resultado${tracks.length !== 1 ? 's' : ''}` : '';
+    }
+  }
+
+  function renderMusicGrid(tracks) {
     const grid = document.getElementById('music-grid');
     if (!grid) return;
-    if (tracks && tracks.length) {
-      const el = document.getElementById('stat-tracks');
-      if (el) el.textContent = tracks.length;
-      const ab = document.getElementById('about-tracks');
-      if (ab) ab.textContent = tracks.length;
-    }
-    if (!tracks || !tracks.length) {
-      grid.innerHTML = `<div class="track-card"><div class="track-art" style="background:${GRADS[0]}"><span>Feel It</span></div><div class="track-info"><div class="track-name">Feel It In The Air</div><div class="track-meta">Álbum · 2025</div><div class="track-platforms"><a href="https://open.spotify.com/artist/0GmwWh84e70RNGNkYOwE6d" target="_blank" class="ptag ptag-s"><i class="fab fa-spotify"></i> Spotify</a></div></div></div>`;
+    if (!tracks.length) {
+      grid.innerHTML = `<div class="music-empty"><i class="fas fa-search" style="font-size:2rem;margin-bottom:12px;opacity:.3"></i><p>Sin resultados. Prueba otro filtro.</p></div>`;
       return;
     }
-    grid.innerHTML = tracks.map((t,i) => {
-      const pills = Object.entries(t.platforms||{}).filter(([,v])=>v).map(([k,v])=>{const p=PLATS[k]||{l:k,c:'ptag-lk',i:'fas fa-link'};return `<a href="${esc(v)}" target="_blank" class="ptag ${p.c}"><i class="${p.i}"></i> ${p.l}</a>`;}).join('');
-      const coverStyle = t.cover?`background-image:url(${t.cover});background-size:cover;background-position:center`:`background:${GRADS[i%GRADS.length]}`;
-      const coverText = t.cover?'':`<span>${esc(t.title.split(' ').slice(0,2).join(' '))}</span>`;
-      const spotifyUrl = t.spotifyUrl || (t.platforms && t.platforms.spotify) || '';
-      return `<div class="track-card reveal"><div class="track-art" style="${coverStyle}">${coverText}</div><div class="track-info"><div class="track-name">${esc(t.title)}</div><div class="track-meta">${esc(t.type||'Single')}${t.year?' · '+t.year:''}</div><div class="track-platforms">${pills||'<span class="ptag ptag-lk">Próximamente</span>'}</div><button class="btn-add-playlist" onclick="addToPlaylist('track','${esc(t.id||t.spotifyId||t.title)}','${esc(t.title)}','${esc(t.cover||'')}','${esc(spotifyUrl)}')" style="margin-top:8px"><i class="fas fa-plus"></i> Mi lista</button></div></div>`;
+    grid.innerHTML = tracks.map((t, i) => {
+      const pills = Object.entries(t.platforms||{}).filter(([,v])=>v).map(([k,v])=>{
+        const p = PLATS[k]||{l:k,c:'ptag-lk',i:'fas fa-link'};
+        return `<a href="${esc(v)}" target="_blank" class="ptag ${p.c}"><i class="${p.i}"></i> ${p.l}</a>`;
+      }).join('');
+      if (t.spotifyUrl && !t.platforms?.spotify) {
+        const p = PLATS.spotify;
+        pills.length || (pills === '' && true); // ensure pills is string
+      }
+      const coverStyle = t.cover
+        ? `background-image:url(${esc(t.cover)});background-size:cover;background-position:center`
+        : `background:${GRADS[i % GRADS.length]}`;
+      const coverText = t.cover ? '' : `<span>${esc((t.title||'').split(' ').slice(0,2).join(' '))}</span>`;
+      const spotifyUrl = t.spotifyUrl || t.platforms?.spotify || '';
+
+      // Badges: genre, BPM, key
+      const badges = [];
+      if (t.genre) badges.push(`<span class="track-badge track-badge-genre">${esc(t.genre)}</span>`);
+      if (t.bpm)   badges.push(`<span class="track-badge track-badge-bpm">${t.bpm} BPM</span>`);
+      if (t.key)   badges.push(`<span class="track-badge track-badge-key">${esc(t.key)}</span>`);
+
+      // Can this track be played in radio?
+      const canPlay = !!(t.youtubeId || t.scUrl || t.spotifyUrl || t.platforms?.spotify);
+      const playBtn = canPlay
+        ? `<button class="btn-play-radio" onclick="RADIO_PLAYER.addAndPlay(${esc(JSON.stringify({...t, _gridIdx: i}))});document.getElementById('radio').scrollIntoView({behavior:'smooth'})" title="Reproducir en Radio"><i class="fas fa-play"></i> Escuchar</button>`
+        : '';
+
+      return `
+        <div class="track-card reveal" data-genre="${esc(t.genre||'')}" data-type="${esc((t.type||'single').toLowerCase())}">
+          <div class="track-art" style="${coverStyle}">${coverText}</div>
+          <div class="track-info">
+            <div class="track-name">${esc(t.title)}</div>
+            <div class="track-meta">${esc(t.type||'Single')}${t.releaseDate?' · '+(t.releaseDate||'').slice(0,4):t.year?' · '+t.year:''}</div>
+            ${badges.length ? `<div class="track-badges">${badges.join('')}</div>` : ''}
+            <div class="track-platforms">${pills||'<span class="ptag ptag-lk">Próximamente</span>'}</div>
+            <div class="track-actions">
+              ${playBtn}
+              <button class="btn-add-playlist" onclick="addToPlaylist('track','${esc(t.id||t.spotifyId||t.title)}','${esc(t.title)}','${esc(t.cover||'')}','${esc(spotifyUrl)}')" title="Añadir a mi lista"><i class="fas fa-plus"></i> Mi lista</button>
+            </div>
+          </div>
+        </div>`;
     }).join('');
     grid.querySelectorAll('.reveal').forEach(el => revealObs.observe(el));
+  }
+
+  async function loadTracks() {
+    const tracks = await apiGet('/tracks');
+    const grid   = document.getElementById('music-grid');
+    if (!grid) return;
+
+    if (tracks?.length) {
+      allTracks = tracks;
+      const el = document.getElementById('stat-tracks');  if (el) el.textContent = tracks.length;
+      const ab = document.getElementById('about-tracks'); if (ab) ab.textContent = tracks.length;
+    } else {
+      allTracks = [{
+        id: 'feel-it', title: 'Feel It In The Air', artist: 'RAYVER', type: 'single',
+        platforms: { spotify: 'https://open.spotify.com/artist/0GmwWh84e70RNGNkYOwE6d' }
+      }];
+    }
+
+    buildFilterBar();
+    applyFilters();
   }
 
   // ── VIDEOS + MINI PLAYER ─────────────────────────────────────────
@@ -741,8 +917,16 @@ document.addEventListener('DOMContentLoaded', () => {
   // ── GÉNEROS DINÁMICOS ─────────────────────────────────────────────
   async function loadGenres() {
     const genres = await apiGet('/genres');
+
+    // Alimentar filtros de la sección de música
+    if (genres?.length) {
+      trackGenres = genres.map(g => g.name);
+      populateGenreFilters();
+    }
+
+    // Filtros de la sección beats
     const filterEl = document.getElementById('beats-filter');
-    if (!filterEl || !genres || !genres.length) return;
+    if (!filterEl || !genres?.length) return;
     filterEl.innerHTML = `<button class="filter-btn active" data-genre="all">Todos</button>` +
       genres.map(g => `<button class="filter-btn" data-genre="${esc(g.slug)}">${esc(g.name)}</button>`).join('');
     filterEl.querySelectorAll('.filter-btn').forEach(btn => {

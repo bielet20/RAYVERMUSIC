@@ -1,285 +1,139 @@
 /**
- * RAYVER RADIO v7
- * Tracklist sincronizada con el widget de SoundCloud real.
- * El widget carga la playlist de SC y al cambiar de track
- * el evento PLAY_PROGRESS/PLAY nos da el índice real via
- * widget.getCurrentSoundIndex() — así tracklist y player siempre coinciden.
+ * RAYVER HYBRID PLAYER v8
+ * Prioridad: YouTube → SoundCloud → Spotify
+ * Carga tracks desde /api/public/tracks con fallback a playlist SC.
  */
 (function () {
   'use strict';
 
-  const SC_PLAYLIST = 'https://soundcloud.com/biel-rivero-sampol/sets/marzo-best-ranking';
+  const SC_PLAYLIST_FALLBACK = 'https://soundcloud.com/biel-rivero-sampol/sets/marzo-best-ranking';
 
-  let widgetReady   = false;
-  let widget        = null;
-  let scTracks      = [];   // tracks reales del widget SC
-  let currentIdx    = 0;
-  let isPlaying     = false;
-  let isShuffle     = false;
-  let isMuted       = false;
+  // ── STATE ──────────────────────────────────────────────────────
+  let playlist     = [];
+  let currentIdx   = 0;
+  let isPlaying    = false;
+  let isShuffle    = false;
+  let repeatMode   = 'none'; // none | one | all
+  let activePlat   = null;   // youtube | soundcloud | spotify | null
+  let isMuted      = false;
 
   // ── DOM ────────────────────────────────────────────────────────
-  const titleEl      = document.getElementById('radio-title');
-  const artistEl     = document.getElementById('radio-artist');
-  const genreEl      = document.getElementById('radio-genre');
-  const platTagsEl   = document.getElementById('radio-platform-tags');
-  const playBtn      = document.getElementById('radio-play');
-  const playIcon     = document.getElementById('radio-play-icon');
-  const prevBtn      = document.getElementById('radio-prev');
-  const nextBtn      = document.getElementById('radio-next');
-  const shuffleBtn   = document.getElementById('radio-shuffle');
-  const muteBtn      = document.getElementById('radio-mute');
-  const volIcon      = document.getElementById('radio-vol-icon');
-  const volumeEl     = document.getElementById('radio-volume');
-  const fillEl       = document.getElementById('radio-progress-fill');
-  const curTimeEl    = document.getElementById('radio-current-time');
-  const durEl        = document.getElementById('radio-duration');
-  const onairDot     = document.getElementById('radio-onair-dot');
-  const counterEl    = document.getElementById('radio-counter');
-  const coverEl      = document.getElementById('radio-cover');
-  const coverPulse   = document.getElementById('radio-cover-pulse');
-  const tracklistBody= document.getElementById('radio-tracklist-body');
-  const audioEl      = document.getElementById('radio-audio');
-  const progEl       = document.getElementById('radio-progress');
-  const progWrap     = document.getElementById('radio-progress-wrap');
-
+  const $ = id => document.getElementById(id);
+  const titleEl      = $('radio-title');
+  const artistEl     = $('radio-artist');
+  const genreEl      = $('radio-genre');
+  const platTagsEl   = $('radio-platform-tags');
+  const playBtn      = $('radio-play');
+  const playIcon     = $('radio-play-icon');
+  const prevBtn      = $('radio-prev');
+  const nextBtn      = $('radio-next');
+  const shuffleBtn   = $('radio-shuffle');
+  const muteBtn      = $('radio-mute');
+  const volIcon      = $('radio-vol-icon');
+  const volumeEl     = $('radio-volume');
+  const fillEl       = $('radio-progress-fill');
+  const curTimeEl    = $('radio-current-time');
+  const durEl        = $('radio-duration');
+  const onairDot     = $('radio-onair-dot');
+  const counterEl    = $('radio-counter');
+  const coverEl      = $('radio-cover');
+  const coverPulse   = $('radio-cover-pulse');
+  const tracklistBody = $('radio-tracklist-body');
+  const progEl       = $('radio-progress');
+  const progWrap     = $('radio-progress-wrap');
+  const audioEl      = $('radio-audio');
   if (audioEl) { audioEl.style.display = 'none'; audioEl.src = ''; }
 
   // ── UTILS ──────────────────────────────────────────────────────
   function fmt(ms) {
     if (!ms || isNaN(ms)) return '0:00';
     const s = Math.floor(ms / 1000);
-    return `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
   }
   function esc(s) {
-    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
+  function getBestPlatform(t) {
+    if (t.youtubeId)                        return 'youtube';
+    if (t.scUrl)                            return 'soundcloud';
+    if (t.spotifyUrl || t.platforms?.spotify) return 'spotify';
+    return null;
+  }
+  function vol() { return parseInt(volumeEl?.value ?? 80); }
 
-  // ── CREAR IFRAME WIDGET ─────────────────────────────────────────
-  function createWidget() {
-    let iframe = document.getElementById('sc-widget');
-    if (!iframe) {
-      iframe = document.createElement('iframe');
-      iframe.id     = 'sc-widget';
-      iframe.allow  = 'autoplay';
-      iframe.src    = `https://w.soundcloud.com/player/?url=${encodeURIComponent(SC_PLAYLIST)}`
-        + `&color=%23a855f7&auto_play=false&hide_related=true&show_comments=false`
-        + `&show_user=true&show_reposts=false&show_teaser=false&continuous_play=true`;
-      iframe.style.cssText = 'width:100%;height:0;border:none;display:block;overflow:hidden;border-radius:10px;margin-top:12px;transition:height 0.3s';
-      const playerDiv = document.querySelector('.radio-player');
-      if (playerDiv) playerDiv.appendChild(iframe);
+  // ── YOUTUBE ENGINE ─────────────────────────────────────────────
+  let ytPlayer   = null;
+  let ytReady    = false;
+  let ytTimer    = null;
+
+  function ytContainer() {
+    let el = $('yt-radio-hidden');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'yt-radio-hidden';
+      el.style.cssText = 'position:fixed;left:-9999px;width:1px;height:1px;pointer-events:none;';
+      document.body.appendChild(el);
     }
-    return iframe;
+    return el;
   }
 
-  // ── BIND WIDGET ─────────────────────────────────────────────────
-  function bindWidget(iframe) {
-    widget = window.SC.Widget(iframe);
+  function loadYTApi(cb) {
+    if (window.YT?.Player) { cb(); return; }
+    const prev = window.onYouTubeIframeAPIReady;
+    window.onYouTubeIframeAPIReady = () => { prev?.(); cb(); };
+    if (!$('yt-iframe-api')) {
+      const s = document.createElement('script');
+      s.id  = 'yt-iframe-api';
+      s.src = 'https://www.youtube.com/iframe_api';
+      document.head.appendChild(s);
+    }
+  }
 
-    widget.bind(SC.Widget.Events.READY, () => {
-      widgetReady = true;
-
-      // Obtener todos los sonidos reales de la playlist
-      widget.getSounds(sounds => {
-        if (!sounds || !sounds.length) return;
-        scTracks = sounds.map(s => ({
-          id:        s.id,
-          title:     s.title,
-          artist:    s.user?.username || 'RAYVER',
-          cover:     s.artwork_url
-                       ? s.artwork_url.replace('large', 't300x300')
-                       : (s.user?.avatar_url || 'logo.jpg'),
-          permalink: s.permalink_url,
-          duration:  s.duration
-        }));
-
-        // Mostrar primer track en UI
-        updateUIFromTrack(scTracks[0], 0);
-        renderTracklist();
-        if (counterEl) counterEl.textContent = `1 / ${scTracks.length}`;
-      });
-    });
-
-    // Al cambiar de track el widget dispara PLAY con el índice real
-    widget.bind(SC.Widget.Events.PLAY, () => {
-      setPlayState(true);
-      // Obtener índice real del widget
-      widget.getCurrentSoundIndex(idx => {
-        currentIdx = idx || 0;
-        if (scTracks[currentIdx]) {
-          updateUIFromTrack(scTracks[currentIdx], currentIdx);
-        } else {
-          // Fallback: obtener sonido actual
-          widget.getCurrentSound(s => {
-            if (s) updateUIFromSound(s);
-          });
+  function ytInitPlayer(videoId) {
+    if (ytPlayer) { try { ytPlayer.destroy(); } catch(e) {} ytPlayer = null; }
+    ytReady = false;
+    loadYTApi(() => {
+      ytPlayer = new YT.Player(ytContainer(), {
+        videoId,
+        playerVars: { autoplay: 1, controls: 0, rel: 0, modestbranding: 1, playsinline: 1 },
+        events: {
+          onReady: () => {
+            ytReady = true;
+            ytPlayer.setVolume(isMuted ? 0 : vol());
+          },
+          onStateChange: e => {
+            if (e.data === YT.PlayerState.PLAYING) { setPlayState(true);  ytStartProgress(); }
+            if (e.data === YT.PlayerState.PAUSED)  { setPlayState(false); ytStopProgress(); }
+            if (e.data === YT.PlayerState.ENDED)   { ytStopProgress(); autoAdvance(); }
+          }
         }
       });
     });
-
-    widget.bind(SC.Widget.Events.PAUSE,  () => setPlayState(false));
-    widget.bind(SC.Widget.Events.FINISH, () => { if (!isShuffle) widget.next(); else shufflePlay(); });
-
-    widget.bind(SC.Widget.Events.PLAY_PROGRESS, data => {
-      if (!data) return;
-      const pos = data.currentPosition || 0;
-      const dur = data.duration || 1;
-      if (fillEl)    fillEl.style.width = Math.min((pos / dur) * 100, 100) + '%';
-      if (curTimeEl) curTimeEl.textContent = fmt(pos);
-      if (durEl)     durEl.textContent     = fmt(dur);
-      if (progWrap)  progWrap.style.display = '';
-    });
-
-    widget.bind(SC.Widget.Events.ERROR, () => {
-      console.warn('[radio] SC error, saltando...');
-      setTimeout(() => widget.next(), 1000);
-    });
   }
 
-  // ── UPDATE UI ───────────────────────────────────────────────────
-  function updateUIFromTrack(track, idx) {
-    if (!track) return;
-    currentIdx = idx;
-    if (titleEl)   titleEl.textContent  = track.title  || 'RAYVER Radio';
-    if (artistEl)  artistEl.textContent = track.artist || 'RAYVER';
-    if (genreEl)   genreEl.textContent  = '';
-    if (coverEl)   coverEl.src = track.cover || 'logo.jpg';
-    if (counterEl) counterEl.textContent = `${idx + 1} / ${scTracks.length}`;
-    if (platTagsEl && track.permalink) {
-      platTagsEl.innerHTML = `<a href="${esc(track.permalink)}" target="_blank" class="radio-ptag ptag-soundcloud"><i class="fab fa-soundcloud"></i> SoundCloud</a>`;
-    }
-    highlightTracklist(idx);
+  function ytStartProgress() {
+    ytStopProgress();
+    ytTimer = setInterval(() => {
+      if (!ytPlayer || !ytReady) return;
+      try {
+        const cur = ytPlayer.getCurrentTime() * 1000;
+        const dur = ytPlayer.getDuration() * 1000;
+        if (fillEl && dur > 0) fillEl.style.width = Math.min((cur / dur) * 100, 100) + '%';
+        if (curTimeEl) curTimeEl.textContent = fmt(cur);
+        if (durEl)     durEl.textContent     = fmt(dur);
+        if (progWrap)  progWrap.style.display = '';
+      } catch(e) {}
+    }, 500);
   }
+  function ytStopProgress() { clearInterval(ytTimer); ytTimer = null; }
 
-  function updateUIFromSound(sound) {
-    const track = {
-      title:     sound.title,
-      artist:    sound.user?.username || 'RAYVER',
-      cover:     sound.artwork_url?.replace('large','t300x300') || 'logo.jpg',
-      permalink: sound.permalink_url
-    };
-    const idx = scTracks.findIndex(t => t.title === sound.title);
-    updateUIFromTrack(track, idx >= 0 ? idx : currentIdx);
-  }
+  // ── SOUNDCLOUD ENGINE ──────────────────────────────────────────
+  let scWidget      = null;
+  let scReady       = false;
+  let scIframe      = null;
+  let scFallbackMode = false; // true cuando usamos la playlist SC completa
 
-  // ── PLAY STATE ──────────────────────────────────────────────────
-  function setPlayState(playing) {
-    isPlaying = playing;
-    if (playIcon)   playIcon.className = playing ? 'fas fa-pause' : 'fas fa-play';
-    if (onairDot)   onairDot.classList.toggle('pulsing', playing);
-    if (coverEl)    coverEl.classList.toggle('spinning', playing);
-    if (coverPulse) coverPulse.classList.toggle('active', playing);
-    // Mostrar/ocultar el widget iframe
-    const iframe = document.getElementById('sc-widget');
-    if (iframe) iframe.style.height = playing ? '116px' : '0px';
-  }
-
-  // ── TRACKLIST ───────────────────────────────────────────────────
-  function renderTracklist() {
-    if (!tracklistBody) return;
-    if (!scTracks.length) {
-      tracklistBody.innerHTML = `<div class="radio-empty">
-        <i class="fas fa-circle-notch fa-spin"></i>
-        <p>Cargando playlist…</p>
-      </div>`;
-      return;
-    }
-    tracklistBody.innerHTML = scTracks.map((t, i) => `
-      <div class="radio-track-item${i === currentIdx ? ' active' : ''}" onclick="radioPlayIdx(${i})">
-        <span class="rtitem-num">${i + 1}</span>
-        <img class="rtitem-cover"
-          src="${esc(t.cover || 'logo.jpg')}"
-          alt="${esc(t.title)}"
-          loading="lazy"
-          onerror="this.src='logo.jpg'">
-        <div class="rtitem-info">
-          <div class="rtitem-title">${esc(t.title)}</div>
-          <div class="rtitem-sub">${esc(t.artist || 'RAYVER')}${t.duration ? ' · ' + fmt(t.duration) : ''}</div>
-        </div>
-      </div>`).join('');
-  }
-
-  function highlightTracklist(idx) {
-    document.querySelectorAll('.radio-track-item').forEach((el, i) => {
-      el.classList.toggle('active', i === idx);
-      if (i === idx) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    });
-  }
-
-  // ── CONTROLES ───────────────────────────────────────────────────
-  function ensureWidget() {
-    if (!widgetReady) {
-      const iframe = createWidget();
-      loadSCScript(() => bindWidget(iframe));
-    }
-  }
-
-  playBtn && playBtn.addEventListener('click', () => {
-    ensureWidget();
-    if (!widgetReady) return;
-    if (isPlaying) widget.pause();
-    else widget.play();
-  });
-
-  prevBtn && prevBtn.addEventListener('click', () => {
-    ensureWidget();
-    if (widgetReady) widget.prev();
-  });
-
-  nextBtn && nextBtn.addEventListener('click', () => {
-    ensureWidget();
-    if (widgetReady) widget.next();
-  });
-
-  shuffleBtn && shuffleBtn.addEventListener('click', () => {
-    isShuffle = !isShuffle;
-    shuffleBtn.classList.toggle('active', isShuffle);
-  });
-
-  function shufflePlay() {
-    if (!scTracks.length) return;
-    let r = Math.floor(Math.random() * scTracks.length);
-    if (r === currentIdx) r = (r + 1) % scTracks.length;
-    if (widget && widgetReady) widget.skip(r);
-  }
-
-  muteBtn && muteBtn.addEventListener('click', () => {
-    isMuted = !isMuted;
-    if (widget && widgetReady) widget.setVolume(isMuted ? 0 : (volumeEl?.value || 80));
-    if (volIcon) volIcon.className = isMuted ? 'fas fa-volume-mute' : 'fas fa-volume-up';
-  });
-
-  volumeEl && volumeEl.addEventListener('input', () => {
-    if (widget && widgetReady) widget.setVolume(volumeEl.value);
-    if (volIcon) {
-      const v = parseInt(volumeEl.value);
-      volIcon.className = v === 0 ? 'fas fa-volume-mute' : v < 50 ? 'fas fa-volume-down' : 'fas fa-volume-up';
-    }
-  });
-
-  progEl && progEl.addEventListener('click', e => {
-    if (!widget || !widgetReady) return;
-    const rect = progEl.getBoundingClientRect();
-    const pct = (e.clientX - rect.left) / rect.width;
-    widget.getDuration(dur => widget.seekTo(pct * dur));
-  });
-
-  // Click en tracklist → saltar al track real en el widget
-  window.radioPlayIdx = function(idx) {
-    ensureWidget();
-    if (!widgetReady) {
-      // Esperar y reintentar
-      setTimeout(() => { if (widgetReady) { widget.skip(idx); widget.play(); } }, 1500);
-      return;
-    }
-    widget.skip(idx);
-    widget.play();
-    currentIdx = idx;
-    highlightTracklist(idx);
-  };
-
-  // ── SC API LOADER ───────────────────────────────────────────────
-  function loadSCScript(cb) {
+  function loadSCApi(cb) {
     if (window.SC) { cb(); return; }
     const s = document.createElement('script');
     s.src   = 'https://w.soundcloud.com/player/api.js';
@@ -287,41 +141,342 @@
     document.head.appendChild(s);
   }
 
-  // ── INIT ────────────────────────────────────────────────────────
-  // ── CARGAR TRACKLIST DESDE BACKEND ──────────────────────────────
-  async function loadTracklistFromAPI() {
-    try {
-      const r = await fetch('/api/public/sc-playlist');
-      if (!r.ok) return null;
-      const data = await r.json();
-      return data.tracks || null;
-    } catch { return null; }
+  function ensureSCIframe() {
+    if (scIframe) return scIframe;
+    scIframe = document.createElement('iframe');
+    scIframe.id    = 'sc-radio-iframe';
+    scIframe.allow = 'autoplay';
+    scIframe.style.cssText = 'position:fixed;left:-9999px;width:1px;height:1px;border:none;';
+    document.body.appendChild(scIframe);
+    return scIframe;
   }
 
-  async function init() {
-    // Mostrar spinner inicial
-    if (tracklistBody) {
-      tracklistBody.innerHTML = `<div class="radio-empty">
-        <i class="fas fa-circle-notch fa-spin"></i>
-        <p>Cargando playlist…</p>
-      </div>`;
+  function scBind() {
+    scWidget = SC.Widget(scIframe);
+    scWidget.bind(SC.Widget.Events.READY,  () => { scReady = true; if (!scFallbackMode) { scWidget.play(); } });
+    scWidget.bind(SC.Widget.Events.PLAY,   () => setPlayState(true));
+    scWidget.bind(SC.Widget.Events.PAUSE,  () => setPlayState(false));
+    scWidget.bind(SC.Widget.Events.FINISH, () => { if (!scFallbackMode) autoAdvance(); else if (!isShuffle) scWidget.next(); else scShufflePlay(); });
+    scWidget.bind(SC.Widget.Events.PLAY_PROGRESS, data => {
+      if (!data) return;
+      const pos = data.currentPosition || 0, dur = data.duration || 1;
+      if (fillEl)    fillEl.style.width = Math.min((pos / dur) * 100, 100) + '%';
+      if (curTimeEl) curTimeEl.textContent = fmt(pos);
+      if (durEl)     durEl.textContent     = fmt(dur);
+      if (progWrap)  progWrap.style.display = '';
+    });
+    scWidget.bind(SC.Widget.Events.ERROR,  () => { setTimeout(() => { if (!scFallbackMode) autoAdvance(); else scWidget.next(); }, 1000); });
+    // SC playlist: sync tracklist
+    if (scFallbackMode) {
+      scWidget.bind(SC.Widget.Events.PLAY, () => {
+        scWidget.getCurrentSoundIndex(idx => {
+          scWidget.getSounds(sounds => {
+            if (!sounds?.length) return;
+            if (!playlist.length) {
+              playlist = sounds.map(s => ({
+                id: String(s.id), title: s.title,
+                artist: s.user?.username || 'RAYVER',
+                cover: s.artwork_url ? s.artwork_url.replace('large','t300x300') : (s.user?.avatar_url || 'logo.jpg'),
+                scUrl: s.permalink_url, duration: s.duration
+              }));
+              renderTracklist();
+              if (counterEl) counterEl.textContent = `1 / ${playlist.length}`;
+            }
+            currentIdx = idx || 0;
+            if (playlist[currentIdx]) updateTrackUI(playlist[currentIdx]);
+            highlightTracklist(currentIdx);
+          });
+        });
+      });
     }
-    if (titleEl)   titleEl.textContent  = 'RAYVER Radio';
-    if (artistEl)  artistEl.textContent = 'Pulsa ▶ para escuchar';
+  }
+
+  function scPlayUrl(url) {
+    const iframe = ensureSCIframe();
+    scFallbackMode = false;
+    if (!scWidget) {
+      iframe.src = `https://w.soundcloud.com/player/?url=${encodeURIComponent(url)}&auto_play=true&hide_related=true&show_comments=false&show_reposts=false`;
+      loadSCApi(() => scBind());
+    } else {
+      scWidget.load(url, { auto_play: true });
+    }
+  }
+
+  function scPlayFallbackPlaylist() {
+    scFallbackMode = true;
+    const iframe = ensureSCIframe();
+    iframe.src = `https://w.soundcloud.com/player/?url=${encodeURIComponent(SC_PLAYLIST_FALLBACK)}&color=%23a855f7&auto_play=false&hide_related=true&show_comments=false&show_user=true&show_reposts=false&show_teaser=false&continuous_play=true`;
+    loadSCApi(() => scBind());
+  }
+
+  function scShufflePlay() {
+    let r = Math.floor(Math.random() * playlist.length);
+    if (r === currentIdx) r = (r + 1) % playlist.length;
+    if (scWidget && scReady) { scWidget.skip(r); scWidget.play(); }
+  }
+
+  // ── SPOTIFY ENGINE (embed visual) ─────────────────────────────
+  function showSpotifyEmbed(track) {
+    let wrap = $('radio-spotify-embed');
+    if (!wrap) {
+      wrap = document.createElement('div');
+      wrap.id = 'radio-spotify-embed';
+      wrap.style.cssText = 'padding:12px 0 4px;border-radius:12px;overflow:hidden;';
+      const playerDiv = document.querySelector('.radio-player');
+      if (playerDiv) playerDiv.appendChild(wrap);
+    }
+    const rawUrl = track.spotifyUrl || track.platforms?.spotify || '';
+    if (rawUrl) {
+      const embedUrl = rawUrl.replace('open.spotify.com/', 'open.spotify.com/embed/');
+      wrap.innerHTML = `<iframe src="${esc(embedUrl)}" width="100%" height="152" frameborder="0" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy" style="border-radius:12px;display:block"></iframe>`;
+      wrap.style.display = '';
+    } else {
+      wrap.style.display = 'none';
+    }
+  }
+  function hideSpotifyEmbed() {
+    const w = $('radio-spotify-embed');
+    if (w) { w.style.display = 'none'; w.innerHTML = ''; }
+  }
+
+  // ── PLAYBACK ───────────────────────────────────────────────────
+  function stopAll() {
+    if (ytPlayer && ytReady) { try { ytPlayer.pauseVideo(); } catch(e) {} }
+    ytStopProgress();
+    if (scWidget && scReady && !scFallbackMode) { try { scWidget.pause(); } catch(e) {} }
+    hideSpotifyEmbed();
+  }
+
+  function playTrack(idx) {
+    if (!playlist.length) return;
+    currentIdx = ((idx % playlist.length) + playlist.length) % playlist.length;
+    const t = playlist[currentIdx];
+    if (!t) return;
+
+    stopAll();
+    updateTrackUI(t);
+    highlightTracklist(currentIdx);
+    document.getElementById('radio')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    const plat = getBestPlatform(t);
+    activePlat = plat;
+
+    if (plat === 'youtube') {
+      ytInitPlayer(t.youtubeId);
+    } else if (plat === 'soundcloud') {
+      scPlayUrl(t.scUrl);
+    } else if (plat === 'spotify') {
+      showSpotifyEmbed(t);
+      setPlayState(true);
+    } else {
+      setPlayState(false);
+    }
+  }
+
+  function togglePlay() {
+    if (!activePlat) { if (playlist.length) playTrack(0); return; }
+    if (activePlat === 'youtube') {
+      if (!ytPlayer || !ytReady) return;
+      isPlaying ? ytPlayer.pauseVideo() : ytPlayer.playVideo();
+    } else if (activePlat === 'soundcloud') {
+      if (!scWidget || !scReady) return;
+      if (scFallbackMode) { isPlaying ? scWidget.pause() : scWidget.play(); }
+      else { isPlaying ? scWidget.pause() : scWidget.play(); }
+    } else if (activePlat === 'spotify') {
+      setPlayState(!isPlaying);
+    }
+  }
+
+  function autoAdvance() {
+    if (repeatMode === 'one') { playTrack(currentIdx); return; }
+    if (isShuffle) {
+      let r = Math.floor(Math.random() * playlist.length);
+      if (r === currentIdx && playlist.length > 1) r = (r + 1) % playlist.length;
+      playTrack(r);
+    } else if (repeatMode === 'all' || currentIdx < playlist.length - 1) {
+      playTrack((currentIdx + 1) % playlist.length);
+    } else {
+      setPlayState(false);
+    }
+  }
+
+  // ── UI ─────────────────────────────────────────────────────────
+  const PLAT_META = {
+    youtube:    { cls: 'ptag-youtube',    icon: 'fab fa-youtube',    label: 'YouTube' },
+    soundcloud: { cls: 'ptag-soundcloud', icon: 'fab fa-soundcloud', label: 'SoundCloud' },
+    spotify:    { cls: 'ptag-s',          icon: 'fab fa-spotify',    label: 'Spotify' },
+  };
+
+  function updateTrackUI(t) {
+    if (titleEl)  titleEl.textContent  = t.title  || 'RAYVER Radio';
+    if (artistEl) artistEl.textContent = t.artist || 'RAYVER';
+    if (coverEl)  coverEl.src = t.cover || t.thumbnail || 'logo.jpg';
+    if (counterEl) counterEl.textContent = `${currentIdx + 1} / ${playlist.length}`;
+
+    // Genre · BPM · Key
+    const meta = [t.genre, t.bpm ? t.bpm + ' BPM' : '', t.key].filter(Boolean).join(' · ');
+    if (genreEl) genreEl.textContent = meta;
+
+    // Platform tags
+    if (platTagsEl) {
+      const tags = [];
+      if (t.youtubeId)                      tags.push(`<span class="radio-ptag ptag-youtube"><i class="fab fa-youtube"></i> YouTube</span>`);
+      if (t.scUrl)                          tags.push(`<a href="${esc(t.scUrl)}" target="_blank" class="radio-ptag ptag-soundcloud"><i class="fab fa-soundcloud"></i> SoundCloud</a>`);
+      const sp = t.spotifyUrl || t.platforms?.spotify;
+      if (sp) tags.push(`<a href="${esc(sp)}" target="_blank" class="radio-ptag ptag-s"><i class="fab fa-spotify"></i> Spotify</a>`);
+      platTagsEl.innerHTML = tags.join('');
+    }
+
+    if (fillEl)    fillEl.style.width = '0%';
+    if (curTimeEl) curTimeEl.textContent = '0:00';
+    if (durEl)     durEl.textContent     = '0:00';
+  }
+
+  function setPlayState(playing) {
+    isPlaying = playing;
+    if (playIcon)   playIcon.className = playing ? 'fas fa-pause' : 'fas fa-play';
+    if (onairDot)   onairDot.classList.toggle('pulsing', playing);
+    if (coverEl)    coverEl.classList.toggle('spinning', playing);
+    if (coverPulse) coverPulse.classList.toggle('active', playing);
+  }
+
+  // ── TRACKLIST ──────────────────────────────────────────────────
+  function renderTracklist() {
+    if (!tracklistBody || !playlist.length) return;
+    tracklistBody.innerHTML = playlist.map((t, i) => {
+      const plat = getBestPlatform(t);
+      const pm   = plat ? PLAT_META[plat] : null;
+      const meta = [t.genre, t.bpm ? t.bpm + ' BPM' : '', t.key].filter(Boolean).join(' · ');
+      const platBadge = pm ? `<span class="rtitem-plat-badge ${pm.cls}"><i class="${pm.icon}"></i></span>` : '';
+      return `
+        <div class="radio-track-item${i === currentIdx ? ' active' : ''}" onclick="RADIO_PLAYER.play(${i})">
+          <span class="rtitem-num">${i + 1}</span>
+          <img class="rtitem-cover" src="${esc(t.cover || t.thumbnail || 'logo.jpg')}" alt="${esc(t.title)}" loading="lazy" onerror="this.src='logo.jpg'">
+          <div class="rtitem-info">
+            <div class="rtitem-title">${esc(t.title)}</div>
+            <div class="rtitem-sub">${esc(t.artist || 'RAYVER')}${meta ? ' · <em>' + esc(meta) + '</em>' : ''}</div>
+          </div>
+          ${platBadge}
+        </div>`;
+    }).join('');
+  }
+
+  function highlightTracklist(idx) {
+    if (!tracklistBody) return;
+    tracklistBody.querySelectorAll('.radio-track-item').forEach((el, i) => {
+      el.classList.toggle('active', i === idx);
+      if (i === idx) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+  }
+
+  // ── REPEAT BUTTON (insert if missing) ─────────────────────────
+  function addRepeatButton() {
+    if ($('radio-repeat') || !nextBtn) return;
+    const btn = document.createElement('button');
+    btn.id        = 'radio-repeat';
+    btn.className = 'radio-btn-sm';
+    btn.title     = 'Repetir';
+    btn.setAttribute('aria-label', 'Repetir');
+    btn.innerHTML = '<i class="fas fa-redo"></i>';
+    nextBtn.insertAdjacentElement('afterend', btn);
+    btn.addEventListener('click', () => {
+      const modes = ['none', 'one', 'all'];
+      repeatMode  = modes[(modes.indexOf(repeatMode) + 1) % modes.length];
+      btn.querySelector('i').className = repeatMode === 'one' ? 'fas fa-redo-alt' : 'fas fa-redo';
+      btn.classList.toggle('active', repeatMode !== 'none');
+      const labels = { none: 'Repetir', one: 'Repetir: este track', all: 'Repetir: todo' };
+      btn.title = labels[repeatMode];
+    });
+  }
+
+  // ── CONTROLS ───────────────────────────────────────────────────
+  playBtn && playBtn.addEventListener('click', togglePlay);
+
+  prevBtn && prevBtn.addEventListener('click', () => {
+    if (scFallbackMode && scWidget && scReady) { scWidget.prev(); return; }
+    if (!playlist.length) return;
+    const idx = isShuffle
+      ? Math.floor(Math.random() * playlist.length)
+      : (currentIdx - 1 + playlist.length) % playlist.length;
+    playTrack(idx);
+  });
+
+  nextBtn && nextBtn.addEventListener('click', () => {
+    if (scFallbackMode && scWidget && scReady) { scWidget.next(); return; }
+    if (!playlist.length) return;
+    const idx = isShuffle
+      ? Math.floor(Math.random() * playlist.length)
+      : (currentIdx + 1) % playlist.length;
+    playTrack(idx);
+  });
+
+  shuffleBtn && shuffleBtn.addEventListener('click', () => {
+    isShuffle = !isShuffle;
+    shuffleBtn.classList.toggle('active', isShuffle);
+  });
+
+  muteBtn && muteBtn.addEventListener('click', () => {
+    isMuted = !isMuted;
+    const v = isMuted ? 0 : vol();
+    if (ytPlayer && ytReady) ytPlayer.setVolume(v);
+    if (scWidget && scReady) scWidget.setVolume(v);
+    if (volIcon) volIcon.className = isMuted ? 'fas fa-volume-mute' : vol() < 50 ? 'fas fa-volume-down' : 'fas fa-volume-up';
+  });
+
+  volumeEl && volumeEl.addEventListener('input', () => {
+    if (!isMuted) {
+      if (ytPlayer && ytReady) ytPlayer.setVolume(vol());
+      if (scWidget && scReady) scWidget.setVolume(vol());
+    }
+    if (volIcon) volIcon.className = vol() === 0 ? 'fas fa-volume-mute' : vol() < 50 ? 'fas fa-volume-down' : 'fas fa-volume-up';
+  });
+
+  progEl && progEl.addEventListener('click', e => {
+    const rect = progEl.getBoundingClientRect();
+    const pct  = (e.clientX - rect.left) / rect.width;
+    if (activePlat === 'youtube' && ytPlayer && ytReady) {
+      ytPlayer.seekTo(pct * ytPlayer.getDuration(), true);
+    } else if (activePlat === 'soundcloud' && scWidget && scReady) {
+      scWidget.getDuration(dur => scWidget.seekTo(pct * dur));
+    }
+  });
+
+  // ── PUBLIC API ─────────────────────────────────────────────────
+  window.RADIO_PLAYER = {
+    play:           idx  => playTrack(idx),
+    playById:       id   => { const i = playlist.findIndex(t => t.id === id); if (i >= 0) playTrack(i); },
+    addAndPlay:     track => { playlist.push(track); playTrack(playlist.length - 1); },
+    getPlaylist:    ()   => playlist,
+    getCurrentIdx:  ()   => currentIdx,
+    isPlaying:      ()   => isPlaying,
+  };
+  window.radioPlayIdx = idx => playTrack(idx);
+
+  // ── INIT ───────────────────────────────────────────────────────
+  async function init() {
+    addRepeatButton();
+
+    if (tracklistBody) tracklistBody.innerHTML = `<div class="radio-empty"><i class="fas fa-circle-notch fa-spin"></i><p>Cargando playlist…</p></div>`;
+    if (titleEl)   titleEl.textContent   = 'RAYVER Radio';
+    if (artistEl)  artistEl.textContent  = 'Pulsa ▶ para escuchar';
     if (counterEl) counterEl.textContent = '— / —';
 
-    // 1. Intentar cargar tracklist desde la API del backend (más rápido)
-    const apiTracks = await loadTracklistFromAPI();
-    if (apiTracks && apiTracks.length) {
-      scTracks = apiTracks;
-      renderTracklist();
-      if (counterEl) counterEl.textContent = `1 / ${scTracks.length}`;
-      if (titleEl) titleEl.textContent = scTracks[0]?.title || 'RAYVER Radio';
-    }
+    try {
+      const r = await fetch('/api/public/tracks');
+      if (r.ok) {
+        const tracks = await r.json();
+        if (tracks?.length) {
+          playlist = tracks;
+          renderTracklist();
+          updateTrackUI(playlist[0]);
+          if (counterEl) counterEl.textContent = `1 / ${playlist.length}`;
+          return;
+        }
+      }
+    } catch(e) { /* fall through */ }
 
-    // 2. Crear el widget SC (se sincronizará cuando cargue)
-    const iframe = createWidget();
-    loadSCScript(() => bindWidget(iframe));
+    // Fallback: SC playlist completa
+    scPlayFallbackPlaylist();
   }
 
   init();

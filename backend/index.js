@@ -449,7 +449,38 @@ setInterval(() => runFullSync('scheduled').catch(e => console.error('sync schedu
 
 // ───────────────────────── RUTAS PÚBLICAS (frontend) ─────────────────────────
 app.get('/api/public/tracks', (req, res) => {
-  res.json((db.tracks || []).slice().sort((a,b)=>(a.order||0)-(b.order||0)));
+  let tracks = (db.tracks || []).slice();
+
+  // Filtros opcionales: ?genre=Trance&type=single&q=feel&sort=newest&bpm_min=120&bpm_max=140
+  const { genre, type, q, sort, bpm_min, bpm_max } = req.query;
+
+  if (genre && genre !== 'all') {
+    tracks = tracks.filter(t => (t.genre || '').toLowerCase() === genre.toLowerCase());
+  }
+  if (type && type !== 'all') {
+    tracks = tracks.filter(t => (t.type || 'single').toLowerCase() === type.toLowerCase());
+  }
+  if (q) {
+    const s = q.toLowerCase();
+    tracks = tracks.filter(t =>
+      (t.title  || '').toLowerCase().includes(s) ||
+      (t.artist || '').toLowerCase().includes(s) ||
+      (t.genre  || '').toLowerCase().includes(s) ||
+      (t.album  || '').toLowerCase().includes(s)
+    );
+  }
+  if (bpm_min) tracks = tracks.filter(t => t.bpm && t.bpm >= parseInt(bpm_min));
+  if (bpm_max) tracks = tracks.filter(t => t.bpm && t.bpm <= parseInt(bpm_max));
+
+  switch (sort) {
+    case 'newest':   tracks.sort((a,b) => new Date(b.releaseDate||b.updatedAt||0) - new Date(a.releaseDate||a.updatedAt||0)); break;
+    case 'az':       tracks.sort((a,b) => (a.title||'').localeCompare(b.title||'')); break;
+    case 'bpm_asc':  tracks.sort((a,b) => (a.bpm||0) - (b.bpm||0)); break;
+    case 'bpm_desc': tracks.sort((a,b) => (b.bpm||0) - (a.bpm||0)); break;
+    default:         tracks.sort((a,b) => (a.order||0) - (b.order||0)); break;
+  }
+
+  res.json(tracks);
 });
 app.get('/api/public/albums', (req, res) => res.json(db.albums || []));
 app.get('/api/public/videos', (req, res) => {

@@ -719,6 +719,18 @@ app.delete('/api/user/playlists/:id/tracks/:trackId', userAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+app.put('/api/user/playlists/:id/reorder', userAuth, (req, res) => {
+  const pl = (db.playlists || []).find(p => p.id === req.params.id && p.userId === req.user.userId);
+  if (!pl) return res.status(404).json({ error: 'No encontrada' });
+  const { trackIds } = req.body || {};
+  if (!Array.isArray(trackIds)) return res.status(400).json({ error: 'trackIds requerido' });
+  const reordered = trackIds.map(id => pl.tracks.find(t => t.id === id)).filter(Boolean);
+  pl.tracks = reordered;
+  pl.updatedAt = new Date().toISOString();
+  saveDB(db);
+  res.json({ ok: true });
+});
+
 // ───────────────────────── GÉNEROS ─────────────────────────
 app.get('/api/public/genres', (req, res) => {
   res.json((db.genres || []).slice().sort((a, b) => (a.order || 0) - (b.order || 0)));

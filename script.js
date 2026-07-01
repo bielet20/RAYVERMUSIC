@@ -127,6 +127,8 @@ document.addEventListener('click', e => {
 // ── SERVER PLAYLISTS ──────────────────────────────────────────────
 let userPlaylists = [];
 let _pickerPending = null; // { type, itemId, title, cover, url }
+let allTracks = [];
+let allVideos = [];
 
 async function loadUserPlaylists() {
   if (!AUTH.token && !getToken()) return;
@@ -157,6 +159,34 @@ window.openPlaylists = async function() {
 };
 window.closePlaylists = function() { document.getElementById('playlists-modal').style.display = 'none'; };
 
+function renderTrackRows(pl) {
+  if (!pl.tracks.length) {
+    return `<div class="pl-empty-tracks"><i class="fas fa-plus-circle"></i> Lista vacía — busca canciones abajo para añadir</div>`;
+  }
+  return pl.tracks.map(t => `
+    <div class="playlist-track-row" id="ptr-${esc(t.id)}" data-track-id="${esc(t.id)}" draggable="true">
+      <i class="fas fa-grip-vertical pl-drag-handle"></i>
+      <div class="ptr-cover" style="${t.cover ? `background-image:url('${t.cover.replace(/'/g,"\\'")}');background-size:cover;background-position:center` : 'background:rgba(168,85,247,.15)'}">
+        ${t.cover ? '' : '<i class="fas fa-music" style="color:var(--primary-2);font-size:9px"></i>'}
+      </div>
+      <span class="playlist-track-title">${esc(t.title)}</span>
+      ${t.url ? `<a href="${esc(t.url)}" target="_blank" class="ptr-link" title="Abrir"><i class="fas fa-external-link-alt"></i></a>` : ''}
+      <button class="ptr-remove" onclick="removeTrackFromPlaylist('${esc(pl.id)}','${esc(t.id)}')" title="Quitar"><i class="fas fa-times"></i></button>
+    </div>`).join('');
+}
+
+function renderAddSection(plId) {
+  return `
+    <div class="pl-add-section">
+      <div class="pl-add-search-wrap">
+        <i class="fas fa-search pl-add-search-icon"></i>
+        <input type="text" class="pl-add-search" placeholder="Buscar canción para añadir..."
+          oninput="plSearchTracks('${esc(plId)}', this.value)" autocomplete="off">
+      </div>
+      <div class="pl-sr-list" id="pl-sr-${esc(plId)}"></div>
+    </div>`;
+}
+
 function renderPlaylistsModal() {
   const container = document.getElementById('playlists-list');
   if (!container) return;
@@ -178,23 +208,17 @@ function renderPlaylistsModal() {
         </div>
         <i class="fas fa-chevron-down pl-chevron"></i>
         <div class="playlist-item-btns" onclick="event.stopPropagation()">
-          <button onclick="playPlaylist('${esc(pl.id)}')" class="pl-play-btn" title="Reproducir en radio"><i class="fas fa-play"></i></button>
+          <button onclick="playPlaylist('${esc(pl.id)}')" class="pl-play-btn" title="Reproducir"><i class="fas fa-play"></i></button>
           <button onclick="renamePlaylist('${esc(pl.id)}')" class="pl-rename-btn" title="Renombrar"><i class="fas fa-edit"></i></button>
           <button onclick="mergePlaylistModal('${esc(pl.id)}')" class="pl-merge-btn" title="Fusionar"><i class="fas fa-layer-group"></i></button>
-          <button onclick="confirmDeletePlaylist('${esc(pl.id)}')" class="pl-delete-btn" title="Eliminar lista"><i class="fas fa-trash"></i></button>
+          <button onclick="confirmDeletePlaylist('${esc(pl.id)}')" class="pl-delete-btn" title="Eliminar"><i class="fas fa-trash"></i></button>
         </div>
       </div>
       <div class="playlist-tracks-list" id="pl-tracks-${esc(pl.id)}" style="display:none">
-        ${pl.tracks.length ? pl.tracks.map(t => `
-          <div class="playlist-track-row" id="ptr-${esc(t.id)}">
-            <div class="ptr-cover" style="${t.cover ? `background-image:url('${t.cover.replace(/'/g,"\\'")}');background-size:cover;background-position:center` : 'background:rgba(168,85,247,.15)'}">
-              ${t.cover ? '' : '<i class="fas fa-music" style="color:var(--primary-2);font-size:9px"></i>'}
-            </div>
-            <span class="playlist-track-title">${esc(t.title)}</span>
-            ${t.url ? `<a href="${esc(t.url)}" target="_blank" class="ptr-link" title="Abrir enlace"><i class="fas fa-external-link-alt"></i></a>` : ''}
-            <button class="ptr-remove" onclick="removeTrackFromPlaylist('${esc(pl.id)}','${esc(t.id)}')" title="Quitar de la lista"><i class="fas fa-times"></i></button>
-          </div>`).join('')
-        : '<div class="pl-empty-tracks"><i class="fas fa-plus-circle"></i> Lista vacía — añade canciones desde la sección Música</div>'}
+        <div class="pl-track-rows" id="pl-rows-${esc(pl.id)}">
+          ${renderTrackRows(pl)}
+        </div>
+        ${renderAddSection(pl.id)}
       </div>
     </div>`).join('');
 }
@@ -206,6 +230,7 @@ window.togglePlaylistTracks = function(plId) {
   const open = el.style.display !== 'none';
   el.style.display = open ? 'none' : 'block';
   hdr?.classList.toggle('pl-expanded', !open);
+  if (!open) attachPlaylistDnD(plId);
 };
 
 window.confirmDeletePlaylist = function(id) {
@@ -268,7 +293,6 @@ window.deletePlaylist = async function(id) {
 };
 
 window.removeTrackFromPlaylist = async function(plId, trackId) {
-  // Feedback visual inmediato
   const rowEl = document.getElementById('ptr-' + trackId);
   if (rowEl) { rowEl.style.opacity = '.4'; rowEl.style.pointerEvents = 'none'; }
   const r = await apiUser('/playlists/' + plId + '/tracks/' + trackId, { method: 'DELETE' });
@@ -279,18 +303,149 @@ window.removeTrackFromPlaylist = async function(plId, trackId) {
   }
   const pl = userPlaylists.find(p => p.id === plId);
   if (pl) pl.tracks = pl.tracks.filter(t => t.id !== trackId);
-  // Actualizar solo la sección de tracks de esta lista
-  const tracksEl = document.getElementById('pl-tracks-' + plId);
-  const countEl  = document.querySelector(`.playlist-item[data-plid="${plId}"] .playlist-item-count`);
+  const countEl = document.querySelector(`.playlist-item[data-plid="${plId}"] .playlist-item-count`);
   if (countEl && pl) countEl.textContent = pl.tracks.length + ' canción' + (pl.tracks.length !== 1 ? 'es' : '');
-  if (tracksEl) {
+  const rowsEl = document.getElementById('pl-rows-' + plId);
+  if (rowsEl) {
     if (!pl || !pl.tracks.length) {
-      tracksEl.innerHTML = '<div class="pl-empty-tracks"><i class="fas fa-plus-circle"></i> Lista vacía — añade canciones desde la sección Música</div>';
+      rowsEl.innerHTML = '<div class="pl-empty-tracks"><i class="fas fa-plus-circle"></i> Lista vacía — busca canciones abajo para añadir</div>';
     } else {
       rowEl?.remove();
     }
   }
 };
+
+// ── DRAG & DROP REORDER ──────────────────────────────────────
+function attachPlaylistDnD(plId) {
+  const container = document.getElementById('pl-rows-' + plId);
+  if (!container) return;
+  let dragSrc = null;
+
+  container.querySelectorAll('.playlist-track-row[draggable]').forEach(row => {
+    row.addEventListener('dragstart', e => {
+      dragSrc = row;
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', row.dataset.trackId);
+      setTimeout(() => row.classList.add('pl-drag-dragging'), 0);
+    });
+    row.addEventListener('dragend', () => {
+      row.classList.remove('pl-drag-dragging');
+      container.querySelectorAll('.playlist-track-row').forEach(r => r.classList.remove('pl-drag-over'));
+      dragSrc = null;
+    });
+    row.addEventListener('dragover', e => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      if (row !== dragSrc) {
+        container.querySelectorAll('.playlist-track-row').forEach(r => r.classList.remove('pl-drag-over'));
+        row.classList.add('pl-drag-over');
+      }
+    });
+    row.addEventListener('drop', e => {
+      e.preventDefault();
+      if (row !== dragSrc && dragSrc) {
+        const rows = [...container.querySelectorAll('.playlist-track-row')];
+        const fromIdx = rows.indexOf(dragSrc);
+        const toIdx   = rows.indexOf(row);
+        if (fromIdx < toIdx) container.insertBefore(dragSrc, row.nextSibling);
+        else container.insertBefore(dragSrc, row);
+        row.classList.remove('pl-drag-over');
+        const newOrder = [...container.querySelectorAll('.playlist-track-row')].map(r => r.dataset.trackId);
+        savePlaylistOrder(plId, newOrder);
+      }
+    });
+  });
+}
+
+async function savePlaylistOrder(plId, trackIds) {
+  const pl = userPlaylists.find(p => p.id === plId);
+  if (!pl) return;
+  pl.tracks = trackIds.map(id => pl.tracks.find(t => t.id === id)).filter(Boolean);
+  await apiUser('/playlists/' + plId + '/reorder', { method: 'PUT', body: JSON.stringify({ trackIds }) });
+}
+
+// ── BUSCADOR DENTRO DE LA LISTA ───────────────────────────────
+let _plSearchCache = {};
+
+window.plSearchTracks = function(plId, query) {
+  const resultsEl = document.getElementById('pl-sr-' + plId);
+  if (!resultsEl) return;
+  const q = (query || '').trim().toLowerCase();
+  if (!q) { resultsEl.innerHTML = ''; return; }
+
+  const pl = userPlaylists.find(p => p.id === plId);
+  const existingKeys = new Set((pl?.tracks || []).map(t => t.type + ':' + t.itemId));
+  const results = [];
+
+  for (const t of allTracks) {
+    if (results.length >= 8) break;
+    if ((t.title || '').toLowerCase().includes(q) || (t.artist || '').toLowerCase().includes(q)) {
+      const itemId = String(t.id || '');
+      results.push({ type: 'track', itemId, title: t.title || '—', sub: t.artist || '',
+        cover: t.cover || '', url: t.spotifyUrl || t.platforms?.spotify || t.scUrl || '',
+        exists: existingKeys.has('track:' + itemId) });
+    }
+  }
+  for (const v of allVideos) {
+    if (results.length >= 12) break;
+    if ((v.title || '').toLowerCase().includes(q)) {
+      const vid = v.videoId || v.id || '';
+      results.push({ type: 'video', itemId: vid, title: v.title || vid, sub: 'YouTube',
+        cover: vid ? `https://img.youtube.com/vi/${vid}/default.jpg` : '',
+        url: vid ? `https://www.youtube.com/watch?v=${vid}` : '',
+        exists: existingKeys.has('video:' + vid) });
+    }
+  }
+
+  _plSearchCache[plId] = results;
+
+  if (!results.length) {
+    resultsEl.innerHTML = '<div class="pl-sr-empty">Sin resultados</div>';
+    return;
+  }
+
+  resultsEl.innerHTML = results.map((r, i) => `
+    <div class="pl-sr-row${r.exists ? ' pl-sr-exists' : ''}" data-idx="${i}" data-plid="${esc(plId)}">
+      ${r.cover
+        ? `<img class="pl-sr-cover" src="${esc(r.cover)}" alt="" onerror="this.style.display='none'">`
+        : `<div class="pl-sr-nocover"><i class="fas fa-music"></i></div>`}
+      <div class="pl-sr-info">
+        <div class="pl-sr-title">${esc(r.title)}</div>
+        ${r.sub ? `<div class="pl-sr-sub">${esc(r.sub)}</div>` : ''}
+      </div>
+      ${r.exists
+        ? '<span class="pl-sr-badge">En lista</span>'
+        : '<button class="pl-sr-add-btn" title="Añadir"><i class="fas fa-plus"></i></button>'}
+    </div>`).join('');
+
+  resultsEl.querySelectorAll('.pl-sr-row:not(.pl-sr-exists)').forEach(row => {
+    row.addEventListener('click', () => {
+      const idx = +row.dataset.idx;
+      const r = _plSearchCache[plId]?.[idx];
+      if (r) plAddSearchResult(plId, r);
+    });
+  });
+};
+
+async function plAddSearchResult(plId, r) {
+  const pl = userPlaylists.find(p => p.id === plId);
+  if (!pl) return;
+  const res = await apiUser('/playlists/' + plId + '/tracks', {
+    method: 'POST',
+    body: JSON.stringify({ type: r.type, itemId: r.itemId, title: r.title, cover: r.cover, url: r.url })
+  });
+  if (res.status === 409) { showToastGlobal('Ya está en esa lista'); return; }
+  if (!res.ok) { showToastGlobal(res.data?.error || 'Error'); return; }
+  pl.tracks.push(res.data);
+  showToastGlobal('Añadido a "' + pl.name + '" ✓');
+  const countEl = document.querySelector(`.playlist-item[data-plid="${plId}"] .playlist-item-count`);
+  if (countEl) countEl.textContent = pl.tracks.length + ' canción' + (pl.tracks.length !== 1 ? 'es' : '');
+  const rowsEl = document.getElementById('pl-rows-' + plId);
+  if (rowsEl) { rowsEl.innerHTML = renderTrackRows(pl); attachPlaylistDnD(plId); }
+  // Re-run search to update "En lista" states
+  const searchInput = document.querySelector(`#pl-tracks-${plId} .pl-add-search`);
+  if (searchInput?.value) window.plSearchTracks(plId, searchInput.value);
+}
 
 async function openPlaylistPicker() {
   const modal = document.getElementById('playlist-picker');
@@ -490,7 +645,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
   // ── TRACKS + FILTROS DINÁMICOS ────────────────────────────────────
-  let allTracks      = [];
   let _renderedTracks = []; // copia del array visible actualmente en el grid
   let trackGenres    = [];
   let filterState    = { q: '', genre: 'all', type: 'all', sort: 'default' };
@@ -926,7 +1080,6 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ── VIDEOS + MINI PLAYER ─────────────────────────────────────────
-  let allVideos = [];
 
   async function loadVideos() {
     const videos = await apiGet('/videos');
@@ -1044,7 +1197,6 @@ document.addEventListener('DOMContentLoaded', () => {
         </div>
         <div id="mini-actions">
           <button onclick="miniToggleQueue()" title="Cola" id="mini-queue-btn"><i class="fas fa-list"></i></button>
-          <button onclick="miniTogglePlaylists()" title="Mis listas" id="mini-pl-btn"><i class="fas fa-heart"></i></button>
           <button onclick="miniToggleMinimize()" title="Minimizar" id="mini-min-btn"><i class="fas fa-chevron-up"></i></button>
           <button onclick="miniClose()" title="Cerrar"><i class="fas fa-times"></i></button>
         </div>
@@ -1053,55 +1205,19 @@ document.addEventListener('DOMContentLoaded', () => {
         <iframe id="mini-yt-iframe" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
       </div>
       <div id="mini-panel" style="display:none">
-        <div id="mini-panel-tabs">
-          <button class="mini-tab active" onclick="miniSwitchTab('queue')">Cola</button>
-          <button class="mini-tab" onclick="miniSwitchTab('playlists')">Mis listas</button>
-        </div>
-        <div id="mini-tab-queue" class="mini-tab-content">
-          <div id="mini-queue-list"></div>
-        </div>
-        <div id="mini-tab-playlists" class="mini-tab-content" style="display:none">
-          <div id="mini-pl-actions">
-            <button onclick="miniCreatePlaylist()" class="mini-pl-new"><i class="fas fa-plus"></i> Nueva lista</button>
-          </div>
-          <div id="mini-pl-list"></div>
-        </div>
+        <div id="mini-queue-list"></div>
       </div>
     `;
     document.body.appendChild(mp);
     miniRenderQueue();
-    miniRenderPlaylists();
   }
 
   let miniPanelOpen = false;
-  let miniActiveTab = 'queue';
 
   window.miniToggleQueue = function() {
-    miniActiveTab = 'queue';
-    miniPanelOpen = !miniPanelOpen || miniActiveTab !== 'queue';
-    miniPanelOpen = true;
-    updateMiniPanel();
-  };
-
-  window.miniTogglePlaylists = function() {
-    miniActiveTab = 'playlists';
-    miniPanelOpen = true;
-    updateMiniPanel();
-  };
-
-  function updateMiniPanel() {
+    miniPanelOpen = !miniPanelOpen;
     const panel = document.getElementById('mini-panel');
-    if (!panel) return;
-    panel.style.display = miniPanelOpen ? '' : 'none';
-    miniSwitchTab(miniActiveTab);
-  }
-
-  window.miniSwitchTab = function(tab) {
-    miniActiveTab = tab;
-    document.querySelectorAll('.mini-tab').forEach(t => t.classList.toggle('active', t.textContent.toLowerCase().includes(tab==='queue'?'cola':'lista')));
-    document.getElementById('mini-tab-queue').style.display = tab==='queue'?'':'none';
-    document.getElementById('mini-tab-playlists').style.display = tab==='playlists'?'':'none';
-    if (tab==='playlists') miniRenderPlaylists();
+    if (panel) panel.style.display = miniPanelOpen ? '' : 'none';
   };
 
   window.miniToggleMinimize = function() {
@@ -1205,66 +1321,17 @@ document.addEventListener('DOMContentLoaded', () => {
       </div>`).join('');
   }
 
-  // ── MINI PLAYER — LISTAS SERVIDOR ────────────────────────────────
-  window.miniCreatePlaylist = function() { openPlaylists(); };
-
-  window.miniDeletePlaylist = async function(id) {
-    const pl = userPlaylists.find(p=>p.id===id);
-    if (!confirm(`¿Eliminar "${pl?.name}"?`)) return;
-    await deletePlaylist(id);
-    miniRenderPlaylists();
-  };
-
+  // ── MINI PLAYER — REPRODUCIR LISTA ───────────────────────────────
   window.miniPlayPlaylist = function(id) {
     const pl = userPlaylists.find(p=>p.id===id);
     if (!pl) return;
     const videos = (pl.tracks||[]).filter(t=>t.type==='video').map(t=>({videoId:t.itemId, title:t.title}));
-    if (!videos.length) { showToast('Sin videos en esta lista'); return; }
+    if (!videos.length) { showToastGlobal('Sin videos en esta lista'); return; }
     miniPlaylist = videos;
     miniCurrentIdx = 0;
     miniPlayVideo(0);
     miniRenderQueue();
   };
-
-  window._miniRemoveTrack = async function(plId, trackId) {
-    await removeTrackFromPlaylist(plId, trackId);
-    miniRenderPlaylists();
-  };
-
-  function miniRenderPlaylists() {
-    const list = document.getElementById('mini-pl-list');
-    if (!list) return;
-    if (!userPlaylists.length) {
-      list.innerHTML = `<div style="padding:16px;text-align:center;color:rgba(255,255,255,.4);font-size:12px">
-        Sin listas aún.<br>
-        <button onclick="openPlaylists()" style="margin-top:8px;background:none;border:1px solid rgba(255,255,255,.2);color:#fff;padding:4px 12px;border-radius:20px;cursor:pointer;font-size:12px">Crear lista</button>
-      </div>`;
-      return;
-    }
-    list.innerHTML = userPlaylists.map(pl => {
-      const videos = (pl.tracks||[]).filter(t=>t.type==='video');
-      return `
-        <div class="mini-pl-item">
-          <div class="mini-pl-header">
-            <i class="fas fa-music" style="color:var(--primary-2);margin-right:6px"></i>
-            <span class="mini-pl-name">${esc(pl.name)}</span>
-            <span class="mini-pl-count">${(pl.tracks||[]).length} items</span>
-            <div class="mini-pl-btns">
-              <button onclick="miniPlayPlaylist('${esc(pl.id)}')" title="Reproducir"><i class="fas fa-play"></i></button>
-              <button onclick="miniDeletePlaylist('${esc(pl.id)}')" style="color:#ef4444" title="Eliminar"><i class="fas fa-trash"></i></button>
-            </div>
-          </div>
-          ${videos.length?`<div class="mini-pl-videos">${videos.slice(0,3).map(v=>`
-            <div class="mini-pl-video">
-              <img src="https://img.youtube.com/vi/${esc(v.itemId)}/default.jpg" alt="">
-              <span>${esc(v.title||v.itemId)}</span>
-              <button onclick="_miniRemoveTrack('${esc(pl.id)}','${esc(v.id)}')" title="Quitar"><i class="fas fa-times"></i></button>
-            </div>`).join('')}
-            ${videos.length>3?`<div style="font-size:11px;color:rgba(255,255,255,.4);padding:4px 8px">+${videos.length-3} más</div>`:''}
-          </div>`:''}
-        </div>`;
-    }).join('');
-  }
 
   // ── GÉNEROS DINÁMICOS ─────────────────────────────────────────────
   async function loadGenres() {

@@ -24,6 +24,8 @@ COPY nginx-single.conf /etc/nginx/conf.d/default.conf
 WORKDIR /app/backend
 COPY backend/ ./
 COPY --from=backend-deps /backend/node_modules ./node_modules
+# /app/data es donde Coolify monta el volumen persistente
+ENV DATA_DIR=/app/data
 RUN mkdir -p /app/data
 
 # Script de arranque

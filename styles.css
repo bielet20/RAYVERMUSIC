@@ -2041,6 +2041,17 @@ body { padding-top: 56px; }
 }
 .btn-play-radio:hover { background: #9333ea; transform: scale(1.04); }
 
+/* ══ TRACKLIST COVER GRADIENT (fallback sin imagen) ════════════════ */
+.rtitem-cover-grad {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 800;
+  color: rgba(255,255,255,.9);
+  flex-shrink: 0;
+}
+
 /* ══ TRACKLIST PLATFORM BADGE ═══════════════════════════════════════ */
 .rtitem-plat-badge {
   flex-shrink: 0;

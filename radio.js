@@ -92,15 +92,23 @@
       widget.setVolume(muted ? 0 : v());
       widget.getSounds(sounds => {
         if (!sounds?.length) return;
-        tracks = sounds.map(s => ({
-          id:     String(s.id),
-          title:  s.title || '—',
-          artist: s.user?.username || 'RAYVER',
-          cover:  s.artwork_url ? s.artwork_url.replace('-large', '-t300x300') : (s.user?.avatar_url || 'logo.jpg'),
-          scUrl:  s.permalink_url || '',
-          durationMs: s.duration || 0,
-        }));
-        // Enriquecer con datos de la API (Spotify links, genre, BPM, key)
+        tracks = sounds.map(s => {
+          // SC artwork_url puede ser null en muchos tracks — usar avatar del artista como fallback
+          const scCover = s.artwork_url
+            ? s.artwork_url.replace('-large', '-t300x300').replace('large.jpg', 't300x300.jpg')
+            : null;
+          return {
+            id:        String(s.id),
+            title:     s.title || '—',
+            artist:    s.user?.username || 'RAYVER',
+            cover:     scCover || null,         // null → gradient en renderList
+            scCover,                             // guardar para preferencia SC
+            userAvatar: s.user?.avatar_url || null,
+            scUrl:     s.permalink_url || '',
+            durationMs: s.duration || 0,
+          };
+        });
+        // Enriquecer con datos de la API (Spotify covers son más fiables)
         mergeApiData();
         renderList();
         if (counterEl) counterEl.textContent = `— / ${tracks.length}`;
@@ -156,21 +164,35 @@
   }
 
   // ── API DATA MERGE ──────────────────────────────────────────────
+  // Normaliza títulos para matching flexible (quita paréntesis, feat, remix tags, etc.)
+  function normTitle(s) {
+    return (s || '').toLowerCase()
+      .replace(/\(.*?\)/g, '').replace(/\[.*?\]/g, '')   // quita (Extended Mix), [Remix]
+      .replace(/feat\..*$/i, '').replace(/ft\..*$/i, '')  // quita feat.
+      .replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+  }
+
   function mergeApiData() {
     if (!apiTracks.length || !tracks.length) return;
     tracks.forEach(t => {
-      const match = apiTracks.find(a =>
-        a.title?.toLowerCase() === t.title?.toLowerCase() ||
-        a.scUrl === t.scUrl
-      );
+      const nt = normTitle(t.title);
+      const match = apiTracks.find(a => {
+        if (a.scUrl && a.scUrl === t.scUrl) return true;
+        const na = normTitle(a.title);
+        return na === nt || na.includes(nt) || nt.includes(na);
+      });
       if (match) {
-        if (match.cover)     t.cover     = match.cover;
-        if (match.genre)     t.genre     = match.genre;
-        if (match.bpm)       t.bpm       = match.bpm;
-        if (match.key)       t.key       = match.key;
+        // Cover: Spotify suele tener covers de alta calidad aunque SC no tenga
+        if (match.cover && !t.scCover) t.cover = match.cover;
+        else if (match.cover)          t.cover = t.scCover || match.cover;
+        if (match.genre)      t.genre      = match.genre;
+        if (match.bpm)        t.bpm        = match.bpm;
+        if (match.key)        t.key        = match.key;
         if (match.spotifyUrl) t.spotifyUrl = match.spotifyUrl;
-        if (match.platforms) t.platforms = match.platforms;
+        if (match.platforms)  t.platforms  = match.platforms;
       }
+      // Último recurso: avatar del artista en SC
+      if (!t.cover && t.userAvatar) t.cover = t.userAvatar;
     });
   }
 
@@ -212,16 +234,31 @@
       listBody.innerHTML = `<div class="radio-empty"><i class="fas fa-circle-notch fa-spin"></i><p>Cargando…</p></div>`;
       return;
     }
+    const GRADS = [
+      'linear-gradient(135deg,#a855f7,#ec4899)',
+      'linear-gradient(135deg,#6366f1,#a855f7)',
+      'linear-gradient(135deg,#0ea5e9,#6366f1)',
+      'linear-gradient(135deg,#10b981,#0ea5e9)',
+      'linear-gradient(135deg,#f59e0b,#ef4444)',
+      'linear-gradient(135deg,#ec4899,#f59e0b)',
+      'linear-gradient(135deg,#8b5cf6,#06b6d4)',
+    ];
     listBody.innerHTML = tracks.map((t, i) => {
       const sp = t.spotifyUrl || t.platforms?.spotify;
       const platBadge = sp
         ? `<span class="rtitem-plat-badge ptag-s"><i class="fab fa-spotify"></i></span>`
         : `<span class="rtitem-plat-badge ptag-soundcloud"><i class="fab fa-soundcloud"></i></span>`;
       const meta = [t.genre, t.bpm ? t.bpm + ' BPM' : '', t.key].filter(Boolean).join(' · ');
+      // Usar imagen si existe, si no: gradiente de color con inicial del título
+      const initial = esc((t.title || '?')[0].toUpperCase());
+      const coverHtml = t.cover
+        ? `<img class="rtitem-cover" src="${esc(t.cover)}" alt="${esc(t.title)}" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
+          + `<span class="rtitem-cover rtitem-cover-grad" style="display:none;background:${GRADS[i % GRADS.length]}">${initial}</span>`
+        : `<span class="rtitem-cover rtitem-cover-grad" style="background:${GRADS[i % GRADS.length]}">${initial}</span>`;
       return `
         <div class="radio-track-item${i === currentIdx ? ' active' : ''}" onclick="RADIO_PLAYER.skip(${i})">
           <span class="rtitem-num">${i + 1}</span>
-          <img class="rtitem-cover" src="${esc(t.cover || 'logo.jpg')}" alt="${esc(t.title)}" loading="lazy" onerror="this.src='logo.jpg'">
+          ${coverHtml}
           <div class="rtitem-info">
             <div class="rtitem-title">${esc(t.title)}</div>
             <div class="rtitem-sub">${esc(t.artist || 'RAYVER')}${meta ? ' · <em>' + esc(meta) + '</em>' : ''}</div>

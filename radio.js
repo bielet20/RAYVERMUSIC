@@ -62,6 +62,8 @@
   function vol() { return parseInt(volumeEl?.value ?? 80); }
 
   // ── YOUTUBE ENGINE ─────────────────────────────────────────────
+  // El iframe debe tener dimensiones reales aunque esté fuera de pantalla
+  // para que el navegador no bloquee el autoplay.
   let ytPlayer   = null;
   let ytReady    = false;
   let ytTimer    = null;
@@ -71,7 +73,7 @@
     if (!el) {
       el = document.createElement('div');
       el.id = 'yt-radio-hidden';
-      el.style.cssText = 'position:fixed;left:-9999px;width:1px;height:1px;pointer-events:none;';
+      el.style.cssText = 'position:fixed;top:-9999px;left:0;width:480px;height:270px;pointer-events:none;overflow:hidden;';
       document.body.appendChild(el);
     }
     return el;
@@ -146,17 +148,31 @@
     scIframe = document.createElement('iframe');
     scIframe.id    = 'sc-radio-iframe';
     scIframe.allow = 'autoplay';
-    scIframe.style.cssText = 'position:fixed;left:-9999px;width:1px;height:1px;border:none;';
-    document.body.appendChild(scIframe);
+    // Dentro del player con height:0 — el navegador acepta autoplay porque
+    // el elemento está en el DOM visible, no verdaderamente oculto.
+    scIframe.style.cssText = 'width:100%;height:0;border:none;display:block;overflow:hidden;border-radius:10px;transition:height .3s;';
+    const playerDiv = document.querySelector('.radio-player');
+    if (playerDiv) playerDiv.appendChild(scIframe);
+    else document.body.appendChild(scIframe);
     return scIframe;
   }
 
   function scBind() {
     scWidget = SC.Widget(scIframe);
-    scWidget.bind(SC.Widget.Events.READY,  () => { scReady = true; if (!scFallbackMode) { scWidget.play(); } });
-    scWidget.bind(SC.Widget.Events.PLAY,   () => setPlayState(true));
-    scWidget.bind(SC.Widget.Events.PAUSE,  () => setPlayState(false));
-    scWidget.bind(SC.Widget.Events.FINISH, () => { if (!scFallbackMode) autoAdvance(); else if (!isShuffle) scWidget.next(); else scShufflePlay(); });
+    scWidget.bind(SC.Widget.Events.READY, () => {
+      scReady = true;
+      // Dar altura real al iframe para que el navegador permita el audio
+      scIframe.style.height = '116px';
+      if (!scFallbackMode) scWidget.play();
+    });
+    scWidget.bind(SC.Widget.Events.PLAY,  () => setPlayState(true));
+    scWidget.bind(SC.Widget.Events.PAUSE, () => setPlayState(false));
+    scWidget.bind(SC.Widget.Events.FINISH, () => {
+      scIframe.style.height = '0px';
+      if (!scFallbackMode) autoAdvance();
+      else if (isShuffle) scShufflePlay();
+      else scWidget.next();
+    });
     scWidget.bind(SC.Widget.Events.PLAY_PROGRESS, data => {
       if (!data) return;
       const pos = data.currentPosition || 0, dur = data.duration || 1;
@@ -165,8 +181,10 @@
       if (durEl)     durEl.textContent     = fmt(dur);
       if (progWrap)  progWrap.style.display = '';
     });
-    scWidget.bind(SC.Widget.Events.ERROR,  () => { setTimeout(() => { if (!scFallbackMode) autoAdvance(); else scWidget.next(); }, 1000); });
-    // SC playlist: sync tracklist
+    scWidget.bind(SC.Widget.Events.ERROR, () => {
+      setTimeout(() => { if (!scFallbackMode) autoAdvance(); else scWidget.next(); }, 1000);
+    });
+    // En modo fallback SC playlist: sincronizar tracklist con la playlist SC
     if (scFallbackMode) {
       scWidget.bind(SC.Widget.Events.PLAY, () => {
         scWidget.getCurrentSoundIndex(idx => {
@@ -176,8 +194,8 @@
               playlist = sounds.map(s => ({
                 id: String(s.id), title: s.title,
                 artist: s.user?.username || 'RAYVER',
-                cover: s.artwork_url ? s.artwork_url.replace('large','t300x300') : (s.user?.avatar_url || 'logo.jpg'),
-                scUrl: s.permalink_url, duration: s.duration
+                cover: s.artwork_url ? s.artwork_url.replace('large', 't300x300') : (s.user?.avatar_url || 'logo.jpg'),
+                scUrl: s.permalink_url, durationMs: s.duration
               }));
               renderTracklist();
               if (counterEl) counterEl.textContent = `1 / ${playlist.length}`;
@@ -192,13 +210,23 @@
   }
 
   function scPlayUrl(url) {
-    const iframe = ensureSCIframe();
+    ensureSCIframe();
     scFallbackMode = false;
     if (!scWidget) {
-      iframe.src = `https://w.soundcloud.com/player/?url=${encodeURIComponent(url)}&auto_play=true&hide_related=true&show_comments=false&show_reposts=false`;
+      // Primera carga: setear src e inicializar widget
+      scIframe.src = `https://w.soundcloud.com/player/?url=${encodeURIComponent(url)}&auto_play=true&hide_related=true&show_comments=false&show_reposts=false`;
       loadSCApi(() => scBind());
     } else {
-      scWidget.load(url, { auto_play: true });
+      // Widget ya existe: recargar con nueva URL
+      scReady = false;
+      scIframe.style.height = '0px';
+      scWidget.load(url, {
+        auto_play: true,
+        callback: () => {
+          scReady = true;
+          scIframe.style.height = '116px';
+        }
+      });
     }
   }
 
@@ -243,7 +271,8 @@
   function stopAll() {
     if (ytPlayer && ytReady) { try { ytPlayer.pauseVideo(); } catch(e) {} }
     ytStopProgress();
-    if (scWidget && scReady && !scFallbackMode) { try { scWidget.pause(); } catch(e) {} }
+    if (scWidget && scReady) { try { scWidget.pause(); } catch(e) {} }
+    if (scIframe) scIframe.style.height = '0px';
     hideSpotifyEmbed();
   }
 
@@ -338,6 +367,7 @@
     if (onairDot)   onairDot.classList.toggle('pulsing', playing);
     if (coverEl)    coverEl.classList.toggle('spinning', playing);
     if (coverPulse) coverPulse.classList.toggle('active', playing);
+    // El SC iframe gestiona su propia altura en scBind / stopAll
   }
 
   // ── TRACKLIST ──────────────────────────────────────────────────

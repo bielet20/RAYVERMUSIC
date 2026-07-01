@@ -253,7 +253,7 @@
               scSounds = fresh;
               buildEnriched();
               renderList();
-              if (!playing) showTrack(currentIdx);
+              showTrack(currentIdx); // actualizar header siempre (puede estar reproduciendo con "—")
             });
           }, 2000);
         }

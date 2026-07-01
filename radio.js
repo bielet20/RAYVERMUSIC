@@ -690,7 +690,7 @@
     const t = customTrackList[idx];
     if (!t) return;
     customCurrentIdx = idx;
-    customPlaylistStarted = true;
+    // NO marcar customPlaylistStarted aquí — solo se marca cuando realmente arranca audio
     showCustomTrack(idx);
 
     // Resaltar fila activa
@@ -700,14 +700,14 @@
     });
 
     if (t.type === 'video') {
-      // Todos los vídeos de la lista al mini player, empezando por el actual
       const allVids = customTrackList.filter(x => x.type === 'video').map(x => ({ videoId: x.itemId, title: x.title }));
       const vidIdx  = customTrackList.slice(0, idx + 1).filter(x => x.type === 'video').length - 1;
-      if (window.MINI_PLAYER?.loadAndPlay) window.MINI_PLAYER.loadAndPlay(allVids, Math.max(0, vidIdx));
-      // Pausar SC mientras reproduce vídeo
+      if (window.MINI_PLAYER?.loadAndPlay) {
+        window.MINI_PLAYER.loadAndPlay(allVids, Math.max(0, vidIdx));
+        customPlaylistStarted = true;
+      }
       if (playing) { widget.pause(); iframe.style.height = '0px'; setPlaying(false); }
     } else {
-      // Track SC: buscar en la playlist SC por URL (fiable) o título normalizado
       if (window.MINI_PLAYER?.pause) window.MINI_PLAYER.pause();
 
       // Si enriched no está listo aún, reintentar en 500ms
@@ -717,24 +717,33 @@
       }
 
       let scIdx = -1;
-      // 1. Coincidencia por URL de SC (más fiable, sin depender del título)
+
+      // 1. URL exacta guardada en el track de la lista (tracks añadidos con el fix nuevo)
       if (t.scUrl) {
         scIdx = enriched.findIndex(e => e.scUrl === t.scUrl);
       }
-      // 2. Fallback: título normalizado (quita feat., paréntesis, caracteres especiales)
+
+      // 2. Buscar en apiTracks por itemId → obtener scUrl de la BD (cubre tracks antiguos)
+      if (scIdx < 0 && t.itemId) {
+        const api = apiTracks.find(a => String(a.id) === String(t.itemId));
+        if (api?.scUrl) scIdx = enriched.findIndex(e => e.scUrl === api.scUrl);
+      }
+
+      // 3. Fallback: título normalizado
       if (scIdx < 0) {
         const nt = norm(t.title);
         if (nt) scIdx = enriched.findIndex(e => norm(e.title) === nt);
       }
 
       if (scIdx >= 0) {
+        customPlaylistStarted = true;  // solo aquí, cuando tenemos match real
         userPlayed = true;
         currentIdx = scIdx;
         iframe.style.height = '116px';
         widget.skip(scIdx);
         widget.play();
       }
-      // Si no se encuentra, simplemente mostramos la info pero no se reproduce por SC
+      // Sin match: header correcto pero SC no cambia — próximo play reintentará
     }
   };
 

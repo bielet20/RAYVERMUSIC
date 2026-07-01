@@ -544,13 +544,38 @@ app.patch('/api/videos/reorder', authMiddleware, (req, res) => {
 });
 
 // ───────────────────────── USUARIOS & PLAYLISTS ─────────────────────────
-const USER_SESSIONS = new Map(); // token → { userId, email, name }
+// Tokens HMAC firmados — stateless, sobreviven reinicios del servidor
+const TOKEN_SECRET = process.env.TOKEN_SECRET || 'rayver-secret-2025-change-me';
+
+function createUserToken(userId) {
+  const ts  = Date.now().toString(36);
+  const sig = crypto.createHmac('sha256', TOKEN_SECRET)
+    .update(userId + ':' + ts).digest('hex').slice(0, 24);
+  return Buffer.from(`${userId}:${ts}:${sig}`).toString('base64url');
+}
+
+function verifyUserToken(token) {
+  try {
+    const decoded  = Buffer.from(token, 'base64url').toString();
+    const parts    = decoded.split(':');
+    if (parts.length < 3) return null;
+    const sig      = parts.pop();
+    const tsStr    = parts.pop();
+    const userId   = parts.join(':'); // por si el id contiene ':'
+    const expected = crypto.createHmac('sha256', TOKEN_SECRET)
+      .update(userId + ':' + tsStr).digest('hex').slice(0, 24);
+    if (sig !== expected) return null;
+    return userId;
+  } catch { return null; }
+}
 
 function userAuth(req, res, next) {
-  const tok = (req.headers.authorization || '').replace('Bearer ', '');
-  const session = tok ? USER_SESSIONS.get(tok) : null;
-  if (!session) return res.status(401).json({ error: 'Debes iniciar sesión' });
-  req.user = session;
+  const tok    = (req.headers.authorization || '').replace('Bearer ', '').trim();
+  const userId = tok ? verifyUserToken(tok) : null;
+  if (!userId) return res.status(401).json({ error: 'Debes iniciar sesión' });
+  const user   = (db.users || []).find(u => u.id === userId);
+  if (!user)   return res.status(401).json({ error: 'Usuario no encontrado' });
+  req.user = { userId: user.id, email: user.email, name: user.name };
   next();
 }
 
@@ -565,8 +590,7 @@ app.post('/api/user/register', (req, res) => {
   const user = { id: uid(), email: emailNorm, name: name.trim(), passwordHash, createdAt: new Date().toISOString() };
   db.users.push(user);
   saveDB(db);
-  const token = crypto.randomBytes(24).toString('hex');
-  USER_SESSIONS.set(token, { userId: user.id, email: user.email, name: user.name });
+  const token = createUserToken(user.id);
   res.json({ token, user: { id: user.id, email: user.email, name: user.name } });
 });
 
@@ -578,14 +602,13 @@ app.post('/api/user/login', (req, res) => {
   const hash = crypto.createHash('sha256').update(password).digest('hex');
   if (!user || hash !== user.passwordHash)
     return res.status(401).json({ error: 'Email o contraseña incorrectos' });
-  const token = crypto.randomBytes(24).toString('hex');
-  USER_SESSIONS.set(token, { userId: user.id, email: user.email, name: user.name });
+  const token = createUserToken(user.id);
   res.json({ token, user: { id: user.id, email: user.email, name: user.name } });
 });
 
-app.post('/api/user/logout', userAuth, (req, res) => {
-  const tok = (req.headers.authorization || '').replace('Bearer ', '');
-  USER_SESSIONS.delete(tok);
+app.post('/api/user/logout', (req, res) => {
+  // Con tokens stateless no hay nada que invalidar en servidor.
+  // El cliente simplemente descarta el token.
   res.json({ ok: true });
 });
 

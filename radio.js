@@ -119,10 +119,18 @@
     widget.bind(SC.Widget.Events.PLAY, () => {
       iframe.style.height = '116px';
       setPlaying(true);
+      // getCurrentSoundIndex es asíncrono — puede devolver un índice desfasado
+      // si el track ya cambió. Solo lo usamos para sincronizar autoadvance
+      // (prev/next del widget propio), no cuando el click ya actualizó currentIdx.
       widget.getCurrentSoundIndex(idx => {
-        currentIdx = idx ?? 0;
-        updateUI(tracks[currentIdx]);
-        highlightList(currentIdx);
+        const scIdx = idx ?? 0;
+        // Solo actualizar UI si el índice SC no coincide con el nuestro
+        // (caso: autoadvance, prev/next desde el propio widget)
+        if (scIdx !== currentIdx) {
+          currentIdx = scIdx;
+          updateUI(tracks[currentIdx]);
+          highlightList(currentIdx);
+        }
         if (counterEl) counterEl.textContent = `${currentIdx + 1} / ${tracks.length}`;
       });
     });
@@ -159,6 +167,10 @@
   function skipToRandom() {
     let r = Math.floor(Math.random() * tracks.length);
     if (r === currentIdx && tracks.length > 1) r = (r + 1) % tracks.length;
+    currentIdx = r;
+    updateUI(tracks[r]);
+    highlightList(r);
+    if (counterEl) counterEl.textContent = `${r + 1} / ${tracks.length}`;
     widget.skip(r);
     widget.play();
   }
@@ -337,6 +349,12 @@
   window.RADIO_PLAYER = {
     skip: idx => {
       if (!widget || !widgetRdy) return;
+      // Actualizar UI ANTES de la llamada asíncrona al widget
+      // para evitar el desfase de índice en getCurrentSoundIndex
+      currentIdx = idx;
+      updateUI(tracks[idx]);
+      highlightList(idx);
+      if (counterEl) counterEl.textContent = `${idx + 1} / ${tracks.length}`;
       widget.skip(idx);
       widget.play();
       iframe.style.height = '116px';

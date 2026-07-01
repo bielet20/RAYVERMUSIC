@@ -54,11 +54,12 @@
     return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
   function getBestPlatform(t) {
-    if (t.youtubeId)                        return 'youtube';
-    if (t.scUrl)                            return 'soundcloud';
-    if (t.spotifyUrl || t.platforms?.spotify) return 'spotify';
+    if (t.youtubeId) return 'youtube';
+    if (t.scUrl)     return 'soundcloud';
+    // Spotify embeds no se pueden controlar programáticamente para autoplay
     return null;
   }
+  function isPlayable(t) { return !!(t.youtubeId || t.scUrl); }
   function vol() { return parseInt(volumeEl?.value ?? 80); }
 
   // ── YOUTUBE ENGINE ─────────────────────────────────────────────
@@ -294,16 +295,27 @@
       ytInitPlayer(t.youtubeId);
     } else if (plat === 'soundcloud') {
       scPlayUrl(t.scUrl);
-    } else if (plat === 'spotify') {
-      showSpotifyEmbed(t);
-      setPlayState(true);
+    } else if (scFallbackMode && scWidget && scReady) {
+      // Track sin audio propio pero SC playlist activa → saltar al índice en SC
+      scWidget.skip(currentIdx);
+      scWidget.play();
+      activePlat = 'soundcloud';
     } else {
       setPlayState(false);
     }
   }
 
   function togglePlay() {
-    if (!activePlat) { if (playlist.length) playTrack(0); return; }
+    // En modo SC fallback el motor siempre está disponible aunque activePlat sea null
+    if (!activePlat) {
+      if (scFallbackMode && scWidget && scReady) {
+        isPlaying ? scWidget.pause() : scWidget.play();
+        activePlat = 'soundcloud';
+        return;
+      }
+      if (playlist.length) playTrack(0);
+      return;
+    }
     if (activePlat === 'youtube') {
       if (!ytPlayer || !ytReady) return;
       isPlaying ? ytPlayer.pauseVideo() : ytPlayer.playVideo();
@@ -500,6 +512,14 @@
           renderTracklist();
           updateTrackUI(playlist[0]);
           if (counterEl) counterEl.textContent = `1 / ${playlist.length}`;
+
+          // ¿Algún track tiene audio reproducible (YouTube o SoundCloud)?
+          const hasPlayableTracks = tracks.some(isPlayable);
+          if (!hasPlayableTracks) {
+            // Todos son solo Spotify — usar SC playlist como motor de audio.
+            // Los tracks de la API quedan en `playlist` para mostrar metadata/links.
+            scPlayFallbackPlaylist();
+          }
           return;
         }
       }

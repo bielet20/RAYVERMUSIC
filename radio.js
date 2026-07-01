@@ -35,6 +35,7 @@
   let userPlayed  = false; // true cuando el usuario ha pulsado play explícitamente
   let customCurrentIdx = 0;
   let loopPlaylist = false;
+  let customPlaylistStarted = false; // true una vez que se ha iniciado reproducción en la lista activa
 
   // ── DOM ──────────────────────────────────────────────────────────
   const $        = id => document.getElementById(id);
@@ -391,21 +392,38 @@
       widget.pause();
       iframe.style.height = '0px';
     } else {
-      if (window.MINI_PLAYER?.pause) window.MINI_PLAYER.pause();
-      widget.play();
-      iframe.style.height = '116px';
+      // Lista personalizada seleccionada pero aún no iniciada → arrancar desde la pista actual
+      if (activeRadioPlaylist !== null && !customPlaylistStarted && customTrackList.length > 0) {
+        window.playCustomTrack(customCurrentIdx);
+      } else {
+        if (window.MINI_PLAYER?.pause) window.MINI_PLAYER.pause();
+        widget.play();
+        iframe.style.height = '116px';
+      }
     }
   });
 
   prevBtn && prevBtn.addEventListener('click', () => {
     if (!widgetRdy) return;
     userPlayed = true;
+    if (activeRadioPlaylist !== null && customTrackList.length > 0) {
+      const prev = customCurrentIdx - 1;
+      if (prev >= 0) window.playCustomTrack(prev);
+      else if (loopPlaylist) window.playCustomTrack(customTrackList.length - 1);
+      return;
+    }
     if (shuffle) doShuffle(); else widget.prev();
   });
 
   nextBtn && nextBtn.addEventListener('click', () => {
     if (!widgetRdy) return;
     userPlayed = true;
+    if (activeRadioPlaylist !== null && customTrackList.length > 0) {
+      const next = customCurrentIdx + 1;
+      if (next < customTrackList.length) window.playCustomTrack(next);
+      else if (loopPlaylist) window.playCustomTrack(0);
+      return;
+    }
     if (shuffle) doShuffle(); else widget.next();
   });
 
@@ -538,6 +556,7 @@
   window.selectRadioPlaylist = function(id) {
     activeRadioPlaylist = id;
     customCurrentIdx = 0;
+    customPlaylistStarted = false;
     closeRplDropdown();
     const nameEl  = document.getElementById('radio-pl-name');
     const loopBtn = document.getElementById('radio-loop-btn');
@@ -645,6 +664,7 @@
     const t = customTrackList[idx];
     if (!t) return;
     customCurrentIdx = idx;
+    customPlaylistStarted = true;
     showCustomTrack(idx);
 
     // Resaltar fila activa

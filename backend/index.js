@@ -13,6 +13,22 @@ const DATA_FILE = path.join(DATA_DIR, 'db.json');
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
+// Seed from DB_INIT env var (base64 JSON) if no db.json exists yet.
+// Allows data to survive Coolify redeployments without SSH:
+//   1. Call GET /api/admin/db-export → copy the "base64" value
+//   2. Set DB_INIT=<value> in Coolify environment variables
+//   3. Next deploy starts with that data as the initial state
+if (!fs.existsSync(DATA_FILE) && process.env.DB_INIT) {
+  try {
+    const decoded = Buffer.from(process.env.DB_INIT.trim(), 'base64').toString('utf8');
+    JSON.parse(decoded); // validate
+    fs.writeFileSync(DATA_FILE, decoded);
+    console.log('[DB] Seeded db.json from DB_INIT env var');
+  } catch (e) {
+    console.warn('[DB] DB_INIT parse error, ignoring:', e.message);
+  }
+}
+
 const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || '*';
 app.use(cors({
   origin: FRONTEND_ORIGIN === '*' ? true : FRONTEND_ORIGIN.split(',').map(s => s.trim()),
@@ -732,6 +748,15 @@ app.delete('/api/genres/:id', authMiddleware, (req, res) => {
   db.genres = (db.genres || []).filter(x => x.id !== req.params.id);
   saveDB(db);
   res.json({ ok: true });
+});
+
+// ───────────────────────── DB Export/Restore ─────────────────────────
+// Returns the current db as base64. Paste the value into Coolify → DB_INIT
+// to restore this exact state after the next redeploy.
+app.get('/api/admin/db-export', authMiddleware, (req, res) => {
+  const json = JSON.stringify(db, null, 2);
+  const base64 = Buffer.from(json).toString('base64');
+  res.json({ base64, size: json.length, users: (db.users || []).length, playlists: (db.playlists || []).length });
 });
 
 app.listen(PORT, () => console.log('Backend escuchando en :' + PORT));

@@ -26,6 +26,7 @@ services:
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-*}
       TOKEN_SECRET: ${TOKEN_SECRET:-rayver-secret-2025-change-me}
       DATA_DIR: ${DATA_DIR:-/app/data}
+      DB_INIT: ${DB_INIT:-}
     volumes:
       - ${RAYVER_DATA_DIR:-/opt/rayvermusic/data}:/app/data
     networks:

@@ -403,6 +403,19 @@
     },
     isPlaying: () => playing,
     getPlaylist: () => enriched,
+    // Busca el track por título/id en la playlist y lo reproduce
+    addAndPlay: (track) => {
+      if (!enriched || !enriched.length) {
+        document.getElementById('radio')?.scrollIntoView({behavior:'smooth'});
+        return;
+      }
+      const title = (track.title || '').toLowerCase();
+      const scId  = track.scId || track.id || '';
+      let idx = enriched.findIndex(t => (t.scId && t.scId === scId) || (t.title||'').toLowerCase() === title);
+      if (idx < 0) idx = 0; // fallback: primera canción
+      window.RADIO_PLAYER.skip(idx);
+      document.getElementById('radio')?.scrollIntoView({behavior:'smooth'});
+    },
   };
   window.radioPlayIdx = idx => window.RADIO_PLAYER.skip(idx);
 

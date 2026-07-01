@@ -1,5 +1,10 @@
 'use strict';
 
+// ── UTILS (global scope — usadas tanto dentro como fuera de DOMContentLoaded) ──
+function esc(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
 // ── AUTH STATE ────────────────────────────────────────────────────
 let AUTH = { token: null, user: null };
 
@@ -480,7 +485,7 @@ document.addEventListener('DOMContentLoaded', () => {
     deezer:{l:'Deezer',c:'ptag-dz',i:'fas fa-music'},distrokid:{l:'Link',c:'ptag-lk',i:'fas fa-link'}
   };
   const GRADS = ['linear-gradient(135deg,#1a0a2e,#4c1d95)','linear-gradient(135deg,#0f0520,#3b0764)','linear-gradient(135deg,#071424,#0c2d54)','linear-gradient(135deg,#200820,#451540)','linear-gradient(135deg,#0a1a08,#1a3510)','linear-gradient(135deg,#1a1008,#352a08)'];
-  function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+
 
   // ── TRACKS + FILTROS DINÁMICOS ────────────────────────────────────
   let allTracks      = [];
@@ -739,7 +744,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!_tsTrack) return;
     const t = _tsTrack;
     window.closeTrackSheet();
-    if (window.RADIO_PLAYER?.skip !== undefined) {
+    if (window.RADIO_PLAYER?.addAndPlay) {
+      window.RADIO_PLAYER.addAndPlay(t);
+    } else {
       document.getElementById('radio')?.scrollIntoView({behavior:'smooth'});
     }
   };

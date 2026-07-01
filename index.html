@@ -114,16 +114,22 @@
 <!-- ═══════════════════════════════════════════════════════ PLAYLISTS MODAL -->
 <div class="modal-overlay" id="playlists-modal" style="display:none" onclick="if(event.target===this)closePlaylists()">
   <div class="modal-box modal-playlists glass">
-    <button class="modal-close" onclick="closePlaylists()"><i class="fas fa-times"></i></button>
-    <h3 class="modal-title"><i class="fas fa-music"></i> Mis Listas</h3>
-    <div class="pl-new-form">
-      <input type="text" id="pl-new-name" placeholder="Nombre de la nueva lista…" maxlength="60"
-        onkeydown="if(event.key==='Enter')createPlaylistDirect()" autocomplete="off">
-      <button class="pl-new-btn" onclick="createPlaylistDirect()" title="Crear lista">
-        <i class="fas fa-plus"></i> Crear
+    <div class="pl-modal-header">
+      <h3 class="modal-title"><i class="fas fa-music"></i> Mis Listas</h3>
+      <button class="pl-modal-close-btn" onclick="closePlaylists()" title="Cerrar">
+        <i class="fas fa-times"></i>
       </button>
     </div>
-    <div id="playlists-list"></div>
+    <div class="pl-modal-body">
+      <div class="pl-new-form">
+        <input type="text" id="pl-new-name" placeholder="Nueva lista…" maxlength="60"
+          onkeydown="if(event.key==='Enter')createPlaylistDirect()" autocomplete="off">
+        <button class="pl-new-btn" onclick="createPlaylistDirect()" title="Crear lista">
+          <i class="fas fa-plus"></i> Crear
+        </button>
+      </div>
+      <div id="playlists-list"></div>
+    </div>
   </div>
 </div>
 

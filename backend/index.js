@@ -764,12 +764,43 @@ app.delete('/api/genres/:id', authMiddleware, (req, res) => {
 });
 
 // ───────────────────────── DB Export/Restore ─────────────────────────
-// Returns the current db as base64. Paste the value into Coolify → DB_INIT
-// to restore this exact state after the next redeploy.
 app.get('/api/admin/db-export', authMiddleware, (req, res) => {
   const json = JSON.stringify(db, null, 2);
   const base64 = Buffer.from(json).toString('base64');
   res.json({ base64, size: json.length, users: (db.users || []).length, playlists: (db.playlists || []).length });
+});
+
+// Lista usuarios (sin passwords) con conteo de listas
+app.get('/api/admin/users', authMiddleware, (req, res) => {
+  const users = (db.users || []).map(u => ({
+    id:            u.id,
+    email:         u.email,
+    createdAt:     u.createdAt,
+    playlistCount: (db.playlists || []).filter(p => p.userId === u.id).length,
+  }));
+  res.json(users);
+});
+
+// Eliminar usuario y sus listas
+app.delete('/api/admin/users/:id', authMiddleware, (req, res) => {
+  const before = (db.users || []).length;
+  db.users     = (db.users     || []).filter(u => u.id !== req.params.id);
+  db.playlists = (db.playlists || []).filter(p => p.userId !== req.params.id);
+  if (db.users.length === before) return res.status(404).json({ error: 'No encontrado' });
+  saveDB(db);
+  res.json({ ok: true });
+});
+
+// Restaurar DB desde JSON subido por el admin
+app.post('/api/admin/db-restore', authMiddleware, (req, res) => {
+  const payload = req.body;
+  if (!payload || typeof payload !== 'object' || !Array.isArray(payload.tracks))
+    return res.status(400).json({ error: 'Formato inválido' });
+  const oldHash = db.password_hash; // preservar contraseña de admin
+  db = { ...payload };
+  if (!db.password_hash) db.password_hash = oldHash;
+  saveDB(db);
+  res.json({ ok: true, users: (db.users || []).length, playlists: (db.playlists || []).length });
 });
 
 app.listen(PORT, () => console.log('Backend escuchando en :' + PORT));

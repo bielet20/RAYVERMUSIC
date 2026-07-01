@@ -336,15 +336,19 @@ body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--text);min-
             </div>
 
             <div class="pwd-section" style="margin-top:24px">
-              <div class="pwd-title"><i class="fas fa-database"></i> Backup de datos</div>
-              <p style="font-size:13px;color:var(--muted);margin-bottom:16px">
-                Los datos se guardan automáticamente en el servidor (bind mount).<br>
-                Descarga el backup para tenerlo a mano en caso de emergencia.
+              <div class="pwd-title"><i class="fas fa-database"></i> Backup y persistencia</div>
+              <p style="font-size:13px;color:var(--muted);margin-bottom:14px">
+                Descarga el backup antes de hacer redeploys. Si los datos se borran, restáuralos desde
+                <strong style="color:var(--text)">Base de datos → Restaurar</strong> en el panel lateral.
               </p>
-              <p style="font-size:12px;color:var(--muted);margin-bottom:16px;background:rgba(255,255,255,.04);border:1px solid var(--gb);border-radius:8px;padding:10px 12px">
-                <i class="fas fa-info-circle" style="color:var(--purple)"></i>
-                Para restaurar: ve a Coolify → tu servicio → <strong style="color:var(--text)">Files</strong> → crea <code style="background:rgba(255,255,255,.08);padding:1px 5px;border-radius:3px">/app/data/db.json</code> con el contenido del backup.
-              </p>
+              <div style="background:rgba(168,85,247,.07);border:1px solid rgba(168,85,247,.25);border-radius:10px;padding:12px 14px;font-size:12px;margin-bottom:16px">
+                <div style="font-weight:700;color:var(--purple);margin-bottom:8px"><i class="fas fa-shield-alt"></i> Persistencia permanente en Coolify</div>
+                <ol style="margin:0;padding-left:18px;color:var(--muted);line-height:1.8">
+                  <li>Coolify → tu servicio → pestaña <strong style="color:var(--text)">Storages</strong></li>
+                  <li>Añadir almacenamiento → ruta <code style="background:rgba(255,255,255,.1);padding:1px 5px;border-radius:3px">/app/data</code></li>
+                  <li>Guardar y hacer redeploy → los datos ya no se borrarán nunca</li>
+                </ol>
+              </div>
               <button class="btn btn-p" onclick="exportDB()"><i class="fas fa-download"></i> Descargar backup (db.json)</button>
               <span id="db-export-info" style="font-size:12px;color:var(--muted);margin-left:12px"></span>
             </div>
@@ -516,6 +520,74 @@ function doLogout() {
   location.reload();
 }
 
+// ── DATABASE PAGE ─────────────────────────────────────────────────────────────
+let dbUsers = [];
+
+async function loadDatabase() {
+  const r = await apiFetch('GET', '/admin/users');
+  if (r.ok) dbUsers = r.data;
+  renderDBStats();
+  renderDBUsers();
+}
+
+function renderDBStats() {
+  const el = document.getElementById('db-stats-row');
+  if (!el) return;
+  const totalPl = dbUsers.reduce((s, u) => s + (u.playlistCount || 0), 0);
+  el.innerHTML = `
+    <div class="sc"><div class="slabel">Usuarios</div><div class="sval p">${dbUsers.length}</div></div>
+    <div class="sc"><div class="slabel">Listas</div><div class="sval k">${totalPl}</div></div>
+    <div class="sc"><div class="slabel">Canciones</div><div class="sval a">${tracks.length}</div></div>
+    <div class="sc"><div class="slabel">Vídeos</div><div class="sval g">${videos.length}</div></div>`;
+}
+
+function renderDBUsers() {
+  const wrap = document.getElementById('db-users-wrap');
+  if (!wrap) return;
+  if (!dbUsers.length) {
+    wrap.innerHTML = '<div class="empty-table" style="padding:32px;text-align:center"><i class="fas fa-users" style="font-size:36px;display:block;margin-bottom:12px;opacity:.3"></i><p>Sin usuarios registrados todavía.</p></div>';
+    return;
+  }
+  wrap.innerHTML = '<div style="overflow-x:auto"><table class="member-table">'
+    + '<thead><tr><th>Email</th><th>Registrado</th><th>Listas</th><th></th></tr></thead>'
+    + '<tbody>' + dbUsers.map(u => `<tr>
+        <td style="font-weight:500">${esc(u.email || '—')}</td>
+        <td style="font-size:12px;color:var(--muted)">${u.createdAt ? new Date(u.createdAt).toLocaleDateString('es-ES') : '—'}</td>
+        <td><span style="color:var(--purple);font-weight:600">${u.playlistCount || 0}</span></td>
+        <td style="text-align:right">
+          <button class="db" onclick="deleteUser('${esc(u.id)}')" title="Eliminar usuario"><i class="fas fa-trash"></i></button>
+        </td>
+      </tr>`).join('') + '</tbody></table></div>';
+}
+
+async function deleteUser(id) {
+  if (!confirm('¿Eliminar este usuario y todas sus listas? Esta acción no se puede deshacer.')) return;
+  const r = await apiFetch('DELETE', '/admin/users/' + id);
+  if (!r.ok) { toast('Error al eliminar', 'err'); return; }
+  toast('Usuario eliminado');
+  await loadDatabase();
+}
+
+async function restoreDB(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const status = document.getElementById('db-restore-status');
+  status.textContent = 'Leyendo archivo…';
+  try {
+    const text = await file.text();
+    const json = JSON.parse(text);
+    const r = await apiFetch('POST', '/admin/db-restore', json);
+    if (!r.ok) { status.textContent = '❌ ' + (r.data?.error || 'Error'); toast('Error al restaurar', 'err'); return; }
+    status.textContent = `✓ Restaurado: ${r.data.users} usuarios · ${r.data.playlists} listas`;
+    toast('Base de datos restaurada ✓');
+    await loadDatabase();
+    input.value = '';
+  } catch (e) {
+    status.textContent = '❌ Archivo JSON inválido';
+    toast('Archivo inválido', 'err');
+  }
+}
+
 async function exportDB() {
   const r = await apiFetch('GET', '/admin/db-export');
   if (!r.ok) { toast('Error al exportar', 'err'); return; }
@@ -579,16 +651,12 @@ async function loadAll() {
 // ── NAVIGATION ────────────────────────────────────────────────────────────────
 function showPage(p) {
   document.querySelectorAll('.page').forEach(el => el.classList.remove('active'));
-  document.getElementById('page-' + p).classList.add('active');
-  document.querySelectorAll('.ni').forEach((el, i) => {
-    const pages = ['tracks','albums','videos','settings'];
-    el.classList.toggle('active', el.textContent.trim().toLowerCase().startsWith(pages[i]?.charAt(0) || ''));
-  });
-  // Simple active matching
+  document.getElementById('page-' + p)?.classList.add('active');
   document.querySelectorAll('.ni').forEach(el => {
     const onclick = el.getAttribute('onclick') || '';
     el.classList.toggle('active', onclick.includes("'"+p+"'"));
   });
+  if (p === 'database') loadDatabase();
 }
 
 // ── RENDER ────────────────────────────────────────────────────────────────────
@@ -1061,6 +1129,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const nav = document.querySelector('.sidebar nav');
   if (nav) {
     const items = [
+      { page:'database', icon:'fas fa-database', label:'Base de datos' },
       { page:'products', icon:'fas fa-store', label:'Tienda / Membresías' },
       { page:'members',  icon:'fas fa-users', label:'Miembros' },
       { page:'orders',   icon:'fas fa-receipt', label:'Pedidos' },
@@ -1080,6 +1149,38 @@ document.addEventListener('DOMContentLoaded', () => {
   const main = document.querySelector('.main');
   if (main) {
     main.insertAdjacentHTML('beforeend', `
+      <!-- BASE DE DATOS -->
+      <div id="page-database" class="page">
+        <div class="ph">
+          <div><div class="ptitle">Base de datos</div><div class="psub">Usuarios registrados, listas de reproducción y herramientas de backup</div></div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-p" onclick="loadDatabase()"><i class="fas fa-sync-alt"></i> Actualizar</button>
+            <button class="btn btn-p" onclick="exportDB()"><i class="fas fa-download"></i> Descargar backup</button>
+          </div>
+        </div>
+        <div id="db-stats-row" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:20px"></div>
+        <div class="gc" style="margin-bottom:16px">
+          <div class="ch"><span class="ct"><i class="fas fa-users"></i> Usuarios registrados</span></div>
+          <div id="db-users-wrap"></div>
+        </div>
+        <div class="gc">
+          <div class="ch"><span class="ct"><i class="fas fa-upload"></i> Restaurar base de datos desde backup</span></div>
+          <div style="padding:20px">
+            <p style="font-size:13px;color:var(--muted);margin-bottom:16px">
+              Sube el archivo <code style="background:rgba(255,255,255,.08);padding:2px 6px;border-radius:4px">db.json</code>
+              de un backup para recuperar todos los datos. La contraseña de admin actual se mantiene.
+            </p>
+            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+              <label class="btn" style="cursor:pointer;background:rgba(255,255,255,.06);border:1px solid var(--gb);display:inline-flex;align-items:center;gap:8px">
+                <i class="fas fa-file-upload"></i> Elegir archivo db.json…
+                <input type="file" id="db-restore-file" accept=".json,application/json" style="display:none" onchange="restoreDB(this)">
+              </label>
+              <span id="db-restore-status" style="font-size:13px;color:var(--muted)"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- PRODUCTOS -->
       <div id="page-products" class="page">
         <div class="ph">

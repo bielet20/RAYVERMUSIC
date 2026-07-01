@@ -13,15 +13,20 @@ const DATA_FILE = path.join(DATA_DIR, 'db.json');
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
-app.use(cors());
+const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || '*';
+app.use(cors({
+  origin: FRONTEND_ORIGIN === '*' ? true : FRONTEND_ORIGIN.split(',').map(s => s.trim()),
+  credentials: true,
+}));
 app.use(express.json({ limit: '5mb' }));
 
 // ───────────────────────── DB helpers ─────────────────────────
 function loadDB() {
   if (!fs.existsSync(DATA_FILE)) {
+    const defaultPass = process.env.ADMIN_PASSWORD || 'rayver2025';
     const initial = {
       tracks: [], albums: [], videos: [], products: [], members: [], orders: [],
-      password_hash: crypto.createHash('sha256').update('rayver2025').digest('hex'),
+      password_hash: crypto.createHash('sha256').update(defaultPass).digest('hex'),
       syncLog: []
     };
     fs.writeFileSync(DATA_FILE, JSON.stringify(initial, null, 2));
@@ -48,10 +53,32 @@ if (!db.genres) {
 }
 
 // ───────────────────────── Auth (admin) ─────────────────────────
-const SESSIONS = new Set();
+// Token HMAC stateless — sobrevive reinicios del servidor
+const ADMIN_SECRET = process.env.TOKEN_SECRET || 'rayver-secret-2025-change-me';
+const ADMIN_MARKER = 'admin';
+
+function createAdminToken() {
+  const ts  = Date.now().toString(36);
+  const sig = crypto.createHmac('sha256', ADMIN_SECRET)
+    .update(ADMIN_MARKER + ':' + ts).digest('hex').slice(0, 24);
+  return Buffer.from(`${ADMIN_MARKER}:${ts}:${sig}`).toString('base64url');
+}
+
+function verifyAdminToken(token) {
+  try {
+    const decoded = Buffer.from(token, 'base64url').toString();
+    const parts   = decoded.split(':');
+    if (parts.length !== 3 || parts[0] !== ADMIN_MARKER) return false;
+    const [, ts, sig] = parts;
+    const expected = crypto.createHmac('sha256', ADMIN_SECRET)
+      .update(ADMIN_MARKER + ':' + ts).digest('hex').slice(0, 24);
+    return sig === expected;
+  } catch { return false; }
+}
+
 function authMiddleware(req, res, next) {
-  const tok = (req.headers.authorization || '').replace('Bearer ', '');
-  if (!tok || !SESSIONS.has(tok)) return res.status(401).json({ error: 'No autorizado' });
+  const tok = (req.headers.authorization || '').replace('Bearer ', '').trim();
+  if (!tok || !verifyAdminToken(tok)) return res.status(401).json({ error: 'No autorizado' });
   next();
 }
 
@@ -59,9 +86,7 @@ app.post('/api/auth/login', (req, res) => {
   const { password } = req.body || {};
   const hash = crypto.createHash('sha256').update(password || '').digest('hex');
   if (hash !== db.password_hash) return res.status(401).json({ error: 'Contraseña incorrecta' });
-  const token = crypto.randomBytes(24).toString('hex');
-  SESSIONS.add(token);
-  res.json({ token });
+  res.json({ token: createAdminToken() });
 });
 
 app.post('/api/auth/change-password', authMiddleware, (req, res) => {

@@ -838,12 +838,21 @@ document.addEventListener('DOMContentLoaded', () => {
     input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); input.blur(); } if (e.key === 'Escape') renderPlaylistsModal(); });
   };
 
-  // Reproducir la playlist del usuario en el radio
+  // Reproducir la playlist del usuario
   window.playPlaylist = function(plId) {
     const pl = userPlaylists.find(p => p.id === plId);
     if (!pl || !pl.tracks.length) { showToastGlobal('La lista está vacía — añade canciones primero'); return; }
+
+    const videos = pl.tracks.filter(t => t.type === 'video');
+    if (videos.length) {
+      // Delegar al mini player: ya gestiona playlists propias correctamente
+      window.miniPlayPlaylist(plId);
+      closePlaylists();
+      return;
+    }
+
+    // Tracks de SoundCloud: buscar en la lista del radio por título
     const radioList = window.RADIO_PLAYER?.getPlaylist?.() || [];
-    // Intentar encontrar cada canción en el radio por título
     for (const track of pl.tracks) {
       const title = (track.title || '').toLowerCase();
       const idx   = radioList.findIndex(t => (t.title || '').toLowerCase() === title);
@@ -855,17 +864,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
     }
-    // Fallback: addAndPlay con el primer track
-    if (window.RADIO_PLAYER?.addAndPlay) {
-      window.RADIO_PLAYER.addAndPlay(pl.tracks[0]);
-      document.getElementById('radio')?.scrollIntoView({behavior:'smooth'});
-      closePlaylists();
-      showToastGlobal('Reproduciendo en radio...');
-    } else {
-      const url = pl.tracks[0]?.url;
-      if (url) { window.open(url, '_blank'); closePlaylists(); }
-      else showToastGlobal('No hay pistas reproducibles en esta lista');
-    }
+    showToastGlobal('No hay pistas reproducibles en esta lista');
   };
 
   window.mergePlaylistModal = function(sourceId) {

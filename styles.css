@@ -1258,15 +1258,17 @@ body {
    ══════════════════════════════════════════════ */
 #mini-player {
   position: fixed;
-  top: 0;
+  bottom: 0;
   left: 0;
   right: 0;
   z-index: 2000;
   background: rgba(7,7,10,.96);
   backdrop-filter: blur(20px);
-  border-bottom: 1px solid var(--glass-b);
+  border-top: 1px solid var(--glass-b);
   transition: transform .3s ease;
   font-family: 'Outfit', sans-serif;
+  display: flex;
+  flex-direction: column-reverse; /* bar queda abajo, yt-wrap y panel abren hacia arriba */
 }
 
 #mini-player.mini-minimized #mini-player-bar { padding: 6px 16px; }
@@ -1367,7 +1369,7 @@ body {
 
 #mini-panel {
   background: rgba(13,13,20,.98);
-  border-top: 1px solid var(--glass-b);
+  border-bottom: 1px solid var(--glass-b);
   max-height: 320px;
   overflow: hidden;
   display: flex;
@@ -1565,8 +1567,8 @@ body {
 
 .mini-pl-video button:hover { color: #ef4444; }
 
-/* Ajustar navbar para el mini player */
-body { padding-top: 56px; }
+/* Espacio para el mini player en la parte inferior */
+body { padding-bottom: 72px; }
 #mini-player + * { margin-top: 0; }
 
 /* ── TOAST ──────────────────────────────────────────────────────── */

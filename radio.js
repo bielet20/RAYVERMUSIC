@@ -333,8 +333,14 @@
   playBtn && playBtn.addEventListener('click', () => {
     if (!widgetRdy) { pendingPlay = true; return; }
     userPlayed = true;
-    if (playing) { widget.pause(); iframe.style.height = '0px'; }
-    else         { widget.play();  iframe.style.height = '116px'; }
+    if (playing) {
+      widget.pause();
+      iframe.style.height = '0px';
+    } else {
+      if (window.MINI_PLAYER?.pause) window.MINI_PLAYER.pause();
+      widget.play();
+      iframe.style.height = '116px';
+    }
   });
 
   prevBtn && prevBtn.addEventListener('click', () => {
@@ -376,6 +382,7 @@
     skip: idx => {
       if (!widget || !widgetRdy || !scSounds[idx]) return;
       userPlayed = true;
+      if (window.MINI_PLAYER?.pause) window.MINI_PLAYER.pause();
       currentIdx = idx;
       showTrack(idx);
       highlight(idx);
@@ -383,7 +390,18 @@
       widget.skip(idx);
       widget.play();
     },
-    play: () => playBtn?.click(),
+    play: () => {
+      if (window.MINI_PLAYER?.pause) window.MINI_PLAYER.pause();
+      playBtn?.click();
+    },
+    pause: () => {
+      if (widget && widgetRdy && playing) {
+        widget.pause();
+        iframe.style.height = '0px';
+        setPlaying(false);
+      }
+    },
+    isPlaying: () => playing,
     getPlaylist: () => enriched,
   };
   window.radioPlayIdx = idx => window.RADIO_PLAYER.skip(idx);

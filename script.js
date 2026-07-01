@@ -819,6 +819,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (icon) icon.className = 'fas fa-pause';
     miniPlaying = true;
 
+    // Pausar el radio SC si está sonando
+    if (window.RADIO_PLAYER?.pause) window.RADIO_PLAYER.pause();
+
     // Si el mini player está cerrado, reabrirlo
     const mp = document.getElementById('mini-player');
     if (mp) mp.style.display = '';
@@ -943,6 +946,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ── TOAST (alias para el global) ─────────────────────────────────
   function showToast(msg) { showToastGlobal(msg); }
+
+  // ── API PÚBLICA MINI-PLAYER (para radio.js) ──────────────────────
+  window.MINI_PLAYER = {
+    pause: () => {
+      const iframe = document.getElementById('mini-yt-iframe');
+      if (iframe && iframe.src) iframe.src = iframe.src.replace('autoplay=1','autoplay=0');
+      const icon = document.getElementById('mini-play-icon');
+      if (icon) icon.className = 'fas fa-play';
+      miniPlaying = false;
+    },
+    isPlaying: () => miniPlaying,
+  };
 
   // ── INIT ─────────────────────────────────────────────────────────
   initAuth();

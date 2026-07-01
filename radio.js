@@ -303,16 +303,18 @@
 
     widget.bind(SC.Widget.Events.READY, () => {
       widgetRdy = true;
-      iframe.style.height = '116px';
+      // Solo mostrar SC si no hay lista personalizada activa
+      if (activeRadioPlaylist === null) iframe.style.height = '116px';
       widget.setVolume(muted ? 0 : vol());
       loadSounds();
     });
 
     widget.bind(SC.Widget.Events.PLAY, () => {
-      iframe.style.height = '116px';
       setPlaying(true);
-      // Ignorar PLAY automático del widget al inicializar (antes de que el usuario pulse play)
+      // Ignorar PLAY automático del widget (antes de que el usuario pulse play)
       if (!userPlayed) return;
+      // Solo expandir el iframe cuando el usuario ha iniciado la reproducción
+      iframe.style.height = '116px';
       widget.getCurrentSoundIndex(idx => {
         if (typeof idx !== 'number') return;
         currentIdx = idx;
@@ -577,8 +579,9 @@
     customPlaylistStarted = false;
     closeRplDropdown();
 
-    // Detener reproducción actual al cambiar de lista
-    if (playing) { widget.pause(); iframe.style.height = '0px'; }
+    // Siempre ocultar SC widget al cambiar de lista (estuviera o no reproduciendo)
+    widget.pause();
+    iframe.style.height = '0px';
     if (window.MINI_PLAYER?.pause) window.MINI_PLAYER.pause();
 
     const nameEl  = document.getElementById('radio-pl-name');

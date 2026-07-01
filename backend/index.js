@@ -52,6 +52,7 @@ function loadDB() {
 }
 function saveDB(db) { fs.writeFileSync(DATA_FILE, JSON.stringify(db, null, 2)); }
 let db = loadDB();
+console.log(`[DB] Archivo: ${DATA_FILE} | Usuarios: ${(db.users||[]).length} | Listas: ${(db.playlists||[]).length} | Tracks: ${(db.tracks||[]).length}`);
 
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
 

@@ -25,9 +25,9 @@ services:
       YOUTUBE_CHANNEL_IDS: ${YOUTUBE_CHANNEL_IDS:-}
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-*}
       TOKEN_SECRET: ${TOKEN_SECRET:-rayver-secret-2025-change-me}
-      DATA_DIR: ${DATA_DIR:-/app/data}
+      DATA_DIR: /app/data
     volumes:
-      - ${RAYVER_DATA_DIR:-/opt/rayvermusic/data}:/app/data
+      - rayver_data:/app/data
     networks:
       - app_net
     healthcheck:
@@ -40,3 +40,9 @@ services:
 networks:
   app_net:
     driver: bridge
+
+# Named volume con nombre fijo — NO depende del project name de Coolify.
+# Docker no lo elimina con "docker compose down" (solo con "down -v").
+volumes:
+  rayver_data:
+    name: rayvermusic_data

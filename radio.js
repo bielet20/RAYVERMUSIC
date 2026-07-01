@@ -238,10 +238,12 @@
       widgetRdy = true;
       iframe.style.height = '116px';
       widget.setVolume(muted ? 0 : vol());
+      console.log('[RADIO] Widget listo');
 
       widget.getSounds(sounds => {
-        if (!sounds?.length) return;
+        if (!sounds?.length) { console.warn('[RADIO] getSounds vacío'); return; }
         scSounds = sounds;
+        console.log('[RADIO] getSounds:', scSounds.length, 'tracks. Primero:', scSounds[0]?.title);
         buildEnriched();
         renderList();
         showTrack(0);
@@ -254,9 +256,10 @@
       iframe.style.height = '116px';
       setPlaying(true);
       widget.getCurrentSoundIndex(idx => {
-        if (typeof idx !== 'number') return;
+        if (typeof idx !== 'number') { console.warn('[RADIO] getCurrentSoundIndex inválido:', idx); return; }
+        console.log('[RADIO] PLAY idx:', idx, 'título SC:', scSounds[idx]?.title, 'currentIdx era:', currentIdx);
         currentIdx = idx;
-        showTrack(idx);   // siempre desde scSounds[idx]
+        showTrack(idx);
         highlight(idx);
         if (counter) counter.textContent = `${idx + 1} / ${scSounds.length}`;
       });

@@ -388,18 +388,36 @@
   playBtn && playBtn.addEventListener('click', () => {
     if (!widgetRdy) { pendingPlay = true; return; }
     userPlayed = true;
+
+    if (activeRadioPlaylist !== null && customTrackList.length > 0) {
+      if (!customPlaylistStarted) {
+        // Primera pulsación con lista custom: arrancar desde la pista actual
+        window.playCustomTrack(customCurrentIdx);
+      } else if (playing) {
+        // Pausar pista SC activa
+        widget.pause();
+        iframe.style.height = '0px';
+      } else {
+        // Reanudar: depende del tipo de pista
+        const cur = customTrackList[customCurrentIdx];
+        if (cur?.type === 'video') {
+          window.MINI_PLAYER?.play?.();
+        } else {
+          widget.play();
+          iframe.style.height = '116px';
+        }
+      }
+      return;
+    }
+
+    // Modo RAYVER Radio normal
     if (playing) {
       widget.pause();
       iframe.style.height = '0px';
     } else {
-      // Lista personalizada seleccionada pero aún no iniciada → arrancar desde la pista actual
-      if (activeRadioPlaylist !== null && !customPlaylistStarted && customTrackList.length > 0) {
-        window.playCustomTrack(customCurrentIdx);
-      } else {
-        if (window.MINI_PLAYER?.pause) window.MINI_PLAYER.pause();
-        widget.play();
-        iframe.style.height = '116px';
-      }
+      if (window.MINI_PLAYER?.pause) window.MINI_PLAYER.pause();
+      widget.play();
+      iframe.style.height = '116px';
     }
   });
 
@@ -558,6 +576,11 @@
     customCurrentIdx = 0;
     customPlaylistStarted = false;
     closeRplDropdown();
+
+    // Detener reproducción actual al cambiar de lista
+    if (playing) { widget.pause(); iframe.style.height = '0px'; }
+    if (window.MINI_PLAYER?.pause) window.MINI_PLAYER.pause();
+
     const nameEl  = document.getElementById('radio-pl-name');
     const loopBtn = document.getElementById('radio-loop-btn');
     if (id === null) {

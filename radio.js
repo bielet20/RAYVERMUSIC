@@ -33,6 +33,8 @@
   let iframe      = null;
   let pendingPlay = false;
   let userPlayed  = false; // true cuando el usuario ha pulsado play explícitamente
+  let customCurrentIdx = 0;
+  let loopPlaylist = false;
 
   // ── DOM ──────────────────────────────────────────────────────────
   const $        = id => document.getElementById(id);
@@ -161,6 +163,44 @@
     if (counter) counter.textContent = `${idx + 1} / ${scSounds.length}`;
   }
 
+  // Actualiza el header del radio con datos de la lista personalizada (no SC)
+  function showCustomTrack(idx) {
+    const t = customTrackList[idx];
+    if (!t) return;
+    const isVideo = t.type === 'video';
+
+    if (titleEl)  titleEl.textContent  = t.title || '—';
+    if (artistEl) artistEl.textContent = isVideo ? 'YouTube' : 'SoundCloud';
+    if (genreEl)  genreEl.textContent  = '';
+
+    const coverSrc = isVideo
+      ? (t.itemId ? `https://img.youtube.com/vi/${t.itemId}/mqdefault.jpg` : null)
+      : (t.cover || null);
+    if (coverEl) {
+      if (coverSrc) {
+        coverEl.src = coverSrc;
+        coverEl.onerror = () => { coverEl.style.display = 'none'; };
+        coverEl.style.display = '';
+      } else {
+        coverEl.style.display = 'none';
+      }
+    }
+
+    if (tagsEl) {
+      if (isVideo && t.itemId)
+        tagsEl.innerHTML = `<a href="https://www.youtube.com/watch?v=${esc(t.itemId)}" target="_blank" class="radio-ptag" style="color:#ff4444"><i class="fab fa-youtube"></i> YouTube</a>`;
+      else if (!isVideo && t.url)
+        tagsEl.innerHTML = `<a href="${esc(t.url)}" target="_blank" class="radio-ptag ptag-soundcloud"><i class="fab fa-soundcloud"></i> SoundCloud</a>`;
+      else
+        tagsEl.innerHTML = '';
+    }
+
+    if (fillEl)  fillEl.style.width = '0%';
+    if (curEl)   curEl.textContent  = '0:00';
+    if (durEl)   durEl.textContent  = '—';
+    if (counter) counter.textContent = `${idx + 1} / ${customTrackList.length}`;
+  }
+
   function setPlaying(p) {
     playing = p;
     if (playIco) playIco.className = p ? 'fas fa-pause' : 'fas fa-play';
@@ -275,6 +315,8 @@
       widget.getCurrentSoundIndex(idx => {
         if (typeof idx !== 'number') return;
         currentIdx = idx;
+        // Si hay lista personalizada activa, no sobrescribir el header con datos de SC
+        if (activeRadioPlaylist !== null) return;
         if (!scSounds[idx]?.title) {
           loadSounds(() => { showTrack(idx); highlight(idx); });
         } else {
@@ -289,6 +331,18 @@
 
     widget.bind(SC.Widget.Events.FINISH, () => {
       iframe.style.height = '0px';
+      // Modo lista personalizada: avanzar al siguiente track de la lista
+      if (activeRadioPlaylist !== null) {
+        const next = customCurrentIdx + 1;
+        if (next < customTrackList.length) {
+          setTimeout(() => window.playCustomTrack(next), 400);
+        } else if (loopPlaylist) {
+          setTimeout(() => window.playCustomTrack(0), 400);
+        } else {
+          setPlaying(false);
+        }
+        return;
+      }
       if (repeat === 'one')   { widget.seekTo(0); widget.play(); }
       else if (shuffle)       { doShuffle(); }
       else if (repeat === 'all') { widget.next(); }
@@ -483,17 +537,24 @@
 
   window.selectRadioPlaylist = function(id) {
     activeRadioPlaylist = id;
+    customCurrentIdx = 0;
     closeRplDropdown();
-    const nameEl = document.getElementById('radio-pl-name');
+    const nameEl  = document.getElementById('radio-pl-name');
+    const loopBtn = document.getElementById('radio-loop-btn');
     if (id === null) {
-      if (nameEl) nameEl.textContent = 'RAYVER Radio';
+      if (nameEl)  nameEl.textContent    = 'RAYVER Radio';
+      if (loopBtn) loopBtn.style.display = 'none';
       customTrackList = [];
       renderList();
       highlight(currentIdx);
+      showTrack(currentIdx);
     } else {
       const pl = (window.userPlaylists || []).find(p => p.id === id);
-      if (nameEl) nameEl.textContent = pl?.name || 'Lista';
-      renderCustomTracklist(pl?.tracks || []);
+      if (nameEl)  nameEl.textContent    = pl?.name || 'Lista';
+      if (loopBtn) loopBtn.style.display = '';
+      const tracks = pl?.tracks || [];
+      renderCustomTracklist(tracks);
+      if (tracks.length) showCustomTrack(0);
     }
   };
 
@@ -516,7 +577,8 @@
         ? `<span class="rtitem-plat-badge" style="color:#ff4444"><i class="fab fa-youtube"></i></span>`
         : `<span class="rtitem-plat-badge ptag-soundcloud"><i class="fab fa-soundcloud"></i></span>`;
       return `
-        <div class="radio-track-item" onclick="window.playCustomTrack(${i})">
+        <div class="radio-track-item${i === customCurrentIdx ? ' active' : ''}" draggable="true" data-ridx="${i}" onclick="window.playCustomTrack(${i})">
+          <span class="rtitem-drag-handle" title="Arrastrar"><i class="fas fa-grip-lines"></i></span>
           <span class="rtitem-num">${i + 1}</span>
           ${coverHtml}
           <div class="rtitem-info">
@@ -526,32 +588,102 @@
           ${badge}
         </div>`;
     }).join('');
+    attachRadioDnD();
+  }
+
+  function attachRadioDnD() {
+    if (!listBody) return;
+    const items = Array.from(listBody.querySelectorAll('.radio-track-item[draggable]'));
+    let dragSrc = null;
+
+    items.forEach(item => {
+      item.addEventListener('dragstart', e => {
+        dragSrc = item;
+        item.classList.add('rtdrag-dragging');
+        e.dataTransfer.effectAllowed = 'move';
+        e.stopPropagation();
+      });
+      item.addEventListener('dragend', () => {
+        item.classList.remove('rtdrag-dragging');
+        listBody.querySelectorAll('.rtdrag-over').forEach(el => el.classList.remove('rtdrag-over'));
+        dragSrc = null;
+      });
+      item.addEventListener('dragover', e => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        if (item !== dragSrc) item.classList.add('rtdrag-over');
+      });
+      item.addEventListener('dragleave', () => item.classList.remove('rtdrag-over'));
+      item.addEventListener('drop', e => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!dragSrc || dragSrc === item) return;
+        const from = +dragSrc.dataset.ridx;
+        const to   = +item.dataset.ridx;
+        const moved = customTrackList.splice(from, 1)[0];
+        customTrackList.splice(to, 0, moved);
+        // Ajustar índice activo
+        if (customCurrentIdx === from) customCurrentIdx = to;
+        else if (from < customCurrentIdx && to >= customCurrentIdx) customCurrentIdx--;
+        else if (from > customCurrentIdx && to <= customCurrentIdx) customCurrentIdx++;
+        renderCustomTracklist(customTrackList);
+        showCustomTrack(customCurrentIdx);
+        // Persistir orden en backend
+        if (activeRadioPlaylist && window.getToken?.()) {
+          const ids = customTrackList.map(t => t.id).filter(Boolean);
+          fetch(`/api/user/playlists/${activeRadioPlaylist}/reorder`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + window.getToken() },
+            body: JSON.stringify({ trackIds: ids })
+          }).catch(() => {});
+        }
+      });
+    });
   }
 
   window.playCustomTrack = function(idx) {
     const t = customTrackList[idx];
     if (!t) return;
+    customCurrentIdx = idx;
+    showCustomTrack(idx);
 
-    // Highlight clicked row
+    // Resaltar fila activa
     listBody?.querySelectorAll('.radio-track-item').forEach((el, i) => {
       el.classList.toggle('active', i === idx);
+      if (i === idx) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     });
 
     if (t.type === 'video') {
-      // Load all videos from this playlist into mini player, start at this one
-      const videosBefore = customTrackList.slice(0, idx + 1).filter(x => x.type === 'video').length - 1;
-      const allVideos = customTrackList.filter(x => x.type === 'video').map(x => ({ videoId: x.itemId, title: x.title }));
-      if (window.MINI_PLAYER?.loadAndPlay) {
-        window.MINI_PLAYER.loadAndPlay(allVideos, Math.max(0, videosBefore));
-      }
+      // Todos los vídeos de la lista al mini player, empezando por el actual
+      const allVids = customTrackList.filter(x => x.type === 'video').map(x => ({ videoId: x.itemId, title: x.title }));
+      const vidIdx  = customTrackList.slice(0, idx + 1).filter(x => x.type === 'video').length - 1;
+      if (window.MINI_PLAYER?.loadAndPlay) window.MINI_PLAYER.loadAndPlay(allVids, Math.max(0, vidIdx));
+      // Pausar SC mientras reproduce vídeo
+      if (playing) { widget.pause(); iframe.style.height = '0px'; setPlaying(false); }
     } else {
-      // SC track — try to find in widget by title match
+      // Track SC: buscar en la playlist SC por título
+      if (window.MINI_PLAYER?.pause) window.MINI_PLAYER.pause();
       const title = (t.title || '').toLowerCase();
-      const scIdx = enriched.findIndex(e => (e.title||'').toLowerCase() === title);
+      const scIdx = enriched.findIndex(e => (e.title || '').toLowerCase() === title);
       if (scIdx >= 0) {
-        window.RADIO_PLAYER.skip(scIdx);
+        userPlayed = true;
+        currentIdx = scIdx;
+        iframe.style.height = '116px';
+        widget.skip(scIdx);
+        widget.play();
+      } else {
+        // No encontrado en SC: saltar al siguiente
+        const next = idx + 1;
+        if (next < customTrackList.length) setTimeout(() => window.playCustomTrack(next), 200);
       }
     }
+  };
+
+  window.toggleRadioLoop = function() {
+    loopPlaylist = !loopPlaylist;
+    const btn = document.getElementById('radio-loop-btn');
+    if (btn) btn.classList.toggle('active', loopPlaylist);
+    btn.title = loopPlaylist ? 'Repetir lista: ON' : 'Repetir lista: OFF';
   };
 
   // Close dropdown when clicking outside

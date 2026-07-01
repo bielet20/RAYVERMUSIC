@@ -676,6 +676,37 @@ body {
 .radio-track-item.active { background: rgba(168,85,247,.12); }
 .radio-track-item.active .rtitem-title { color: var(--primary-2); }
 
+/* Drag handle en el tracklist del radio (listas personalizadas) */
+.rtitem-drag-handle {
+  width: 16px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--subtle);
+  flex-shrink: 0;
+  cursor: grab;
+  opacity: 0;
+  transition: opacity .15s;
+}
+.radio-track-item:hover .rtitem-drag-handle { opacity: 1; }
+.rtdrag-dragging { opacity: .45; }
+.rtdrag-over { border-top: 2px solid var(--primary-2); }
+
+/* Botón loop en la cabecera del tracklist */
+.rthead-loop-btn {
+  background: none;
+  border: 1px solid rgba(255,255,255,.12);
+  color: var(--muted);
+  border-radius: 7px;
+  width: 28px; height: 28px;
+  font-size: 12px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  transition: all .15s;
+}
+.rthead-loop-btn:hover { background: rgba(168,85,247,.15); color: var(--primary-2); border-color: rgba(168,85,247,.3); }
+.rthead-loop-btn.active { background: rgba(168,85,247,.2); color: var(--primary-2); border-color: rgba(168,85,247,.5); }
+
 .rtitem-num {
   width: 20px;
   text-align: center;

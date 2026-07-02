@@ -40,6 +40,7 @@
   let spotifyIframe = null;    // iframe para tracks solo en Spotify
   let pendingSpotifyId = null; // spotifyId en espera si SC slug falla
   let spotifyActive = false;   // true cuando el track actual juega desde Spotify
+  let youtubeActive = false;   // true cuando el track actual juega desde YouTube (MINI_PLAYER)
 
   // ── DOM ──────────────────────────────────────────────────────────
   const $        = id => document.getElementById(id);
@@ -289,16 +290,19 @@
 
   function playYoutubeTrack(videoId, title) {
     pendingSpotifyId = null;
+    window._pendingYtFallback = null;
     spotifyActive = false;
+    youtubeActive = true;
     hideSpotifyIframe();
     widget.pause();
     iframe.style.height = '0px';
     customPlaylistStarted = true;
     userPlayed = true;
-    setPlaying(true);
-    // Registrar callback para auto-avance cuando el video termine
+    // Registrar callbacks de sincronización con el mini player
     window.onYouTubeTrackEnd = function() {
       window.onYouTubeTrackEnd = null;
+      window.onYouTubeStateChange = null;
+      youtubeActive = false;
       if (activeRadioPlaylist !== null) {
         const next = customCurrentIdx + 1;
         if (next < customTrackList.length) setTimeout(() => window.playCustomTrack(next), 400);
@@ -306,9 +310,15 @@
         else setPlaying(false);
       }
     };
+    window.onYouTubeStateChange = function(state) {
+      if (!youtubeActive) return;
+      if (state === 1) setPlaying(true);   // playing
+      else if (state === 2) setPlaying(false); // paused
+    };
     if (window.MINI_PLAYER?.loadAndPlay) {
       window.MINI_PLAYER.loadAndPlay([{ videoId, title }], 0);
     }
+    setPlaying(true); // Estado inicial: reproduciendo
   }
 
   function playSpotifyTrack(spotifyId) {
@@ -325,10 +335,15 @@
   }
 
   function hideSpotifyIframe() {
-    if (!spotifyIframe) return;
-    spotifyIframe.src = '';
-    spotifyIframe.style.height = '0px';
+    if (spotifyIframe) { spotifyIframe.src = ''; spotifyIframe.style.height = '0px'; }
     spotifyActive = false;
+  }
+
+  function stopYoutube() {
+    window.onYouTubeTrackEnd = null;
+    window.onYouTubeStateChange = null;
+    youtubeActive = false;
+    if (window.MINI_PLAYER?.pause) window.MINI_PLAYER.pause();
   }
 
   function bindWidget() {
@@ -474,22 +489,25 @@
 
     if (activeRadioPlaylist !== null && customTrackList.length > 0) {
       if (!customPlaylistStarted) {
-        // Primera pulsación con lista custom: arrancar desde la pista actual
         window.playCustomTrack(customCurrentIdx);
       } else if (playing) {
-        // Pausar
-        if (spotifyActive) {
+        // Pausar — según la fuente activa
+        if (youtubeActive) {
+          window.MINI_PLAYER?.pause?.();
+          setPlaying(false);
+        } else if (spotifyActive) {
           if (spotifyIframe) spotifyIframe.style.height = '0px';
+          setPlaying(false);
         } else {
           widget.pause();
           iframe.style.height = '0px';
+          setPlaying(false);
         }
-        setPlaying(false);
       } else {
-        // Reanudar
-        const cur = customTrackList[customCurrentIdx];
-        if (cur?.type === 'video') {
+        // Reanudar — según la fuente activa
+        if (youtubeActive) {
           window.MINI_PLAYER?.play?.();
+          setPlaying(true);
         } else if (spotifyActive && spotifyIframe) {
           spotifyIframe.style.height = '152px';
           setPlaying(true);
@@ -576,6 +594,8 @@
       playBtn?.click();
     },
     pause: () => {
+      // Si el radio está usando intencionalmente el mini player, no interferir
+      if (youtubeActive) return;
       if (widget && widgetRdy && playing) {
         widget.pause();
         iframe.style.height = '0px';
@@ -583,6 +603,7 @@
       }
     },
     isPlaying: () => playing,
+    isUsingMiniPlayer: () => youtubeActive,
     getPlaylist: () => enriched,
     // Busca el track por título/id en la playlist y lo reproduce
     addAndPlay: (track) => {
@@ -668,13 +689,13 @@
     customPlaylistStarted = false;
     closeRplDropdown();
 
-    // Siempre ocultar SC widget y Spotify al cambiar de lista
+    // Siempre ocultar SC widget, YouTube y Spotify al cambiar de lista
     widget.pause();
     iframe.style.height = '0px';
     hideSpotifyIframe();
+    stopYoutube();
     pendingSpotifyId = null;
     window._pendingYtFallback = null;
-    window.onYouTubeTrackEnd = null;
     if (window.MINI_PLAYER?.pause) window.MINI_PLAYER.pause();
 
     const nameEl  = document.getElementById('radio-pl-name');

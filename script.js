@@ -1352,8 +1352,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (icon) icon.className = 'fas fa-pause';
     miniPlaying = true;
 
-    // Pausar el radio SC si está sonando
-    if (window.RADIO_PLAYER?.pause) window.RADIO_PLAYER.pause();
+    // Pausar el radio SC solo si el radio no está usando intencionalmente el mini player
+    if (window.RADIO_PLAYER?.pause && !window.RADIO_PLAYER?.isUsingMiniPlayer?.()) {
+      window.RADIO_PLAYER.pause();
+    }
 
     // Si el mini player está cerrado, reabrirlo
     const mp = document.getElementById('mini-player');
@@ -1432,13 +1434,25 @@ document.addEventListener('DOMContentLoaded', () => {
   function showToast(msg) { showToastGlobal(msg); }
 
   // ── API PÚBLICA MINI-PLAYER (para radio.js) ──────────────────────
+  function ytCommand(func) {
+    const iframe = document.getElementById('mini-yt-iframe');
+    if (iframe?.contentWindow) {
+      iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func, args: [] }), '*');
+    }
+  }
+
   window.MINI_PLAYER = {
     pause: () => {
-      const iframe = document.getElementById('mini-yt-iframe');
-      if (iframe && iframe.src) iframe.src = iframe.src.replace('autoplay=1','autoplay=0');
+      ytCommand('pauseVideo');
       const icon = document.getElementById('mini-play-icon');
       if (icon) icon.className = 'fas fa-play';
       miniPlaying = false;
+    },
+    play: () => {
+      ytCommand('playVideo');
+      const icon = document.getElementById('mini-play-icon');
+      if (icon) icon.className = 'fas fa-pause';
+      miniPlaying = true;
     },
     isPlaying: () => miniPlaying,
     loadAndPlay: (videos, startIdx = 0) => {
@@ -1450,15 +1464,22 @@ document.addEventListener('DOMContentLoaded', () => {
     },
   };
 
-  // Detectar fin de video YouTube (enablejsapi=1 envía postMessage con state=0)
+  // Detectar cambios de estado YouTube (enablejsapi=1 envía postMessage)
   window.addEventListener('message', function(e) {
     try {
       const data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
-      if (data?.event === 'onStateChange' && data?.info === 0) {
-        // Video terminado: avisar al radio player si tiene un callback registrado
+      if (data?.event !== 'onStateChange') return;
+      const state = data.info;
+      if (state === 0) {
+        // Terminado: avisar al radio o avanzar mini player normal
         if (typeof window.onYouTubeTrackEnd === 'function') window.onYouTubeTrackEnd();
-        // Si no hay callback (modo normal mini-player): avanzar al siguiente
         else if (miniPlaylist.length > 1) miniPlayVideo(miniCurrentIdx + 1);
+      } else if (state === 1 || state === 2) {
+        // Playing(1) / Paused(2): sincronizar botón del radio
+        miniPlaying = (state === 1);
+        const icon = document.getElementById('mini-play-icon');
+        if (icon) icon.className = state === 1 ? 'fas fa-pause' : 'fas fa-play';
+        if (typeof window.onYouTubeStateChange === 'function') window.onYouTubeStateChange(state);
       }
     } catch (_) {}
   });

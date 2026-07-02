@@ -43,6 +43,18 @@
   let ytPlayerDiv = null;      // contenedor del YT player dentro del radio card
   let ytProgressTimer = null;  // intervalo para barra de progreso YouTube
 
+  // ── AUTOMIX STATE ────────────────────────────────────────────────
+  let automixEnabled     = false;
+  let isCrossfading      = false;
+  let crossfadeDuration  = 8000;  // ms fade-out al final del track
+  let fadeInDuration     = 2000;  // ms fade-in al arrancar el siguiente
+  let crossfadeOutTimer  = null;
+  let crossfadeInTimer   = null;
+  let iframePre          = null;  // iframe oculto para precargar el siguiente track
+  let widgetPre          = null;  // SC.Widget del iframe de precarga
+  let widgetPreRdy       = false;
+  let preloadTriggered   = false; // evita doble preload por tick de PLAY_PROGRESS
+
   // ── DOM ──────────────────────────────────────────────────────────
   const $        = id => document.getElementById(id);
   const titleEl  = $('radio-title');
@@ -264,6 +276,112 @@
     });
   }
 
+  // ── AUTOMIX HELPERS ──────────────────────────────────────────────
+  function getNextCustomIdx() {
+    const next = customCurrentIdx + 1;
+    if (next < customTrackList.length) return next;
+    return loopPlaylist ? 0 : -1;
+  }
+
+  function getScUrlForCustomTrack(t) {
+    if (!t || t.type === 'video') return null;
+    let url = t.scUrl || null;
+    if (!url && t.itemId) url = apiTracks.find(a => String(a.id) === String(t.itemId))?.scUrl || null;
+    if (!url) {
+      const slug = (t.title || '').toLowerCase()
+        .normalize('NFD').replace(/[̀-ͯ]/g, '')
+        .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      url = SC_PLAYLIST.split('/sets/')[0] + '/' + slug;
+    }
+    return url;
+  }
+
+  function createPreloadWidget() {
+    if (iframePre) return;
+    iframePre = document.createElement('iframe');
+    iframePre.id    = 'sc-radio-preload';
+    iframePre.allow = 'autoplay';
+    // Oculto pero en el DOM para que el navegador cargue y cachee el audio en RAM
+    iframePre.style.cssText = 'position:fixed;width:1px;height:1px;bottom:-2px;left:-2px;opacity:0;pointer-events:none;';
+    iframePre.src = `https://w.soundcloud.com/player/?url=${encodeURIComponent(SC_PLAYLIST)}&auto_play=false&hide_related=true&show_comments=false`;
+    document.body.appendChild(iframePre);
+    widgetPre = SC.Widget(iframePre);
+    widgetPre.bind(SC.Widget.Events.READY, () => { widgetPreRdy = true; widgetPre.setVolume(0); });
+    widgetPre.bind(SC.Widget.Events.ERROR, () => {}); // silencio — preload best-effort
+  }
+
+  function doPreloadNext() {
+    if (!widgetPreRdy || preloadTriggered) return;
+    const nextIdx = getNextCustomIdx();
+    if (nextIdx < 0) return;
+    const url = getScUrlForCustomTrack(customTrackList[nextIdx]);
+    if (!url) return;
+    preloadTriggered = true;
+    widgetPre.setVolume(0);
+    // Cargar sin reproducir → el navegador descarga y cachea el audio en RAM
+    widgetPre.load(url, { auto_play: false, hide_related: true, show_comments: false });
+  }
+
+  function stopCrossfade() {
+    if (crossfadeOutTimer) { clearInterval(crossfadeOutTimer); crossfadeOutTimer = null; }
+    if (crossfadeInTimer)  { clearInterval(crossfadeInTimer);  crossfadeInTimer  = null; }
+    isCrossfading    = false;
+    preloadTriggered = false;
+    if (widget && widgetRdy && !muted) widget.setVolume(vol());
+  }
+
+  function startFadeOut() {
+    if (isCrossfading) return;
+    isCrossfading = true;
+    const startVol  = muted ? 0 : vol();
+    const startTime = Date.now();
+    crossfadeOutTimer = setInterval(() => {
+      if (muted) return;
+      const p = Math.min((Date.now() - startTime) / crossfadeDuration, 1);
+      widget.setVolume(Math.round(startVol * (1 - p)));
+      if (p >= 1) { clearInterval(crossfadeOutTimer); crossfadeOutTimer = null; }
+    }, 80);
+  }
+
+  function startFadeIn() {
+    const targetVol = muted ? 0 : vol();
+    widget.setVolume(0);
+    const startTime = Date.now();
+    crossfadeInTimer = setInterval(() => {
+      if (muted) { clearInterval(crossfadeInTimer); crossfadeInTimer = null; return; }
+      const p = Math.min((Date.now() - startTime) / fadeInDuration, 1);
+      widget.setVolume(Math.round(targetVol * p));
+      if (p >= 1) {
+        clearInterval(crossfadeInTimer); crossfadeInTimer = null;
+        isCrossfading = false; preloadTriggered = false;
+      }
+    }, 80);
+  }
+
+  function addAutomixBtn() {
+    if ($('radio-automix')) return;
+    const anchor = $('radio-repeat') || nextBtn;
+    if (!anchor) return;
+    const btn = document.createElement('button');
+    btn.id        = 'radio-automix';
+    btn.className = 'radio-btn-sm';
+    btn.title     = 'Automix OFF — mezcla automática entre tracks';
+    btn.innerHTML = '<i class="fas fa-magic"></i> MIX';
+    btn.style.cssText = 'font-size:10px;display:inline-flex;align-items:center;gap:3px;';
+    anchor.insertAdjacentElement('afterend', btn);
+    btn.addEventListener('click', () => {
+      automixEnabled = !automixEnabled;
+      btn.classList.toggle('active', automixEnabled);
+      btn.title = automixEnabled ? 'Automix ON — click para desactivar' : 'Automix OFF — mezcla automática entre tracks';
+      if (automixEnabled) {
+        createPreloadWidget();
+        stopCrossfade();
+      } else {
+        stopCrossfade();
+      }
+    });
+  }
+
   // ── SC WIDGET ────────────────────────────────────────────────────
   function createIframe() {
     iframe = $('sc-radio-iframe') || document.createElement('iframe');
@@ -461,10 +579,22 @@
       if (activeRadioPlaylist !== null) {
         const next = customCurrentIdx + 1;
         if (next < customTrackList.length) {
-          setTimeout(() => window.playCustomTrack(next), 400);
+          if (automixEnabled) {
+            // Arranque inmediato (audio ya en RAM) + fade-in
+            window.playCustomTrack(next);
+            startFadeIn();
+          } else {
+            setTimeout(() => window.playCustomTrack(next), 400);
+          }
         } else if (loopPlaylist) {
-          setTimeout(() => window.playCustomTrack(0), 400);
+          if (automixEnabled) {
+            window.playCustomTrack(0);
+            startFadeIn();
+          } else {
+            setTimeout(() => window.playCustomTrack(0), 400);
+          }
         } else {
+          stopCrossfade();
           setPlaying(false);
         }
         return;
@@ -481,6 +611,17 @@
       if (fillEl) fillEl.style.width = Math.min((pos/dur)*100, 100) + '%';
       if (curEl)  curEl.textContent  = fmt(pos);
       if (durEl)  durEl.textContent  = fmt(dur);
+
+      // AUTOMIX: solo en modo lista personalizada con SC (no YouTube)
+      if (automixEnabled && activeRadioPlaylist !== null && !youtubeActive && dur > 5000) {
+        const remaining = dur - pos;
+        if (getNextCustomIdx() >= 0) {
+          // Precargar en RAM cuando quedan (crossfadeDuration + 4s)
+          if (remaining < crossfadeDuration + 4000) doPreloadNext();
+          // Iniciar fade-out cuando quedan crossfadeDuration ms
+          if (remaining < crossfadeDuration && remaining > 0) startFadeOut();
+        }
+      }
     });
 
     widget.bind(SC.Widget.Events.ERROR, () => {
@@ -727,6 +868,7 @@
     widget.pause();
     iframe.style.height = '0px';
     stopYoutube();
+    stopCrossfade();
     window._pendingYtFallback = null;
     if (window.MINI_PLAYER?.pause) window.MINI_PLAYER.pause();
 
@@ -851,6 +993,9 @@
     const t = customTrackList[idx];
     if (!t) return;
     customCurrentIdx = idx;
+    // Cancelar cualquier fade en curso si el usuario cambió manualmente
+    if (!isCrossfading) { preloadTriggered = false; }
+    else { stopCrossfade(); }
     // NO marcar customPlaylistStarted aquí — solo se marca cuando realmente arranca audio
     showCustomTrack(idx);
 
@@ -941,6 +1086,7 @@
   // ── INIT ─────────────────────────────────────────────────────────
   function init() {
     addRepeatBtn();
+    addAutomixBtn();
     if (titleEl)  titleEl.textContent  = 'RAYVER Radio';
     if (artistEl) artistEl.textContent = 'Pulsa ▶ para escuchar';
     if (counter)  counter.textContent  = '— / —';

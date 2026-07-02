@@ -339,8 +339,30 @@ async function syncYouTube() {
       result.errors.push('Canal ' + channelId + ': ' + e.message);
     }
   }
+  // Auto-match: enlazar videos recién sincronizados con tracks por título
+  autoMatchVideoTracks();
   saveDB(db);
   return result;
+}
+
+function normTitle(s) {
+  return (s || '').toLowerCase().normalize('NFD')
+    .replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '');
+}
+
+function autoMatchVideoTracks() {
+  let matched = 0;
+  for (const track of (db.tracks || [])) {
+    if (track.videoId) continue;
+    const nt = normTitle(track.title);
+    if (!nt) continue;
+    const video = (db.videos || []).find(v => {
+      const nv = normTitle(v.title);
+      return nv === nt || nv.includes(nt) || nt.includes(nv);
+    });
+    if (video) { track.videoId = video.videoId; matched++; }
+  }
+  return matched;
 }
 
 // ───────────────────────── SOUNDCLOUD SYNC ─────────────────────────
@@ -838,6 +860,22 @@ app.post('/api/admin/db-restore', authMiddleware, (req, res) => {
   if (!db.password_hash) db.password_hash = oldHash;
   saveDB(db);
   res.json({ ok: true, users: (db.users || []).length, playlists: (db.playlists || []).length });
+});
+
+// Enlazar video de YouTube con un track manualmente
+app.patch('/api/admin/tracks/:id/videoId', authMiddleware, (req, res) => {
+  const track = (db.tracks || []).find(t => String(t.id) === String(req.params.id));
+  if (!track) return res.status(404).json({ error: 'Track no encontrado' });
+  track.videoId = (req.body.videoId || '').trim();
+  saveDB(db);
+  res.json({ ok: true, id: track.id, videoId: track.videoId });
+});
+
+// Auto-match: enlazar todos los tracks con videos por título
+app.post('/api/admin/video-track-match', authMiddleware, (req, res) => {
+  const matched = autoMatchVideoTracks();
+  if (matched > 0) saveDB(db);
+  res.json({ ok: true, matched, total: (db.tracks || []).length, videos: (db.videos || []).length });
 });
 
 // Actualizar scUrl de un track manualmente

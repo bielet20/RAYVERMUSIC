@@ -1338,7 +1338,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const wrap = document.getElementById('mini-yt-wrap');
     const iframe = document.getElementById('mini-yt-iframe');
     if (wrap) { wrap.style.display = ''; }
-    if (iframe) iframe.src = `https://www.youtube.com/embed/${v.videoId}?autoplay=1&rel=0`;
+    if (iframe) iframe.src = `https://www.youtube.com/embed/${v.videoId}?autoplay=1&rel=0&enablejsapi=1`;
 
     // Update info
     const thumb = document.getElementById('mini-thumb');
@@ -1449,6 +1449,19 @@ document.addEventListener('DOMContentLoaded', () => {
       miniRenderQueue();
     },
   };
+
+  // Detectar fin de video YouTube (enablejsapi=1 envía postMessage con state=0)
+  window.addEventListener('message', function(e) {
+    try {
+      const data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+      if (data?.event === 'onStateChange' && data?.info === 0) {
+        // Video terminado: avisar al radio player si tiene un callback registrado
+        if (typeof window.onYouTubeTrackEnd === 'function') window.onYouTubeTrackEnd();
+        // Si no hay callback (modo normal mini-player): avanzar al siguiente
+        else if (miniPlaylist.length > 1) miniPlayVideo(miniCurrentIdx + 1);
+      }
+    } catch (_) {}
+  });
 
   // ── INIT ─────────────────────────────────────────────────────────
   initAuth();

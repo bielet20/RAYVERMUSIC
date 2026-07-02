@@ -37,6 +37,9 @@
   let loopPlaylist = false;
   let customPlaylistStarted = false;
   let widgetCustomMode = false; // true cuando el widget está cargado con un track custom (no SC_PLAYLIST)
+  let spotifyIframe = null;    // iframe para tracks solo en Spotify
+  let pendingSpotifyId = null; // spotifyId en espera si SC slug falla
+  let spotifyActive = false;   // true cuando el track actual juega desde Spotify
 
   // ── DOM ──────────────────────────────────────────────────────────
   const $        = id => document.getElementById(id);
@@ -274,6 +277,36 @@
     else if (!iframe.parentNode) document.body.appendChild(iframe);
   }
 
+  function createSpotifyIframe() {
+    if (spotifyIframe) return;
+    spotifyIframe = document.createElement('iframe');
+    spotifyIframe.id = 'spotify-radio-embed';
+    spotifyIframe.allow = 'autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture';
+    spotifyIframe.style.cssText = 'width:100%;height:0;border:none;display:block;border-radius:10px;transition:height .3s;';
+    const playerDiv = document.querySelector('.radio-player');
+    if (playerDiv) playerDiv.appendChild(spotifyIframe);
+  }
+
+  function playSpotifyTrack(spotifyId) {
+    pendingSpotifyId = null;
+    spotifyActive = true;
+    createSpotifyIframe();
+    widget.pause();
+    iframe.style.height = '0px';
+    spotifyIframe.src = `https://open.spotify.com/embed/track/${spotifyId}?utm_source=generator&theme=0`;
+    spotifyIframe.style.height = '152px';
+    customPlaylistStarted = true;
+    userPlayed = true;
+    setPlaying(true);
+  }
+
+  function hideSpotifyIframe() {
+    if (!spotifyIframe) return;
+    spotifyIframe.src = '';
+    spotifyIframe.style.height = '0px';
+    spotifyActive = false;
+  }
+
   function bindWidget() {
     widget = SC.Widget(iframe);
 
@@ -311,6 +344,8 @@
     });
 
     widget.bind(SC.Widget.Events.PLAY, () => {
+      pendingSpotifyId = null; // SC cargó bien, cancelar fallback Spotify
+      if (spotifyActive) { hideSpotifyIframe(); }
       setPlaying(true);
       // Ignorar PLAY automático del widget (antes de que el usuario pulse play)
       if (!userPlayed) return;
@@ -363,9 +398,14 @@
 
     widget.bind(SC.Widget.Events.ERROR, () => {
       if (activeRadioPlaylist !== null) {
-        const next = customCurrentIdx + 1;
-        if (next < customTrackList.length) setTimeout(() => window.playCustomTrack(next), 1000);
-        else setPlaying(false);
+        if (pendingSpotifyId) {
+          // Slug SC no encontrado → fallback a Spotify
+          playSpotifyTrack(pendingSpotifyId);
+        } else {
+          const next = customCurrentIdx + 1;
+          if (next < customTrackList.length) setTimeout(() => window.playCustomTrack(next), 1000);
+          else setPlaying(false);
+        }
       } else {
         setTimeout(() => widget.next(), 1500);
       }
@@ -405,14 +445,22 @@
         // Primera pulsación con lista custom: arrancar desde la pista actual
         window.playCustomTrack(customCurrentIdx);
       } else if (playing) {
-        // Pausar pista SC activa
-        widget.pause();
-        iframe.style.height = '0px';
+        // Pausar
+        if (spotifyActive) {
+          if (spotifyIframe) spotifyIframe.style.height = '0px';
+        } else {
+          widget.pause();
+          iframe.style.height = '0px';
+        }
+        setPlaying(false);
       } else {
-        // Reanudar: depende del tipo de pista
+        // Reanudar
         const cur = customTrackList[customCurrentIdx];
         if (cur?.type === 'video') {
           window.MINI_PLAYER?.play?.();
+        } else if (spotifyActive && spotifyIframe) {
+          spotifyIframe.style.height = '152px';
+          setPlaying(true);
         } else {
           widget.play();
           iframe.style.height = '116px';
@@ -588,9 +636,11 @@
     customPlaylistStarted = false;
     closeRplDropdown();
 
-    // Siempre ocultar SC widget al cambiar de lista (estuviera o no reproduciendo)
+    // Siempre ocultar SC widget y Spotify al cambiar de lista
     widget.pause();
     iframe.style.height = '0px';
+    hideSpotifyIframe();
+    pendingSpotifyId = null;
     if (window.MINI_PLAYER?.pause) window.MINI_PLAYER.pause();
 
     const nameEl  = document.getElementById('radio-pl-name');
@@ -768,6 +818,10 @@
             .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
           const base = SC_PLAYLIST.split('/sets/')[0];
           const guessedUrl = base + '/' + slug;
+          // Si SC slug falla → ERROR event usará Spotify como fallback
+          const apiTrack = apiTracks.find(a => String(a.id) === String(t.itemId || t.id));
+          pendingSpotifyId = apiTrack?.spotifyId || null;
+          hideSpotifyIframe();
           customPlaylistStarted = true;
           widgetCustomMode = true;
           userPlayed = true;

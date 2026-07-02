@@ -519,23 +519,14 @@
         if (!sounds?.length) return;
         scSounds = sounds;
         buildEnriched();
-        renderList();
-        if (counter) counter.textContent = `— / ${scSounds.length}`;
-        if (pendingPlay) { pendingPlay = false; widget.play(); }
-        if (onDone) { onDone(); }
-        else if (!playing) { showTrack(0); }
-        // Si hay títulos nulos, reintentar en 2 segundos (bug de timing del Widget API)
-        if (sounds.some(s => !s.title)) {
-          setTimeout(() => {
-            widget.getSounds(fresh => {
-              if (!fresh?.length) return;
-              scSounds = fresh;
-              buildEnriched();
-              renderList();
-              showTrack(currentIdx); // actualizar header siempre (puede estar reproduciendo con "—")
-            });
-          }, 2000);
+        // Solo actualizar la lista visual cuando estamos en modo SC Widget puro
+        if (activeRadioPlaylist === null) {
+          renderList();
+          if (counter) counter.textContent = `— / ${scSounds.length}`;
+          if (!playing) showTrack(0);
         }
+        if (pendingPlay) { pendingPlay = false; widget.play(); }
+        if (onDone) onDone();
       });
     }
 
@@ -842,7 +833,7 @@
           onclick="window.selectRadioPlaylist(null)">
           <span class="rpl-icon"><i class="fas fa-broadcast-tower"></i></span>
           <span class="rpl-name">RAYVER Radio</span>
-          <span class="rpl-count">${defaultRadioTracks.length || scSounds.length} tracks</span>
+          <span class="rpl-count">${(activeRadioPlaylist === '__default__' ? customTrackList.length : null) || defaultRadioTracks.length || scSounds.length} tracks</span>
         </div>
         ${!loggedIn
           ? '<div class="rpl-login-hint"><i class="fas fa-lock"></i> Inicia sesión para ver tus listas</div>'
@@ -1129,24 +1120,61 @@
     if (counter)  counter.textContent  = '— / —';
     if (listBody) listBody.innerHTML   = `<div class="radio-empty"><i class="fas fa-circle-notch fa-spin"></i><p>Cargando playlist…</p></div>`;
 
-    // Cargar metadata de API (covers Spotify, genre, BPM) sin bloquear
+    // Coordinar los dos fetches de arranque: activar la mejor playlist
+    // cuando los dos han respondido (para saber si hay lista curada o no).
+    let _apiDone = false, _rplDone = false;
+
+    function _checkActivate() {
+      if (!_apiDone || !_rplDone) return;
+      if (activeRadioPlaylist !== null) return; // usuario ya seleccionó algo
+
+      if (defaultRadioTracks.length) {
+        // El admin tiene una lista curada configurada
+        activateDefaultRadioPlaylist();
+      } else {
+        // Sin lista curada → usar TODOS los tracks del backend como default
+        // (SC sync trae hasta 300 via API con paginación, sin límites de Widget)
+        const playable = apiTracks
+          .filter(t => t.scUrl || t.videoId)
+          .sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
+        if (playable.length) {
+          activeRadioPlaylist = '__default__';
+          customCurrentIdx    = 0;
+          customPlaylistStarted = false;
+          customTrackList = playable.map(t => ({
+            id: t.id, itemId: t.id, title: t.title, cover: t.cover || null,
+            scUrl: t.scUrl || null, videoId: t.videoId || null,
+            spotifyUrl: t.spotifyUrl || null, type: 'track',
+          }));
+          const nameEl  = document.getElementById('radio-pl-name');
+          const loopBtn = document.getElementById('radio-loop-btn');
+          if (nameEl)  nameEl.textContent    = 'RAYVER Radio';
+          if (loopBtn) loopBtn.style.display = '';
+          renderCustomTracklist(customTrackList);
+          showCustomTrack(0);
+        }
+        // Si tampoco hay tracks en el backend → SC Widget mode (getSounds())
+      }
+    }
+
     fetch('/api/public/tracks')
       .then(r => r.ok ? r.json() : null)
       .then(data => {
-        if (!data?.length) return;
-        apiTracks = data;
-        if (scSounds.length) { buildEnriched(); renderList(); }
-      }).catch(() => {});
+        _apiDone = true;
+        if (data?.length) {
+          apiTracks = data;
+          if (activeRadioPlaylist === null && scSounds.length) { buildEnriched(); renderList(); }
+        }
+        _checkActivate();
+      }).catch(() => { _apiDone = true; _checkActivate(); });
 
-    // Cargar lista curada del admin — si existe, se activa como default del radio
     fetch('/api/public/radio-playlist')
       .then(r => r.ok ? r.json() : null)
       .then(data => {
-        if (!data?.tracks?.length) return;
-        defaultRadioTracks = data.tracks;
-        // Solo activar si el usuario no ha seleccionado otra lista todavía
-        if (activeRadioPlaylist === null) activateDefaultRadioPlaylist();
-      }).catch(() => {});
+        _rplDone = true;
+        if (data?.tracks?.length) defaultRadioTracks = data.tracks;
+        _checkActivate();
+      }).catch(() => { _rplDone = true; _checkActivate(); });
 
     createIframe();
 

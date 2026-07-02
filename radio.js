@@ -35,7 +35,8 @@
   let userPlayed  = false; // true cuando el usuario ha pulsado play explícitamente
   let customCurrentIdx = 0;
   let loopPlaylist = false;
-  let customPlaylistStarted = false; // true una vez que se ha iniciado reproducción en la lista activa
+  let customPlaylistStarted = false;
+  let widgetCustomMode = false; // true cuando el widget está cargado con un track custom (no SC_PLAYLIST)
 
   // ── DOM ──────────────────────────────────────────────────────────
   const $        = id => document.getElementById(id);
@@ -590,9 +591,24 @@
       if (nameEl)  nameEl.textContent    = 'RAYVER Radio';
       if (loopBtn) loopBtn.style.display = 'none';
       customTrackList = [];
-      renderList();
-      highlight(currentIdx);
-      showTrack(currentIdx);
+      // Si el widget estaba en modo custom, restaurar la playlist original
+      if (widgetCustomMode) {
+        widgetCustomMode = false;
+        scSounds = []; enriched = [];
+        widget.load(SC_PLAYLIST, {
+          auto_play: false, hide_related: true, show_comments: false,
+          show_user: true, show_reposts: false, show_teaser: false,
+        });
+        setTimeout(() => widget.getSounds(sounds => {
+          if (!sounds?.length) return;
+          scSounds = sounds; buildEnriched(); renderList();
+          showTrack(currentIdx); highlight(currentIdx);
+        }), 1500);
+      } else {
+        renderList();
+        highlight(currentIdx);
+        showTrack(currentIdx);
+      }
     } else {
       const pl = (window.userPlaylists || []).find(p => p.id === id);
       if (nameEl)  nameEl.textContent    = pl?.name || 'Lista';
@@ -710,40 +726,38 @@
     } else {
       if (window.MINI_PLAYER?.pause) window.MINI_PLAYER.pause();
 
-      // Si enriched no está listo aún, reintentar en 500ms
-      if (!enriched.length) {
-        setTimeout(() => window.playCustomTrack(idx), 500);
-        return;
+      // Resolver la URL de SC del track: guardada en el item, en apiTracks por ID, o título norm
+      let trackScUrl = t.scUrl || null;
+      if (!trackScUrl && t.itemId) {
+        trackScUrl = apiTracks.find(a => String(a.id) === String(t.itemId))?.scUrl || null;
       }
 
-      let scIdx = -1;
-
-      // 1. URL exacta guardada en el track de la lista (tracks añadidos con el fix nuevo)
-      if (t.scUrl) {
-        scIdx = enriched.findIndex(e => e.scUrl === t.scUrl);
-      }
-
-      // 2. Buscar en apiTracks por itemId → obtener scUrl de la BD (cubre tracks antiguos)
-      if (scIdx < 0 && t.itemId) {
-        const api = apiTracks.find(a => String(a.id) === String(t.itemId));
-        if (api?.scUrl) scIdx = enriched.findIndex(e => e.scUrl === api.scUrl);
-      }
-
-      // 3. Fallback: título normalizado
-      if (scIdx < 0) {
-        const nt = norm(t.title);
-        if (nt) scIdx = enriched.findIndex(e => norm(e.title) === nt);
-      }
-
-      if (scIdx >= 0) {
-        customPlaylistStarted = true;  // solo aquí, cuando tenemos match real
+      if (trackScUrl) {
+        // Cargar el track directamente en el widget (sin depender del índice en la playlist)
+        customPlaylistStarted = true;
+        widgetCustomMode = true;
         userPlayed = true;
-        currentIdx = scIdx;
         iframe.style.height = '116px';
-        widget.skip(scIdx);
-        widget.play();
+        widget.load(trackScUrl, {
+          auto_play: true, hide_related: true, show_comments: false,
+          show_user: true, show_reposts: false, show_teaser: false,
+        });
+      } else if (enriched.length) {
+        // Fallback: título normalizado en la playlist SC actual
+        const nt = norm(t.title);
+        const scIdx = nt ? enriched.findIndex(e => norm(e.title) === nt) : -1;
+        if (scIdx >= 0) {
+          customPlaylistStarted = true;
+          userPlayed = true;
+          currentIdx = scIdx;
+          iframe.style.height = '116px';
+          widget.skip(scIdx);
+          widget.play();
+        }
+      } else {
+        // enriched vacío: reintentar cuando cargue
+        setTimeout(() => window.playCustomTrack(idx), 500);
       }
-      // Sin match: header correcto pero SC no cambia — próximo play reintentará
     }
   };
 

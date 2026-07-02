@@ -215,6 +215,41 @@ body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--text);min-
 
 @media(max-width:700px){.sidebar{display:none}.main{padding:20px 16px}.pgrid{grid-template-columns:1fr}}
 
+/* RADIO EDITOR */
+.radio-editor{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:8px}
+@media(max-width:900px){.radio-editor{grid-template-columns:1fr}}
+.re-col-title{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;
+  padding:14px 20px 10px;border-bottom:1px solid var(--gb);display:flex;align-items:center;justify-content:space-between}
+.re-empty{padding:32px 20px;text-align:center;color:var(--muted);font-size:13px}
+.re-empty i{display:block;font-size:30px;margin-bottom:10px;opacity:.4}
+.ritem{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.05);transition:background .1s}
+.ritem:last-child{border-bottom:none}
+.ritem:hover{background:rgba(255,255,255,.03)}
+.ritem-drag{color:rgba(255,255,255,.2);cursor:grab;font-size:13px;padding:0 4px;flex-shrink:0}
+.ritem-drag:hover{color:var(--purple)}
+.ritem-num{font-size:11px;color:var(--muted);width:20px;text-align:right;flex-shrink:0}
+.ritem-cov{width:36px;height:36px;border-radius:6px;background:linear-gradient(135deg,var(--pd),#9333ea);
+  flex-shrink:0;overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:14px}
+.ritem-cov img{width:100%;height:100%;object-fit:cover}
+.ritem-info{flex:1;min-width:0}
+.ritem-title{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ritem-sub{font-size:11px;color:var(--muted);margin-top:2px}
+.ritem.rdragging{opacity:.35}
+.ritem.rdrag-over{background:rgba(167,139,250,.12)}
+.cat-search{width:100%;padding:8px 12px;background:rgba(255,255,255,.05);border:1px solid var(--gb);
+  border-radius:8px;color:var(--text);font-family:inherit;font-size:13px;outline:none;
+  margin:10px 16px;width:calc(100% - 32px);display:block;transition:border-color .2s}
+.cat-search:focus{border-color:var(--purple)}
+.cat-scroll{max-height:480px;overflow-y:auto}
+.cat-item{display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid rgba(255,255,255,.04);cursor:pointer;transition:background .1s}
+.cat-item:last-child{border-bottom:none}
+.cat-item:hover{background:rgba(255,255,255,.04)}
+.cat-item.in-radio{opacity:.4;cursor:default}
+.cat-add-btn{background:rgba(167,139,250,.15);border:1px solid rgba(167,139,250,.3);color:var(--purple);
+  border-radius:6px;padding:3px 9px;font-size:11px;font-weight:600;cursor:pointer;transition:all .15s;flex-shrink:0}
+.cat-add-btn:hover{background:rgba(167,139,250,.3)}
+.cat-item.in-radio .cat-add-btn{display:none}
+
 /* ── DRAG & DROP VIDEOS ── */
 .drag-handle {
   color: rgba(255,255,255,.2);
@@ -265,6 +300,7 @@ body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--text);min-
         <button class="ni active" onclick="showPage('tracks')"><i class="fas fa-music"></i> Canciones</button>
         <button class="ni" onclick="showPage('albums')"><i class="fas fa-compact-disc"></i> Álbumes</button>
         <button class="ni" onclick="showPage('videos')"><i class="fab fa-youtube"></i> Videos</button>
+        <button class="ni" onclick="showPage('radio')"><i class="fas fa-broadcast-tower"></i> Radio</button>
         <button class="ni" onclick="showPage('settings')"><i class="fas fa-cog"></i> Ajustes</button>
         <a href="/" class="ni"><i class="fas fa-globe"></i> Ver web</a>
       </nav>
@@ -325,6 +361,41 @@ body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--text);min-
         <div class="gc">
           <div class="ch"><span class="ct">Videos</span><span style="font-size:12px;color:var(--muted)">El primero marcado como destacado aparece en grande</span></div>
           <ul class="tlist" id="video-list"><li class="loading"><i class="fas fa-circle-notch spin"></i> Cargando…</li></ul>
+        </div>
+      </div>
+
+      <!-- RADIO -->
+      <div id="page-radio" class="page">
+        <div class="ph">
+          <div><div class="ptitle">RAYVER Radio</div><div class="psub">Lista de canciones que suenan por defecto en el reproductor</div></div>
+          <button class="btn btn-p" onclick="saveRadioPlaylist()"><i class="fas fa-save"></i> Guardar lista</button>
+        </div>
+
+        <div class="gc">
+          <div class="ch">
+            <span class="ct"><i class="fas fa-broadcast-tower" style="color:var(--purple)"></i> &nbsp;Lista Radio por defecto</span>
+            <span id="radio-count" style="font-size:12px;color:var(--muted)">0 canciones</span>
+          </div>
+          <div class="radio-editor">
+            <!-- Col izquierda: tracks seleccionados -->
+            <div>
+              <div class="re-col-title">
+                <span><i class="fas fa-list-ul"></i> &nbsp;En Radio <span id="re-selected-count" style="color:var(--purple)">(0)</span></span>
+                <button class="btn btn-sm btn-g" onclick="clearRadioPlaylist()" title="Vaciar lista" style="font-size:11px;padding:3px 8px"><i class="fas fa-trash"></i> Vaciar</button>
+              </div>
+              <div id="radio-selected-list">
+                <div class="re-empty"><i class="fas fa-broadcast-tower"></i><p>Arrastra canciones aquí<br>o usa el catálogo →</p></div>
+              </div>
+            </div>
+            <!-- Col derecha: catálogo -->
+            <div style="border-left:1px solid var(--gb)">
+              <div class="re-col-title"><span><i class="fas fa-music"></i> &nbsp;Catálogo — click para añadir</span></div>
+              <input type="text" class="cat-search" id="cat-filter" placeholder="Buscar canción…" oninput="renderCatalog()">
+              <div class="cat-scroll" id="radio-catalog-list">
+                <div class="re-empty"><i class="fas fa-circle-notch spin"></i><p>Cargando…</p></div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1773,9 +1844,145 @@ const _spGenres = window.showPage;
 window.showPage = function(p) {
   if (_spGenres) _spGenres(p);
   if (p === 'genres' && typeof TOKEN !== 'undefined' && TOKEN) loadGenres();
+  if (p === 'radio'  && typeof TOKEN !== 'undefined' && TOKEN) loadRadioPlaylist();
 };
 
 if (typeof TOKEN !== 'undefined' && TOKEN) {
   setTimeout(loadGenres, 700);
+}
+</script>
+
+<script>
+// ── RADIO PLAYLIST EDITOR ──────────────────────────────────────────────────
+let radioSelectedIds = []; // array ordenado de IDs en la lista radio
+
+async function loadRadioPlaylist() {
+  const r = await apiFetch('GET', '/admin/radio-playlist');
+  if (!r.ok) return;
+  radioSelectedIds = r.data.trackIds || [];
+  renderRadioEditor();
+}
+
+function renderRadioEditor() {
+  renderRadioSelected();
+  renderCatalog();
+}
+
+function renderRadioSelected() {
+  const el = document.getElementById('radio-selected-list');
+  const countEl = document.getElementById('re-selected-count');
+  if (countEl) countEl.textContent = `(${radioSelectedIds.length})`;
+  if (!radioSelectedIds.length) {
+    el.innerHTML = '<div class="re-empty"><i class="fas fa-broadcast-tower"></i><p>Lista vacía — añade canciones desde el catálogo</p></div>';
+    return;
+  }
+  el.innerHTML = radioSelectedIds.map((id, i) => {
+    const t = tracks.find(x => x.id === id);
+    if (!t) return '';
+    const cover = t.cover ? `<img src="${esc(t.cover)}" alt="" onerror="this.style.display='none'">` : esc((t.title||'?')[0].toUpperCase());
+    const src = t.scUrl ? '<i class="fab fa-soundcloud" style="color:#f50" title="SoundCloud"></i>'
+               : t.videoId ? '<i class="fab fa-youtube" style="color:#f44" title="YouTube"></i>'
+               : '<i class="fab fa-spotify" style="color:#1db954" title="Solo Spotify"></i>';
+    return `<div class="ritem" draggable="true" data-rid="${esc(id)}" data-ridx="${i}">
+      <span class="ritem-drag"><i class="fas fa-grip-lines"></i></span>
+      <span class="ritem-num">${i+1}</span>
+      <span class="ritem-cov">${cover}</span>
+      <div class="ritem-info">
+        <div class="ritem-title">${esc(t.title||'—')}</div>
+        <div class="ritem-sub">${src} &nbsp;${esc(t.artist||'RAYVER')}</div>
+      </div>
+      <button class="db" onclick="removeFromRadio('${esc(id)}')" title="Quitar de Radio"><i class="fas fa-times"></i></button>
+    </div>`;
+  }).join('');
+  attachRadioEditorDnD();
+}
+
+function renderCatalog() {
+  const el = document.getElementById('radio-catalog-list');
+  const q = (document.getElementById('cat-filter')?.value || '').trim().toLowerCase();
+  const filtered = tracks.filter(t => !q || (t.title||'').toLowerCase().includes(q) || (t.artist||'').toLowerCase().includes(q));
+  if (!filtered.length) {
+    el.innerHTML = '<div class="re-empty"><i class="fas fa-search"></i><p>Sin resultados</p></div>';
+    return;
+  }
+  el.innerHTML = filtered.map(t => {
+    const inRadio = radioSelectedIds.includes(t.id);
+    const cover = t.cover ? `<img src="${esc(t.cover)}" alt="" onerror="this.style.display='none'">` : esc((t.title||'?')[0].toUpperCase());
+    const src = t.scUrl ? '<i class="fab fa-soundcloud" style="color:#f50"></i>'
+               : t.videoId ? '<i class="fab fa-youtube" style="color:#f44"></i>'
+               : '<i class="fab fa-spotify" style="color:#1db954"></i>';
+    return `<div class="cat-item${inRadio ? ' in-radio' : ''}" onclick="${inRadio ? '' : `addToRadio('${esc(t.id)}')`}">
+      <span class="ritem-cov" style="width:32px;height:32px;font-size:12px">${cover}</span>
+      <div class="ritem-info">
+        <div class="ritem-title" style="font-size:13px">${esc(t.title||'—')}</div>
+        <div class="ritem-sub">${src} &nbsp;${esc(t.artist||'RAYVER')}</div>
+      </div>
+      ${inRadio
+        ? '<span style="font-size:11px;color:var(--purple);flex-shrink:0"><i class="fas fa-check"></i> En Radio</span>'
+        : '<button class="cat-add-btn"><i class="fas fa-plus"></i> Añadir</button>'}
+    </div>`;
+  }).join('');
+}
+
+function addToRadio(id) {
+  if (!radioSelectedIds.includes(id)) {
+    radioSelectedIds.push(id);
+    renderRadioEditor();
+  }
+}
+
+function removeFromRadio(id) {
+  radioSelectedIds = radioSelectedIds.filter(x => x !== id);
+  renderRadioEditor();
+}
+
+function clearRadioPlaylist() {
+  if (!radioSelectedIds.length) return;
+  if (!confirm('¿Vaciar la lista del Radio? Esto no se guarda hasta que pulses Guardar.')) return;
+  radioSelectedIds = [];
+  renderRadioEditor();
+}
+
+async function saveRadioPlaylist() {
+  const r = await apiFetch('PUT', '/admin/radio-playlist', { trackIds: radioSelectedIds });
+  if (r.ok) {
+    showToast(`Lista guardada — ${r.data.count} canciones`, 'ok');
+  } else {
+    showToast('Error al guardar', 'err');
+  }
+}
+
+function attachRadioEditorDnD() {
+  const container = document.getElementById('radio-selected-list');
+  if (!container) return;
+  const items = Array.from(container.querySelectorAll('.ritem[draggable]'));
+  let dragSrc = null;
+
+  items.forEach(item => {
+    item.addEventListener('dragstart', e => {
+      dragSrc = item;
+      item.classList.add('rdragging');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    item.addEventListener('dragend', () => {
+      item.classList.remove('rdragging');
+      container.querySelectorAll('.rdrag-over').forEach(el => el.classList.remove('rdrag-over'));
+      dragSrc = null;
+    });
+    item.addEventListener('dragover', e => {
+      e.preventDefault();
+      if (item !== dragSrc) item.classList.add('rdrag-over');
+    });
+    item.addEventListener('dragleave', () => item.classList.remove('rdrag-over'));
+    item.addEventListener('drop', e => {
+      e.preventDefault();
+      if (!dragSrc || dragSrc === item) return;
+      const from = +dragSrc.dataset.ridx;
+      const to   = +item.dataset.ridx;
+      const moved = radioSelectedIds.splice(from, 1)[0];
+      radioSelectedIds.splice(to, 0, moved);
+      renderRadioEditor();
+    });
+  });
 }
 </script>

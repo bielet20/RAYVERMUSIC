@@ -7,7 +7,8 @@
 (function () {
   'use strict';
 
-  const SC_PLAYLIST = 'https://soundcloud.com/biel-rivero-sampol/sets/marzo-best-ranking';
+  // URL de todos los tracks públicos del artista — se actualiza automáticamente con cada subida
+  const SC_PLAYLIST = 'https://soundcloud.com/biel-rivero-sampol/tracks';
 
   const GRADS = [
     'linear-gradient(135deg,#a855f7,#ec4899)',
@@ -798,9 +799,10 @@
   window.radioPlayIdx = idx => window.RADIO_PLAYER.skip(idx);
 
   // ── PLAYLIST SELECTOR ────────────────────────────────────────────
-  let activeRadioPlaylist = null; // null = sistema SC
+  let activeRadioPlaylist = null; // null o '__default__' = RAYVER Radio; id = lista de usuario
   let customTrackList = [];
   let rplDropOpen = false;
+  let defaultRadioTracks = []; // lista curada desde el admin
 
   window.toggleRadioPlSelector = function() {
     rplDropOpen = !rplDropOpen;
@@ -836,11 +838,11 @@
           oninput="window.renderRplDropdown()" autocomplete="off">
       </div>
       <div class="rpl-list">
-        <div class="rpl-item${activeRadioPlaylist === null ? ' rpl-active' : ''}"
+        <div class="rpl-item${(activeRadioPlaylist === null || activeRadioPlaylist === '__default__') ? ' rpl-active' : ''}"
           onclick="window.selectRadioPlaylist(null)">
           <span class="rpl-icon"><i class="fas fa-broadcast-tower"></i></span>
           <span class="rpl-name">RAYVER Radio</span>
-          <span class="rpl-count">${scSounds.length} tracks</span>
+          <span class="rpl-count">${defaultRadioTracks.length || scSounds.length} tracks</span>
         </div>
         ${!loggedIn
           ? '<div class="rpl-login-hint"><i class="fas fa-lock"></i> Inicia sesión para ver tus listas</div>'
@@ -875,26 +877,42 @@
     const nameEl  = document.getElementById('radio-pl-name');
     const loopBtn = document.getElementById('radio-loop-btn');
     if (id === null) {
-      if (nameEl)  nameEl.textContent    = 'RAYVER Radio';
-      if (loopBtn) loopBtn.style.display = 'none';
-      customTrackList = [];
-      // Si el widget estaba en modo custom, restaurar la playlist original
-      if (widgetCustomMode) {
-        widgetCustomMode = false;
-        scSounds = []; enriched = [];
-        widget.load(SC_PLAYLIST, {
-          auto_play: false, hide_related: true, show_comments: false,
-          show_user: true, show_reposts: false, show_teaser: false,
-        });
-        setTimeout(() => widget.getSounds(sounds => {
-          if (!sounds?.length) return;
-          scSounds = sounds; buildEnriched(); renderList();
-          showTrack(currentIdx); highlight(currentIdx);
-        }), 1500);
+      if (nameEl) nameEl.textContent = 'RAYVER Radio';
+      if (defaultRadioTracks.length) {
+        // Lista curada por el admin
+        if (loopBtn) loopBtn.style.display = '';
+        activeRadioPlaylist = '__default__';
+        customCurrentIdx    = 0;
+        customPlaylistStarted = false;
+        customTrackList = defaultRadioTracks.map(t => ({
+          id: t.id, itemId: t.id, title: t.title,
+          cover: t.cover, scUrl: t.scUrl, videoId: t.videoId,
+          spotifyUrl: t.spotifyUrl, type: 'track',
+        }));
+        renderCustomTracklist(customTrackList);
+        showCustomTrack(0);
       } else {
-        renderList();
-        highlight(currentIdx);
-        showTrack(currentIdx);
+        // Sin lista configurada → modo SC Widget completo
+        if (loopBtn) loopBtn.style.display = 'none';
+        customTrackList = [];
+        activeRadioPlaylist = null;
+        if (widgetCustomMode) {
+          widgetCustomMode = false;
+          scSounds = []; enriched = [];
+          widget.load(SC_PLAYLIST, {
+            auto_play: false, hide_related: true, show_comments: false,
+            show_user: true, show_reposts: false, show_teaser: false,
+          });
+          setTimeout(() => widget.getSounds(sounds => {
+            if (!sounds?.length) return;
+            scSounds = sounds; buildEnriched(); renderList();
+            showTrack(currentIdx); highlight(currentIdx);
+          }), 1500);
+        } else {
+          renderList();
+          highlight(currentIdx);
+          showTrack(currentIdx);
+        }
       }
     } else {
       const pl = (window.userPlaylists || []).find(p => p.id === id);
@@ -1069,6 +1087,25 @@
     }
   };
 
+  // Activa la lista curada del admin como playlist por defecto del radio
+  function activateDefaultRadioPlaylist() {
+    if (!defaultRadioTracks.length) return;
+    activeRadioPlaylist = '__default__';
+    customCurrentIdx    = 0;
+    customPlaylistStarted = false;
+    customTrackList = defaultRadioTracks.map(t => ({
+      id: t.id, itemId: t.id, title: t.title,
+      cover: t.cover, scUrl: t.scUrl, videoId: t.videoId,
+      spotifyUrl: t.spotifyUrl, type: 'track',
+    }));
+    const nameEl  = document.getElementById('radio-pl-name');
+    const loopBtn = document.getElementById('radio-loop-btn');
+    if (nameEl)  nameEl.textContent    = 'RAYVER Radio';
+    if (loopBtn) loopBtn.style.display = '';
+    renderCustomTracklist(customTrackList);
+    showCustomTrack(0);
+  }
+
   window.toggleRadioLoop = function() {
     loopPlaylist = !loopPlaylist;
     const btn = document.getElementById('radio-loop-btn');
@@ -1099,6 +1136,16 @@
         if (!data?.length) return;
         apiTracks = data;
         if (scSounds.length) { buildEnriched(); renderList(); }
+      }).catch(() => {});
+
+    // Cargar lista curada del admin — si existe, se activa como default del radio
+    fetch('/api/public/radio-playlist')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (!data?.tracks?.length) return;
+        defaultRadioTracks = data.tracks;
+        // Solo activar si el usuario no ha seleccionado otra lista todavía
+        if (activeRadioPlaylist === null) activateDefaultRadioPlaylist();
       }).catch(() => {});
 
     createIframe();

@@ -89,6 +89,7 @@ if (!db.genres) {
   ];
   saveDB(db);
 }
+if (!db.radioPlaylist) { db.radioPlaylist = []; saveDB(db); }
 
 // ───────────────────────── Auth (admin) ─────────────────────────
 // Token HMAC stateless — sobrevive reinicios del servidor
@@ -925,6 +926,34 @@ app.post('/api/admin/sc-url-sync', authMiddleware, async (req, res) => {
 
   if (results.found > 0) saveDB(db);
   res.json({ ok: true, scUser, ...results });
+});
+
+// ── RAYVER RADIO DEFAULT PLAYLIST ────────────────────────────────
+app.get('/api/public/radio-playlist', (req, res) => {
+  const ids = db.radioPlaylist || [];
+  const tracks = ids
+    .map(id => (db.tracks || []).find(t => t.id === id))
+    .filter(Boolean)
+    .map(t => ({
+      id: t.id, title: t.title, artist: t.artist || 'RAYVER',
+      cover: t.cover || null, scUrl: t.scUrl || null,
+      videoId: t.videoId || null, spotifyUrl: t.spotifyUrl || null,
+      durationMs: t.durationMs || 0,
+    }));
+  res.json({ tracks });
+});
+
+app.get('/api/admin/radio-playlist', authMiddleware, (req, res) => {
+  res.json({ trackIds: db.radioPlaylist || [] });
+});
+
+app.put('/api/admin/radio-playlist', authMiddleware, (req, res) => {
+  const { trackIds } = req.body || {};
+  if (!Array.isArray(trackIds)) return res.status(400).json({ error: 'trackIds debe ser un array' });
+  // Solo guardar IDs que existen en la BD
+  db.radioPlaylist = trackIds.filter(id => (db.tracks || []).some(t => t.id === id));
+  saveDB(db);
+  res.json({ ok: true, count: db.radioPlaylist.length });
 });
 
 app.listen(PORT, () => console.log('Backend escuchando en :' + PORT));

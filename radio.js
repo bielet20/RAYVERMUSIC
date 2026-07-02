@@ -40,7 +40,11 @@
   let spotifyIframe = null;    // iframe para tracks solo en Spotify
   let pendingSpotifyId = null; // spotifyId en espera si SC slug falla
   let spotifyActive = false;   // true cuando el track actual juega desde Spotify
-  let youtubeActive = false;   // true cuando el track actual juega desde YouTube (MINI_PLAYER)
+  let youtubeActive = false;   // true cuando el track actual juega desde YouTube IFrame API
+  let ytPlayer = null;         // instancia YT.Player
+  let ytPlayerReady = false;   // true cuando el YT.Player está listo
+  let ytPlayerDiv = null;      // contenedor del YT player dentro del radio card
+  let ytProgressTimer = null;  // intervalo para barra de progreso YouTube
 
   // ── DOM ──────────────────────────────────────────────────────────
   const $        = id => document.getElementById(id);
@@ -288,6 +292,88 @@
     if (playerDiv) playerDiv.appendChild(spotifyIframe);
   }
 
+  // ── YOUTUBE IFRAME API (dentro del radio card, igual que SC Widget) ──
+  function getYtPlayerDiv() {
+    if (ytPlayerDiv) return ytPlayerDiv;
+    ytPlayerDiv = document.createElement('div');
+    ytPlayerDiv.id = 'yt-radio-player';
+    ytPlayerDiv.style.cssText = 'width:100%;height:0;overflow:hidden;border-radius:10px;transition:height .3s;';
+    const playerDiv = document.querySelector('.radio-player');
+    if (playerDiv) playerDiv.appendChild(ytPlayerDiv);
+    return ytPlayerDiv;
+  }
+
+  function loadYtApiScript(cb) {
+    if (window.YT?.Player) { cb(); return; }
+    const prev = window.onYouTubeIframeAPIReady;
+    window.onYouTubeIframeAPIReady = function() { if (prev) prev(); cb(); };
+    if (!document.querySelector('script[src*="youtube.com/iframe_api"]')) {
+      const s = document.createElement('script');
+      s.src = 'https://www.youtube.com/iframe_api';
+      document.head.appendChild(s);
+    }
+  }
+
+  function initYtPlayer(videoId) {
+    const div = getYtPlayerDiv();
+    if (ytPlayer) {
+      ytPlayer.loadVideoById(videoId);
+      div.style.height = '116px';
+      return;
+    }
+    // Crear un <div> interno que YT.Player reemplazará
+    div.innerHTML = '<div id="yt-radio-inner"></div>';
+    div.style.height = '116px';
+    ytPlayer = new YT.Player('yt-radio-inner', {
+      height: '116',
+      width: '100%',
+      videoId,
+      playerVars: { autoplay: 1, controls: 1, rel: 0, modestbranding: 1, iv_load_policy: 3 },
+      events: {
+        onReady: () => { ytPlayerReady = true; },
+        onStateChange: (e) => {
+          if (!youtubeActive) return;
+          if (e.data === 1) {        // PLAYING
+            setPlaying(true);
+            startYtProgress();
+          } else if (e.data === 2) { // PAUSED
+            setPlaying(false);
+            stopYtProgress();
+          } else if (e.data === 0) { // ENDED
+            stopYtProgress();
+            youtubeActive = false;
+            if (activeRadioPlaylist !== null) {
+              const next = customCurrentIdx + 1;
+              if (next < customTrackList.length) setTimeout(() => window.playCustomTrack(next), 400);
+              else if (loopPlaylist) setTimeout(() => window.playCustomTrack(0), 400);
+              else setPlaying(false);
+            }
+          }
+        },
+      },
+    });
+  }
+
+  function startYtProgress() {
+    stopYtProgress();
+    ytProgressTimer = setInterval(() => {
+      if (!youtubeActive || !ytPlayer?.getCurrentTime) return;
+      try {
+        const pos = ytPlayer.getCurrentTime() * 1000;
+        const dur = ytPlayer.getDuration()  * 1000;
+        if (dur > 0) {
+          if (fillEl) fillEl.style.width = Math.min((pos / dur) * 100, 100) + '%';
+          if (curEl)  curEl.textContent  = fmt(pos);
+          if (durEl)  durEl.textContent  = fmt(dur);
+        }
+      } catch (_) {}
+    }, 500);
+  }
+
+  function stopYtProgress() {
+    if (ytProgressTimer) { clearInterval(ytProgressTimer); ytProgressTimer = null; }
+  }
+
   function playYoutubeTrack(videoId, title) {
     pendingSpotifyId = null;
     window._pendingYtFallback = null;
@@ -296,29 +382,11 @@
     hideSpotifyIframe();
     widget.pause();
     iframe.style.height = '0px';
+    if (window.MINI_PLAYER?.pause) window.MINI_PLAYER.pause();
     customPlaylistStarted = true;
     userPlayed = true;
-    // Registrar callbacks de sincronización con el mini player
-    window.onYouTubeTrackEnd = function() {
-      window.onYouTubeTrackEnd = null;
-      window.onYouTubeStateChange = null;
-      youtubeActive = false;
-      if (activeRadioPlaylist !== null) {
-        const next = customCurrentIdx + 1;
-        if (next < customTrackList.length) setTimeout(() => window.playCustomTrack(next), 400);
-        else if (loopPlaylist) setTimeout(() => window.playCustomTrack(0), 400);
-        else setPlaying(false);
-      }
-    };
-    window.onYouTubeStateChange = function(state) {
-      if (!youtubeActive) return;
-      if (state === 1) setPlaying(true);   // playing
-      else if (state === 2) setPlaying(false); // paused
-    };
-    if (window.MINI_PLAYER?.loadAndPlay) {
-      window.MINI_PLAYER.loadAndPlay([{ videoId, title }], 0);
-    }
-    setPlaying(true); // Estado inicial: reproduciendo
+    setPlaying(true);
+    loadYtApiScript(() => initYtPlayer(videoId));
   }
 
   function playSpotifyTrack(spotifyId) {
@@ -340,10 +408,10 @@
   }
 
   function stopYoutube() {
-    window.onYouTubeTrackEnd = null;
-    window.onYouTubeStateChange = null;
     youtubeActive = false;
-    if (window.MINI_PLAYER?.pause) window.MINI_PLAYER.pause();
+    stopYtProgress();
+    if (ytPlayer?.pauseVideo) try { ytPlayer.pauseVideo(); } catch(_) {}
+    if (ytPlayerDiv) ytPlayerDiv.style.height = '0px';
   }
 
   function bindWidget() {
@@ -385,7 +453,8 @@
     widget.bind(SC.Widget.Events.PLAY, () => {
       pendingSpotifyId = null;
       window._pendingYtFallback = null;
-      if (spotifyActive) { hideSpotifyIframe(); }
+      if (spotifyActive) hideSpotifyIframe();
+      if (youtubeActive) stopYoutube();
       setPlaying(true);
       // Ignorar PLAY automático del widget (antes de que el usuario pulse play)
       if (!userPlayed) return;
@@ -410,6 +479,8 @@
 
     widget.bind(SC.Widget.Events.FINISH, () => {
       iframe.style.height = '0px';
+      if (fillEl) fillEl.style.width = '0%';
+      if (curEl) curEl.textContent = '0:00';
       // Modo lista personalizada: avanzar al siguiente track de la lista
       if (activeRadioPlaylist !== null) {
         const next = customCurrentIdx + 1;
@@ -493,8 +564,7 @@
       } else if (playing) {
         // Pausar — según la fuente activa
         if (youtubeActive) {
-          window.MINI_PLAYER?.pause?.();
-          setPlaying(false);
+          try { ytPlayer?.pauseVideo(); } catch(_) {}
         } else if (spotifyActive) {
           if (spotifyIframe) spotifyIframe.style.height = '0px';
           setPlaying(false);
@@ -506,8 +576,8 @@
       } else {
         // Reanudar — según la fuente activa
         if (youtubeActive) {
-          window.MINI_PLAYER?.play?.();
-          setPlaying(true);
+          if (ytPlayerDiv) ytPlayerDiv.style.height = '116px';
+          try { ytPlayer?.playVideo(); } catch(_) {}
         } else if (spotifyActive && spotifyIframe) {
           spotifyIframe.style.height = '152px';
           setPlaying(true);
@@ -594,8 +664,10 @@
       playBtn?.click();
     },
     pause: () => {
-      // Si el radio está usando intencionalmente el mini player, no interferir
-      if (youtubeActive) return;
+      if (youtubeActive) {
+        try { ytPlayer?.pauseVideo(); } catch(_) {}
+        return;
+      }
       if (widget && widgetRdy && playing) {
         widget.pause();
         iframe.style.height = '0px';

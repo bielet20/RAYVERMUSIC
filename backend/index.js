@@ -840,4 +840,53 @@ app.post('/api/admin/db-restore', authMiddleware, (req, res) => {
   res.json({ ok: true, users: (db.users || []).length, playlists: (db.playlists || []).length });
 });
 
+// Actualizar scUrl de un track manualmente
+app.patch('/api/admin/tracks/:id/scUrl', authMiddleware, (req, res) => {
+  const track = (db.tracks || []).find(t => String(t.id) === String(req.params.id));
+  if (!track) return res.status(404).json({ error: 'Track no encontrado' });
+  track.scUrl = (req.body.scUrl || '').trim();
+  saveDB(db);
+  res.json({ ok: true, id: track.id, scUrl: track.scUrl });
+});
+
+// Auto-sync scUrl: construye el slug SC a partir del título y verifica via oEmbed
+app.post('/api/admin/sc-url-sync', authMiddleware, async (req, res) => {
+  const scUser = (req.body.scUser || process.env.SC_USER || 'biel-rivero-sampol').trim();
+
+  function toSlug(title) {
+    return (title || '').toLowerCase()
+      .normalize('NFD').replace(/[̀-ͯ]/g, '') // quitar acentos
+      .replace(/[^a-z0-9\s-]/g, '')
+      .trim().replace(/\s+/g, '-')
+      .replace(/-+/g, '-');
+  }
+
+  function checkUrl(url) {
+    return new Promise(resolve => {
+      const oEmbed = `https://soundcloud.com/oembed?format=json&url=${encodeURIComponent(url)}`;
+      https.get(oEmbed, { headers: { 'User-Agent': 'Mozilla/5.0' } }, r => {
+        resolve(r.statusCode === 200);
+        r.resume();
+      }).on('error', () => resolve(false));
+    });
+  }
+
+  const tracks = db.tracks || [];
+  const results = { checked: 0, found: 0, skipped: 0 };
+
+  for (const t of tracks) {
+    if (t.scUrl) { results.skipped++; continue; }
+    const slug = toSlug(t.title);
+    if (!slug) continue;
+    const url = `https://soundcloud.com/${scUser}/${slug}`;
+    results.checked++;
+    const ok = await checkUrl(url);
+    if (ok) { t.scUrl = url; results.found++; }
+    await new Promise(r => setTimeout(r, 120)); // rate limit suave
+  }
+
+  if (results.found > 0) saveDB(db);
+  res.json({ ok: true, scUser, ...results });
+});
+
 app.listen(PORT, () => console.log('Backend escuchando en :' + PORT));

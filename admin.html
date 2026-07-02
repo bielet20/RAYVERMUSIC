@@ -282,6 +282,22 @@ body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--text);min-
           <button class="btn btn-p" onclick="openTrackModal()"><i class="fas fa-plus"></i> Añadir canción</button>
         </div>
         <div class="srow" id="stats-area"></div>
+
+        <!-- SC URL SYNC -->
+        <div class="gc" style="margin-bottom:16px">
+          <div class="ch">
+            <span class="ct"><i class="fab fa-soundcloud" style="color:#f50"></i> URLs de SoundCloud (para el reproductor)</span>
+            <div style="display:flex;gap:8px;align-items:center">
+              <input id="sc-user-input" class="form-control" style="width:220px;font-size:12px;padding:4px 8px" placeholder="usuario SoundCloud (ej: biel-rivero-sampol)" value="biel-rivero-sampol">
+              <button class="btn" style="font-size:12px;padding:4px 10px" onclick="syncScUrls()"><i class="fas fa-magic"></i> Auto-sync</button>
+            </div>
+          </div>
+          <div id="sc-sync-result" style="padding:12px 16px;font-size:12px;color:var(--muted)">
+            El reproductor necesita la URL de SoundCloud de cada canción para cargarla en el player. Pulsa Auto-sync para intentar detectarlas automáticamente, o edítalas manualmente.
+          </div>
+          <ul class="tlist" id="sc-url-list" style="border-top:1px solid rgba(255,255,255,.06)"></ul>
+        </div>
+
         <div class="gc">
           <div class="ch"><span class="ct">Todas las canciones</span></div>
           <ul class="tlist" id="track-list"><li class="loading"><i class="fas fa-circle-notch spin"></i> Cargando…</li></ul>
@@ -687,7 +703,7 @@ const GRADS=['linear-gradient(135deg,#4c1d95,#7c3aed)','linear-gradient(135deg,#
   'linear-gradient(135deg,#14532d,#4c1d95)','linear-gradient(135deg,#831843,#7c3aed)'];
 
 function render() {
-  renderStats(); renderTracks(); renderAlbums(); renderVideos();
+  renderStats(); renderTracks(); renderScUrlList(); renderAlbums(); renderVideos();
 }
 
 function renderStats() {
@@ -698,6 +714,53 @@ function renderStats() {
     <div class="sc"><div class="slabel">Álbumes</div><div class="sval k">${albums.length}</div></div>
     <div class="sc"><div class="slabel">Videos</div><div class="sval a">${videos.length}</div></div>
     <div class="sc"><div class="slabel">Links activos</div><div class="sval g">${links}</div></div>`;
+}
+
+function renderScUrlList() {
+  const ul = document.getElementById('sc-url-list');
+  if (!ul) return;
+  ul.innerHTML = tracks.map(t => `
+    <li class="trow" style="padding:8px 16px;gap:12px">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(t.title)}</div>
+        <div style="display:flex;gap:8px;margin-top:4px;align-items:center">
+          <input id="scu-${esc(t.id)}" type="url" value="${esc(t.scUrl||'')}"
+            placeholder="https://soundcloud.com/usuario/track-slug"
+            style="flex:1;font-size:11px;padding:3px 8px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.15);border-radius:6px;color:#fff;min-width:0">
+          <button onclick="saveScUrl('${esc(t.id)}')"
+            style="font-size:11px;padding:3px 10px;background:#a855f7;border:none;border-radius:6px;color:#fff;cursor:pointer;white-space:nowrap">
+            <i class="fas fa-save"></i> Guardar
+          </button>
+          ${t.scUrl ? `<a href="${esc(t.scUrl)}" target="_blank" style="color:#f50;font-size:16px"><i class="fab fa-soundcloud"></i></a>` : '<span style="color:rgba(255,255,255,.3);font-size:11px">sin URL</span>'}
+        </div>
+      </div>
+    </li>`).join('');
+}
+
+async function saveScUrl(id) {
+  const input = document.getElementById('scu-' + id);
+  if (!input) return;
+  const scUrl = input.value.trim();
+  const r = await apiFetch('PATCH', '/admin/tracks/' + id + '/scUrl', { scUrl });
+  if (r.ok) {
+    const t = tracks.find(t => String(t.id) === String(id));
+    if (t) t.scUrl = scUrl;
+    renderScUrlList();
+  }
+}
+
+async function syncScUrls() {
+  const el = document.getElementById('sc-sync-result');
+  const scUser = document.getElementById('sc-user-input')?.value?.trim() || 'biel-rivero-sampol';
+  el.innerHTML = '<i class="fas fa-circle-notch spin"></i> Comprobando URLs en SoundCloud (puede tardar 1-2 min)…';
+  const r = await apiFetch('POST', '/admin/sc-url-sync', { scUser });
+  if (!r.ok) { el.textContent = 'Error al sincronizar'; return; }
+  const d = r.data;
+  el.innerHTML = `<span style="color:#4ade80">✓ Sync completado</span> — Comprobadas: ${d.checked} | Encontradas: <strong style="color:#4ade80">${d.found}</strong> | Ya tenían URL: ${d.skipped}`;
+  if (d.found > 0) {
+    const tr = await apiFetch('GET', '/public/tracks');
+    if (tr.ok) { tracks = tr.data.tracks || tr.data; renderScUrlList(); renderTracks(); }
+  }
 }
 
 function renderTracks() {

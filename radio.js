@@ -361,7 +361,15 @@
       if (durEl)  durEl.textContent  = fmt(dur);
     });
 
-    widget.bind(SC.Widget.Events.ERROR, () => setTimeout(() => widget.next(), 1500));
+    widget.bind(SC.Widget.Events.ERROR, () => {
+      if (activeRadioPlaylist !== null) {
+        const next = customCurrentIdx + 1;
+        if (next < customTrackList.length) setTimeout(() => window.playCustomTrack(next), 1000);
+        else setPlaying(false);
+      } else {
+        setTimeout(() => widget.next(), 1500);
+      }
+    });
   }
 
   function doShuffle() {
@@ -743,7 +751,7 @@
           show_user: true, show_reposts: false, show_teaser: false,
         });
       } else if (enriched.length) {
-        // Fallback: título normalizado en la playlist SC actual
+        // Fallback 1: título normalizado en la playlist SC actual
         const nt = norm(t.title);
         const scIdx = nt ? enriched.findIndex(e => norm(e.title) === nt) : -1;
         if (scIdx >= 0) {
@@ -753,6 +761,21 @@
           iframe.style.height = '116px';
           widget.skip(scIdx);
           widget.play();
+        } else {
+          // Fallback 2: construir URL desde slug del título (biel-rivero-sampol/ley-de-vida)
+          const slug = (t.title || '').toLowerCase()
+            .normalize('NFD').replace(/[̀-ͯ]/g, '')
+            .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+          const base = SC_PLAYLIST.split('/sets/')[0];
+          const guessedUrl = base + '/' + slug;
+          customPlaylistStarted = true;
+          widgetCustomMode = true;
+          userPlayed = true;
+          iframe.style.height = '116px';
+          widget.load(guessedUrl, {
+            auto_play: true, hide_related: true, show_comments: false,
+            show_user: true, show_reposts: false, show_teaser: false,
+          });
         }
       } else {
         // enriched vacío: reintentar cuando cargue

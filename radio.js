@@ -37,9 +37,6 @@
   let loopPlaylist = false;
   let customPlaylistStarted = false;
   let widgetCustomMode = false; // true cuando el widget está cargado con un track custom (no SC_PLAYLIST)
-  let spotifyIframe = null;    // iframe para tracks solo en Spotify
-  let pendingSpotifyId = null; // spotifyId en espera si SC slug falla
-  let spotifyActive = false;   // true cuando el track actual juega desde Spotify
   let youtubeActive = false;   // true cuando el track actual juega desde YouTube IFrame API
   let ytPlayer = null;         // instancia YT.Player
   let ytPlayerReady = false;   // true cuando el YT.Player está listo
@@ -282,16 +279,6 @@
     else if (!iframe.parentNode) document.body.appendChild(iframe);
   }
 
-  function createSpotifyIframe() {
-    if (spotifyIframe) return;
-    spotifyIframe = document.createElement('iframe');
-    spotifyIframe.id = 'spotify-radio-embed';
-    spotifyIframe.allow = 'autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture';
-    spotifyIframe.style.cssText = 'width:100%;height:0;border:none;display:block;border-radius:10px;transition:height .3s;';
-    const playerDiv = document.querySelector('.radio-player');
-    if (playerDiv) playerDiv.appendChild(spotifyIframe);
-  }
-
   // ── YOUTUBE IFRAME API (dentro del radio card, igual que SC Widget) ──
   function getYtPlayerDiv() {
     if (ytPlayerDiv) return ytPlayerDiv;
@@ -375,11 +362,8 @@
   }
 
   function playYoutubeTrack(videoId, title) {
-    pendingSpotifyId = null;
     window._pendingYtFallback = null;
-    spotifyActive = false;
     youtubeActive = true;
-    hideSpotifyIframe();
     widget.pause();
     iframe.style.height = '0px';
     if (window.MINI_PLAYER?.pause) window.MINI_PLAYER.pause();
@@ -389,22 +373,16 @@
     loadYtApiScript(() => initYtPlayer(videoId));
   }
 
-  function playSpotifyTrack(spotifyId) {
-    pendingSpotifyId = null;
-    spotifyActive = true;
-    createSpotifyIframe();
-    widget.pause();
-    iframe.style.height = '0px';
-    spotifyIframe.src = `https://open.spotify.com/embed/track/${spotifyId}?utm_source=generator&theme=0`;
-    spotifyIframe.style.height = '152px';
-    customPlaylistStarted = true;
-    userPlayed = true;
-    setPlaying(true);
-  }
-
-  function hideSpotifyIframe() {
-    if (spotifyIframe) { spotifyIframe.src = ''; spotifyIframe.style.height = '0px'; }
-    spotifyActive = false;
+  // Muestra un aviso de "no disponible en radio" con link a Spotify
+  function showUnavailable(t) {
+    const apiTrack = apiTracks.find(a => String(a.id) === String(t.itemId || t.id));
+    const spotifyUrl = apiTrack?.spotifyUrl || t.spotifyUrl || null;
+    customPlaylistStarted = true; // para que play button no reintente
+    setPlaying(false);
+    // Mostrar badge de "sin fuente" en el artista
+    if (artistEl) artistEl.innerHTML = spotifyUrl
+      ? `<a href="${esc(spotifyUrl)}" target="_blank" class="radio-ptag ptag-s" style="font-size:12px"><i class="fab fa-spotify"></i> Escuchar en Spotify</a>`
+      : '<span style="opacity:.5;font-size:12px">No disponible en radio</span>';
   }
 
   function stopYoutube() {
@@ -451,9 +429,7 @@
     });
 
     widget.bind(SC.Widget.Events.PLAY, () => {
-      pendingSpotifyId = null;
       window._pendingYtFallback = null;
-      if (spotifyActive) hideSpotifyIframe();
       if (youtubeActive) stopYoutube();
       setPlaying(true);
       // Ignorar PLAY automático del widget (antes de que el usuario pulse play)
@@ -512,17 +488,12 @@
         const ytId = window._pendingYtFallback;
         window._pendingYtFallback = null;
         if (ytId) {
-          // SC no disponible → YouTube (control total, auto-avance)
           const t = customTrackList[customCurrentIdx];
           playYoutubeTrack(ytId, t?.title || '');
-        } else if (pendingSpotifyId) {
-          // SC no disponible, no hay YouTube → Spotify embed
-          playSpotifyTrack(pendingSpotifyId);
         } else {
-          // No hay ninguna fuente → saltar al siguiente
-          const next = customCurrentIdx + 1;
-          if (next < customTrackList.length) setTimeout(() => window.playCustomTrack(next), 800);
-          else setPlaying(false);
+          // Sin SC ni YouTube → mostrar link Spotify y dejar al usuario decidir
+          const t = customTrackList[customCurrentIdx];
+          if (t) showUnavailable(t);
         }
       } else {
         setTimeout(() => widget.next(), 1500);
@@ -562,25 +533,17 @@
       if (!customPlaylistStarted) {
         window.playCustomTrack(customCurrentIdx);
       } else if (playing) {
-        // Pausar — según la fuente activa
         if (youtubeActive) {
           try { ytPlayer?.pauseVideo(); } catch(_) {}
-        } else if (spotifyActive) {
-          if (spotifyIframe) spotifyIframe.style.height = '0px';
-          setPlaying(false);
         } else {
           widget.pause();
           iframe.style.height = '0px';
           setPlaying(false);
         }
       } else {
-        // Reanudar — según la fuente activa
         if (youtubeActive) {
           if (ytPlayerDiv) ytPlayerDiv.style.height = '116px';
           try { ytPlayer?.playVideo(); } catch(_) {}
-        } else if (spotifyActive && spotifyIframe) {
-          spotifyIframe.style.height = '152px';
-          setPlaying(true);
         } else {
           widget.play();
           iframe.style.height = '116px';
@@ -761,12 +724,9 @@
     customPlaylistStarted = false;
     closeRplDropdown();
 
-    // Siempre ocultar SC widget, YouTube y Spotify al cambiar de lista
     widget.pause();
     iframe.style.height = '0px';
-    hideSpotifyIframe();
     stopYoutube();
-    pendingSpotifyId = null;
     window._pendingYtFallback = null;
     if (window.MINI_PLAYER?.pause) window.MINI_PLAYER.pause();
 
@@ -945,12 +905,9 @@
             .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
           const base = SC_PLAYLIST.split('/sets/')[0];
           const guessedUrl = base + '/' + slug;
-          // Guardar fallbacks para cuando SC falle
+          // Si SC falla → ERROR event intentará YouTube como fallback
           const apiTrack = apiTracks.find(a => String(a.id) === String(t.itemId || t.id));
-          pendingSpotifyId = apiTrack?.spotifyId || t.spotifyId || null;
-          // Si SC ERROR → ERROR event intentará YouTube primero, luego Spotify
           window._pendingYtFallback = apiTrack?.videoId || t.videoId || null;
-          hideSpotifyIframe();
           customPlaylistStarted = true;
           widgetCustomMode = true;
           userPlayed = true;

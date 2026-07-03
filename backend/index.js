@@ -190,6 +190,7 @@ const CONFIG = {
   youtubeChannelIds: cleanEnvList(process.env.YOUTUBE_CHANNEL_IDS, 'YOUTUBE_CHANNEL_IDS'),
   scClientId: process.env.SC_CLIENT_ID || '',
   scClientSecret: process.env.SC_CLIENT_SECRET || '',
+  scPublicClientId: process.env.SC_CLIENT_ID_PUBLIC || '',
   scUser: process.env.SC_USER || process.env.SC_USER_PERMALINK || 'biel-rivero-sampol',
   scPlaylistUrl: process.env.SC_PLAYLIST_URL || ''
 };
@@ -402,16 +403,21 @@ let _scPublicClientId = null;
 
 async function getSCPublicClientId() {
   if (_scPublicClientId) return _scPublicClientId;
+
+  // 1. Env var configurada manualmente en Coolify (más fiable)
+  if (CONFIG.scPublicClientId) {
+    _scPublicClientId = CONFIG.scPublicClientId;
+    return _scPublicClientId;
+  }
+
+  // 2. Extraer del sitio web de SC (puede fallar si SC cambia sus bundles)
   try {
-    // 1. Página principal de SC → encontrar URLs de los app bundles
     const page = await httpRequest('https://soundcloud.com/');
     if (page.status !== 200) throw new Error('SC no disponible');
     const scriptUrls = [];
     const re = /https:\/\/a-v2\.sndcdn\.com\/assets\/[^"' ]+\.js/g;
     let m;
     while ((m = re.exec(page.body)) !== null) scriptUrls.push(m[1]);
-
-    // 2. Buscar client_id en los bundles (suele estar en los más pequeños)
     for (const url of scriptUrls.slice(0, 10)) {
       const r = await httpRequest(url);
       if (r.status !== 200) continue;

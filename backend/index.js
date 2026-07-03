@@ -410,19 +410,32 @@ async function getSCPublicClientId() {
     return _scPublicClientId;
   }
 
-  // 2. Extraer del sitio web de SC (puede fallar si SC cambia sus bundles)
+  // 2. Extraer del sitio web de SC
   try {
-    const page = await httpRequest('https://soundcloud.com/');
-    if (page.status !== 200) throw new Error('SC no disponible');
+    const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+    const page = await httpRequest('https://soundcloud.com/', { headers: { 'User-Agent': UA } });
+    if (page.status !== 200) throw new Error('SC devolvió ' + page.status);
+
+    // Buscar URLs de bundles JS en el HTML (m[0] = match completo, no m[1])
     const scriptUrls = [];
-    const re = /https:\/\/a-v2\.sndcdn\.com\/assets\/[^"' ]+\.js/g;
+    const re = /https:\/\/[a-z0-9-]+\.sndcdn\.com\/assets\/[^"' ]+\.js/g;
     let m;
-    while ((m = re.exec(page.body)) !== null) scriptUrls.push(m[1]);
-    for (const url of scriptUrls.slice(0, 10)) {
-      const r = await httpRequest(url);
-      if (r.status !== 200) continue;
-      const match = r.body.match(/client_id[=:"]+([a-zA-Z0-9]{20,50})/);
-      if (match) { _scPublicClientId = match[1]; return _scPublicClientId; }
+    while ((m = re.exec(page.body)) !== null) {
+      if (!scriptUrls.includes(m[0])) scriptUrls.push(m[0]); // m[0], no m[1]
+    }
+
+    // Buscar client_id también directamente en el HTML
+    const htmlMatch = page.body.match(/[?&,{]?client_id[=:"']+([a-zA-Z0-9]{20,50})/);
+    if (htmlMatch) { _scPublicClientId = htmlMatch[1]; return _scPublicClientId; }
+
+    // Si no está en el HTML, buscarlo en los bundles JS
+    for (const url of scriptUrls.slice(0, 15)) {
+      try {
+        const r = await httpRequest(url, { headers: { 'User-Agent': UA } });
+        if (r.status !== 200) continue;
+        const match = r.body.match(/[?&,{]?client_id[=:"']+([a-zA-Z0-9]{20,50})/);
+        if (match) { _scPublicClientId = match[1]; return _scPublicClientId; }
+      } catch (_) { /* ignorar error de bundle individual */ }
     }
   } catch (e) {
     console.warn('[SC] getSCPublicClientId error:', e.message);
@@ -432,7 +445,8 @@ async function getSCPublicClientId() {
 
 async function syncSCTracksPublic(username) {
   const clientId = await getSCPublicClientId();
-  if (!clientId) throw new Error('No se pudo obtener client_id público de SC');
+  if (!clientId) throw new Error('No se pudo obtener client_id público de SC — configura SC_CLIENT_ID_PUBLIC en Coolify como alternativa');
+  console.log('[SC v2] client_id obtenido, sincronizando usuario:', username);
 
   // Resolver el usuario via API v2
   const resolveR = await httpJSON(

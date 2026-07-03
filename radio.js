@@ -191,7 +191,11 @@
     const t = customTrackList[idx];
     if (!t) return;
     const isVideo = t.type === 'video';
-    const apiT    = apiTracks.find(a => String(a.id) === String(t.itemId || t.id));
+    const apiT    = apiTracks.find(a =>
+      String(a.id) === String(t.itemId || t.id) ||
+      (t.url   && a.scUrl === t.url)   ||
+      (t.scUrl && a.scUrl === t.scUrl)
+    );
 
     if (titleEl)  titleEl.textContent  = t.title || '—';
     if (artistEl) artistEl.textContent = apiT?.artist || 'RAYVER';
@@ -211,7 +215,7 @@
     }
 
     if (tagsEl) {
-      const scUrl = t.scUrl  || apiT?.scUrl  || null;
+      const scUrl = t.scUrl || t.url || apiT?.scUrl || null;
       const ytId  = isVideo ? t.itemId : (t.videoId || apiT?.videoId || null);
       const spUrl = t.spotifyUrl || apiT?.spotifyUrl || null;
       const links = [];
@@ -292,7 +296,7 @@
 
   function getScUrlForCustomTrack(t) {
     if (!t || t.type === 'video') return null;
-    let url = t.scUrl || null;
+    let url = t.scUrl || t.url || null; // 'url' es el campo en playlists de usuario
     if (!url && t.itemId) url = apiTracks.find(a => String(a.id) === String(t.itemId))?.scUrl || null;
     if (!url) {
       const lookupList = _masterEnriched.length ? _masterEnriched : enriched;
@@ -304,7 +308,7 @@
       const slug = (t.title || '').toLowerCase()
         .normalize('NFD').replace(/[̀-ͯ]/g, '')
         .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-      url = SC_PLAYLIST.split('/sets/')[0] + '/' + slug;
+      url = SC_PLAYLIST.replace(/\/(tracks|sets\/.*)$/, '') + '/' + slug;
     }
     return url;
   }
@@ -537,7 +541,12 @@
           if (counter) counter.textContent = `— / ${scSounds.length}`;
           if (!playing) showTrack(0);
         }
-        if (pendingPlay) { pendingPlay = false; widget.play(); }
+        if (pendingPlay) {
+          pendingPlay = false;
+          // En modo custom: reproducir el track de la lista personalizada, NO el de SC Widget
+          if (activeRadioPlaylist !== null && customTrackList.length) window.playCustomTrack(customCurrentIdx);
+          else widget.play();
+        }
         if (onDone) onDone();
       });
     }
@@ -898,6 +907,7 @@
     iframe.style.height = '0px';
     stopYoutube();
     stopCrossfade();
+    pendingPlay = false; // evitar que RAYVER Radio empiece si READY llega tarde
     window._pendingYtFallback = null;
     if (window.MINI_PLAYER?.pause) window.MINI_PLAYER.pause();
 
@@ -1062,9 +1072,17 @@
       if (window.MINI_PLAYER?.pause) window.MINI_PLAYER.pause();
 
       // Resolver fuentes del track (SC, YouTube, Spotify)
-      const apiTrack   = apiTracks.find(a => String(a.id) === String(t.itemId || t.id));
-      const trackYtId  = t.videoId || apiTrack?.videoId || null;
-      let   trackScUrl = t.scUrl   || apiTrack?.scUrl   || null;
+      // Nota: tracks de playlists de usuario guardan la URL en campo 'url', no 'scUrl'
+      const apiTrack   = apiTracks.find(a =>
+        String(a.id) === String(t.itemId || t.id) ||
+        (t.url   && a.scUrl === t.url)   ||
+        (t.scUrl && a.scUrl === t.scUrl)
+      );
+      // Para tracks de vídeo, itemId ES el videoId de YouTube
+      const trackYtId  = t.videoId || apiTrack?.videoId
+        || (t.type === 'video' ? t.itemId : null) || null;
+      // Campo 'url' es el que usa el backend para playlists de usuario
+      let   trackScUrl = t.scUrl || t.url || apiTrack?.scUrl || null;
 
       // Helper: carga una URL de SC directamente en el widget (siempre oculto)
       const _loadScUrl = (url, ytFallback) => {
@@ -1097,7 +1115,8 @@
           const slug = (t.title || '').toLowerCase()
             .normalize('NFD').replace(/[̀-ͯ]/g, '')
             .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-          const scBase = SC_PLAYLIST.split('/sets/')[0];
+          // scBase = base del perfil SC (sin /tracks ni /sets/...)
+          const scBase = SC_PLAYLIST.replace(/\/(tracks|sets\/.*)$/, '');
           _loadScUrl(scBase + '/' + slug, trackYtId);
         }
       } else {

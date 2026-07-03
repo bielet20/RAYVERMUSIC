@@ -3,6 +3,55 @@
    Cinematográfico · Oscuro · Dinámico
    ═══════════════════════════════════════════════════════════════════ */
 
+/* ── VIDEO INTRO ────────────────────────────────────────────────── */
+#intro-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  background: #07070a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity .7s cubic-bezier(.4,0,.2,1);
+}
+#intro-overlay.intro-fade {
+  opacity: 0;
+  pointer-events: none;
+}
+#intro-video {
+  width: min(420px, 90vw);
+  height: min(420px, 90vw);
+  object-fit: cover;
+  border-radius: 4px;
+  display: block;
+}
+#intro-skip {
+  position: absolute;
+  bottom: 36px;
+  right: 36px;
+  background: rgba(255,255,255,.08);
+  border: 1px solid rgba(255,255,255,.14);
+  color: rgba(255,255,255,.55);
+  font-family: 'Outfit', sans-serif;
+  font-size: 12px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  padding: 8px 16px;
+  border-radius: 999px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity .4s, background .2s, color .2s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  backdrop-filter: blur(8px);
+}
+#intro-skip.visible { opacity: 1; }
+#intro-skip:hover { background: rgba(255,255,255,.15); color: #fff; }
+@media (max-width: 480px) {
+  #intro-skip { bottom: 24px; right: 20px; font-size: 11px; padding: 7px 14px; }
+}
+
 :root {
   --bg:          #07070a;
   --bg2:         #0d0d14;
@@ -263,15 +312,18 @@ body {
 .hero-title {
   font-family: 'Orbitron', sans-serif;
   font-size: clamp(80px,16vw,180px);
+  font-weight: 900;
   line-height: .88;
-  letter-spacing: 3px;
-  background: var(--logo-gradient);
+  letter-spacing: 8px;
+  background: linear-gradient(135deg, #e0d4ff 0%, #a78bfa 28%, #7c3aed 52%, #3db8ff 78%, #c084fc 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
+  filter: drop-shadow(0 0 32px rgba(168,85,247,.35)) drop-shadow(0 0 8px rgba(61,184,255,.2));
   opacity: 0;
   animation: fadeUp .9s .5s ease forwards;
   margin-bottom: 12px;
+  text-rendering: geometricPrecision;
 }
 
 .hero-subtitle {

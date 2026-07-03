@@ -10,6 +10,7 @@ RUN apk add --no-cache nodejs
 
 # Frontend estático — todos los archivos html y assets
 COPY index.html gracias.html admin.html styles.css script.js radio.js \
+     tracker.js logo-intro.mp4 \
      robots.txt sitemap.xml logo.jpg hero_bg.png \
      manifest.json service-worker.js pwa-install.js \
      /usr/share/nginx/html/

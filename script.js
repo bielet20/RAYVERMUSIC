@@ -1,5 +1,63 @@
 'use strict';
 
+// ── VIDEO INTRO ───────────────────────────────────────────────────
+(function () {
+  // Solo mostrar una vez por sesión
+  if (sessionStorage.getItem('_rv_intro_done')) {
+    const el = document.getElementById('intro-overlay');
+    if (el) el.style.display = 'none';
+    return;
+  }
+
+  function introDismiss() {
+    sessionStorage.setItem('_rv_intro_done', '1');
+    const overlay = document.getElementById('intro-overlay');
+    const vid     = document.getElementById('intro-video');
+    if (!overlay) return;
+    if (vid) { vid.pause(); }
+    overlay.classList.add('intro-fade');
+    setTimeout(() => {
+      overlay.style.display = 'none';
+      // Asegura que el body pueda hacer scroll
+      document.body.style.overflow = '';
+    }, 720);
+  }
+
+  window.introSkip = introDismiss;
+
+  document.addEventListener('DOMContentLoaded', () => {
+    const overlay = document.getElementById('intro-overlay');
+    const vid     = document.getElementById('intro-video');
+    const skip    = document.getElementById('intro-skip');
+    if (!overlay || !vid) return;
+
+    // Bloquear scroll mientras el intro está activo
+    document.body.style.overflow = 'hidden';
+
+    // Mostrar botón skip después de 1.5s
+    setTimeout(() => { if (skip) skip.classList.add('visible'); }, 1500);
+
+    // Saltar con tecla Escape
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') introDismiss();
+    }, { once: true });
+
+    // Reproducir el video
+    vid.play().catch(() => {
+      // Autoplay bloqueado (ej. Safari sin interacción) → pasar a click-to-play
+      vid.style.cursor = 'pointer';
+      if (skip) skip.classList.add('visible');
+      vid.addEventListener('click', () => { vid.play(); }, { once: true });
+    });
+
+    // Auto-dismiss al terminar el video
+    vid.addEventListener('ended', introDismiss);
+
+    // Fallback: si el video no carga en 12s, saltar
+    setTimeout(introDismiss, 12000);
+  });
+})();
+
 // ── UTILS (global scope — usadas tanto dentro como fuera de DOMContentLoaded) ──
 function esc(s) {
   return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');

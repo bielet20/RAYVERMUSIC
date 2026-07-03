@@ -903,6 +903,44 @@ app.get('/api/admin/db-export', authMiddleware, (req, res) => {
   res.json({ base64, size: json.length, users: (db.users || []).length, playlists: (db.playlists || []).length });
 });
 
+// Diagnóstico SC: prueba la extracción de client_id y el acceso a la API v2
+app.get('/api/admin/sc-diag', authMiddleware, async (req, res) => {
+  const result = { steps: [] };
+  try {
+    // Paso 1: fetch soundcloud.com
+    result.steps.push({ step: 'fetch soundcloud.com' });
+    const page = await httpRequest('https://soundcloud.com/');
+    result.scPageStatus = page.status;
+    result.scPageSize = page.body.length;
+
+    // Paso 2: encontrar URLs de bundles
+    const re = /https:\/\/a-v2\.sndcdn\.com\/assets\/[^"' ]+\.js/g;
+    const found = [];
+    let m;
+    while ((m = re.exec(page.body)) !== null) found.push(m[1]);
+    result.bundleUrls = found.slice(0, 5);
+
+    // Paso 3: buscar client_id en los bundles
+    let clientId = null;
+    for (const url of found.slice(0, 8)) {
+      const r = await httpRequest(url);
+      const match = r.body.match(/client_id[=:"]+([a-zA-Z0-9]{20,50})/);
+      if (match) { clientId = match[1]; result.clientIdFoundIn = url; break; }
+    }
+    result.clientId = clientId;
+
+    // Paso 4: si tenemos client_id, probar la API v2
+    if (clientId) {
+      const testR = await httpJSON(`https://api-v2.soundcloud.com/resolve?url=https://soundcloud.com/${CONFIG.scUser}&client_id=${clientId}`);
+      result.v2ResolveStatus = testR.status;
+      result.v2UserId = testR.json?.id;
+    }
+  } catch (e) {
+    result.error = e.message;
+  }
+  res.json(result);
+});
+
 // Diagnóstico del sistema de ficheros
 app.get('/api/admin/diag', authMiddleware, (req, res) => {
   const info = { DATA_DIR, DATA_FILE, fileExists: false, fileSize: 0, files: [], mountInfo: 'unknown', users: 0, playlists: 0 };

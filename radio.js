@@ -23,8 +23,9 @@
   // ── STATE ────────────────────────────────────────────────────────
   let widget      = null;
   let widgetRdy   = false;
-  let scSounds    = [];   // raw de getSounds() — fuente de verdad de SC
-  let enriched    = [];   // scSounds + covers/links de la API
+  let scSounds       = [];   // raw de getSounds() — fuente de verdad de SC
+  let enriched       = [];   // scSounds + covers/links de la API
+  let _masterEnriched = []; // backup del enriched completo (no se sobreescribe con cargas individuales)
   let apiTracks   = [];   // de /api/public/tracks
   let currentIdx  = 0;
   let playing     = false;
@@ -137,6 +138,8 @@
         platforms:  match.platforms || base.platforms,
       };
     });
+    // Guardar como master cuando es una lista completa (no un track individual cargado en modo custom)
+    if (scSounds.length > 1) _masterEnriched = enriched.slice();
   }
 
   // ── UI DEL HEADER ────────────────────────────────────────────────
@@ -288,6 +291,12 @@
     if (!t || t.type === 'video') return null;
     let url = t.scUrl || null;
     if (!url && t.itemId) url = apiTracks.find(a => String(a.id) === String(t.itemId))?.scUrl || null;
+    if (!url) {
+      const lookupList = _masterEnriched.length ? _masterEnriched : enriched;
+      const nt = norm(t.title);
+      const found = nt ? lookupList.find(e => norm(e.title) === nt) : null;
+      if (found?.scUrl) url = found.scUrl;
+    }
     if (!url) {
       const slug = (t.title || '').toLowerCase()
         .normalize('NFD').replace(/[̀-ͯ]/g, '')
@@ -1031,48 +1040,45 @@
         trackScUrl = apiTracks.find(a => String(a.id) === String(t.itemId))?.scUrl || null;
       }
 
-      if (trackScUrl) {
-        // Cargar el track directamente en el widget (sin depender del índice en la playlist)
+      // Helper: carga una URL de SC directamente en el widget
+      const _loadScUrl = (url) => {
         customPlaylistStarted = true;
         widgetCustomMode = true;
         userPlayed = true;
         iframe.style.height = '116px';
-        widget.load(trackScUrl, {
+        widget.load(url, {
           auto_play: true, hide_related: true, show_comments: false,
           show_user: true, show_reposts: false, show_teaser: false,
         });
-      } else if (enriched.length) {
-        // Fallback 1: título normalizado en la playlist SC actual
+      };
+
+      if (trackScUrl) {
+        // Ruta directa: SC URL guardada en el item o encontrada en apiTracks
+        _loadScUrl(trackScUrl);
+      } else if (_masterEnriched.length || enriched.length) {
+        // Fallback 1: buscar por título normalizado en el catálogo SC completo
+        // Se usa _masterEnriched para no perder el contexto cuando el widget carga tracks individuales
+        const lookupList = _masterEnriched.length ? _masterEnriched : enriched;
         const nt = norm(t.title);
-        const scIdx = nt ? enriched.findIndex(e => norm(e.title) === nt) : -1;
-        if (scIdx >= 0) {
-          customPlaylistStarted = true;
-          userPlayed = true;
-          currentIdx = scIdx;
-          iframe.style.height = '116px';
-          widget.skip(scIdx);
-          widget.play();
+        const scIdx = nt ? lookupList.findIndex(e => norm(e.title) === nt) : -1;
+        if (scIdx >= 0 && lookupList[scIdx].scUrl) {
+          // Cargar el track por su permalink URL directamente (no via skip en playlist RAYVER Radio)
+          // Esto evita que el iframe de SC muestre el contexto de RAYVER Radio
+          _loadScUrl(lookupList[scIdx].scUrl);
         } else {
-          // Fallback 2: construir URL desde slug del título (biel-rivero-sampol/ley-de-vida)
+          // Fallback 2: construir URL desde slug del título
           const slug = (t.title || '').toLowerCase()
             .normalize('NFD').replace(/[̀-ͯ]/g, '')
             .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-          const base = SC_PLAYLIST.split('/sets/')[0];
-          const guessedUrl = base + '/' + slug;
+          const scBase = SC_PLAYLIST.split('/sets/')[0];
+          const guessedUrl = scBase + '/' + slug;
           // Si SC falla → ERROR event intentará YouTube como fallback
           const apiTrack = apiTracks.find(a => String(a.id) === String(t.itemId || t.id));
           window._pendingYtFallback = apiTrack?.videoId || t.videoId || null;
-          customPlaylistStarted = true;
-          widgetCustomMode = true;
-          userPlayed = true;
-          iframe.style.height = '116px';
-          widget.load(guessedUrl, {
-            auto_play: true, hide_related: true, show_comments: false,
-            show_user: true, show_reposts: false, show_teaser: false,
-          });
+          _loadScUrl(guessedUrl);
         }
       } else {
-        // enriched vacío: reintentar cuando cargue
+        // enriched vacío aún: reintentar cuando cargue
         setTimeout(() => window.playCustomTrack(idx), 500);
       }
     }

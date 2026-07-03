@@ -191,14 +191,15 @@
     const t = customTrackList[idx];
     if (!t) return;
     const isVideo = t.type === 'video';
+    const apiT    = apiTracks.find(a => String(a.id) === String(t.itemId || t.id));
 
     if (titleEl)  titleEl.textContent  = t.title || '—';
-    if (artistEl) artistEl.textContent = isVideo ? 'YouTube' : 'SoundCloud';
-    if (genreEl)  genreEl.textContent  = '';
+    if (artistEl) artistEl.textContent = apiT?.artist || 'RAYVER';
+    if (genreEl)  genreEl.textContent  = apiT?.genre  || '';
 
     const coverSrc = isVideo
       ? (t.itemId ? `https://img.youtube.com/vi/${t.itemId}/mqdefault.jpg` : null)
-      : (t.cover || null);
+      : (t.cover || apiT?.cover || null);
     if (coverEl) {
       if (coverSrc) {
         coverEl.src = coverSrc;
@@ -210,12 +211,14 @@
     }
 
     if (tagsEl) {
-      if (isVideo && t.itemId)
-        tagsEl.innerHTML = `<a href="https://www.youtube.com/watch?v=${esc(t.itemId)}" target="_blank" class="radio-ptag" style="color:#ff4444"><i class="fab fa-youtube"></i> YouTube</a>`;
-      else if (!isVideo && t.url)
-        tagsEl.innerHTML = `<a href="${esc(t.url)}" target="_blank" class="radio-ptag ptag-soundcloud"><i class="fab fa-soundcloud"></i> SoundCloud</a>`;
-      else
-        tagsEl.innerHTML = '';
+      const scUrl = t.scUrl  || apiT?.scUrl  || null;
+      const ytId  = isVideo ? t.itemId : (t.videoId || apiT?.videoId || null);
+      const spUrl = t.spotifyUrl || apiT?.spotifyUrl || null;
+      const links = [];
+      if (scUrl) links.push(`<a href="${esc(scUrl)}" target="_blank" class="radio-ptag ptag-soundcloud" title="Escuchar en SoundCloud"><i class="fab fa-soundcloud"></i></a>`);
+      if (ytId)  links.push(`<a href="https://www.youtube.com/watch?v=${esc(ytId)}" target="_blank" class="radio-ptag" style="color:#ff4444" title="Ver en YouTube"><i class="fab fa-youtube"></i></a>`);
+      if (spUrl) links.push(`<a href="${esc(spUrl)}" target="_blank" class="radio-ptag ptag-s" title="Escuchar en Spotify"><i class="fab fa-spotify"></i></a>`);
+      tagsEl.innerHTML = links.join('');
     }
 
     if (fillEl)  fillEl.style.width = '0%';
@@ -553,8 +556,8 @@
       setPlaying(true);
       // Ignorar PLAY automático del widget (antes de que el usuario pulse play)
       if (!userPlayed) return;
-      // Solo expandir el iframe cuando el usuario ha iniciado la reproducción
-      iframe.style.height = '116px';
+      // Solo expandir el SC iframe en modo RAYVER Radio, no en listas personalizadas
+      if (activeRadioPlaylist === null) iframe.style.height = '116px';
       widget.getCurrentSoundIndex(idx => {
         if (typeof idx !== 'number') return;
         currentIdx = idx;
@@ -706,7 +709,7 @@
           try { ytPlayer?.playVideo(); } catch(_) {}
         } else {
           widget.play();
-          iframe.style.height = '116px';
+          // SC widget permanece oculto en modo lista personalizada
         }
       }
       return;
@@ -755,17 +758,23 @@
   muteBtn && muteBtn.addEventListener('click', () => {
     muted = !muted;
     if (widget && widgetRdy) widget.setVolume(muted ? 0 : vol());
+    if (youtubeActive && ytPlayer?.setVolume) try { ytPlayer.setVolume(muted ? 0 : vol()); } catch(_) {}
     if (volIco) volIco.className = muted ? 'fas fa-volume-mute' : vol()<50 ? 'fas fa-volume-down' : 'fas fa-volume-up';
   });
 
   volEl && volEl.addEventListener('input', () => {
     if (!muted && widget && widgetRdy) widget.setVolume(vol());
+    if (!muted && youtubeActive && ytPlayer?.setVolume) try { ytPlayer.setVolume(vol()); } catch(_) {}
     if (volIco) volIco.className = vol()===0 ? 'fas fa-volume-mute' : vol()<50 ? 'fas fa-volume-down' : 'fas fa-volume-up';
   });
 
   progEl && progEl.addEventListener('click', e => {
+    const pct = Math.max(0, Math.min(1, (e.clientX - progEl.getBoundingClientRect().left) / progEl.offsetWidth));
+    if (youtubeActive && ytPlayer?.seekTo) {
+      try { ytPlayer.seekTo(ytPlayer.getDuration() * pct, true); } catch(_) {}
+      return;
+    }
     if (!widget || !widgetRdy) return;
-    const pct = (e.clientX - progEl.getBoundingClientRect().left) / progEl.offsetWidth;
     widget.getDuration(dur => widget.seekTo(Math.floor(pct * dur)));
   });
 
@@ -1052,18 +1061,18 @@
     } else {
       if (window.MINI_PLAYER?.pause) window.MINI_PLAYER.pause();
 
-      // Resolver la URL de SC del track: guardada en el item, en apiTracks por ID, o título norm
-      let trackScUrl = t.scUrl || null;
-      if (!trackScUrl && t.itemId) {
-        trackScUrl = apiTracks.find(a => String(a.id) === String(t.itemId))?.scUrl || null;
-      }
+      // Resolver fuentes del track (SC, YouTube, Spotify)
+      const apiTrack   = apiTracks.find(a => String(a.id) === String(t.itemId || t.id));
+      const trackYtId  = t.videoId || apiTrack?.videoId || null;
+      let   trackScUrl = t.scUrl   || apiTrack?.scUrl   || null;
 
-      // Helper: carga una URL de SC directamente en el widget
-      const _loadScUrl = (url) => {
+      // Helper: carga una URL de SC directamente en el widget (siempre oculto)
+      const _loadScUrl = (url, ytFallback) => {
         customPlaylistStarted = true;
         widgetCustomMode = true;
         userPlayed = true;
-        iframe.style.height = '116px';
+        window._pendingYtFallback = ytFallback || null;
+        // SC widget permanece oculto — nuestros controles manejan todo
         widget.load(url, {
           auto_play: true, hide_related: true, show_comments: false,
           show_user: true, show_reposts: false, show_teaser: false,
@@ -1071,29 +1080,25 @@
       };
 
       if (trackScUrl) {
-        // Ruta directa: SC URL guardada en el item o encontrada en apiTracks
-        _loadScUrl(trackScUrl);
+        // Ruta directa: URL de SC conocida → cargar en widget oculto, YouTube como fallback
+        _loadScUrl(trackScUrl, trackYtId);
+      } else if (trackYtId) {
+        // No hay URL de SC pero sí YouTube → reproducir directamente
+        playYoutubeTrack(trackYtId, t.title);
       } else if (_masterEnriched.length || enriched.length) {
         // Fallback 1: buscar por título normalizado en el catálogo SC completo
-        // Se usa _masterEnriched para no perder el contexto cuando el widget carga tracks individuales
         const lookupList = _masterEnriched.length ? _masterEnriched : enriched;
         const nt = norm(t.title);
         const scIdx = nt ? lookupList.findIndex(e => norm(e.title) === nt) : -1;
         if (scIdx >= 0 && lookupList[scIdx].scUrl) {
-          // Cargar el track por su permalink URL directamente (no via skip en playlist RAYVER Radio)
-          // Esto evita que el iframe de SC muestre el contexto de RAYVER Radio
-          _loadScUrl(lookupList[scIdx].scUrl);
+          _loadScUrl(lookupList[scIdx].scUrl, trackYtId);
         } else {
           // Fallback 2: construir URL desde slug del título
           const slug = (t.title || '').toLowerCase()
             .normalize('NFD').replace(/[̀-ͯ]/g, '')
             .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
           const scBase = SC_PLAYLIST.split('/sets/')[0];
-          const guessedUrl = scBase + '/' + slug;
-          // Si SC falla → ERROR event intentará YouTube como fallback
-          const apiTrack = apiTracks.find(a => String(a.id) === String(t.itemId || t.id));
-          window._pendingYtFallback = apiTrack?.videoId || t.videoId || null;
-          _loadScUrl(guessedUrl);
+          _loadScUrl(scBase + '/' + slug, trackYtId);
         }
       } else {
         // enriched vacío aún: reintentar cuando cargue

@@ -1310,29 +1310,57 @@ body {
 
 @media (max-width: 700px) {
   .section { padding: 60px 5%; }
+
+  /* ── Menú móvil ── */
   .nav-links {
     display: none;
     position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
+    top: 0; left: 0; right: 0; bottom: 0;
     background: rgba(7,7,10,.97);
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 2rem;
+    gap: 2.2rem;
     z-index: 999;
     backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    padding: 80px 0 40px;
   }
   .nav-links.open { display: flex; }
-  .nav-links a { font-size: 1.4rem; }
-  .hamburger { display: flex; z-index: 1001; }
+  .nav-links a { font-size: 1.5rem; font-weight: 600; letter-spacing: .5px; }
+  .nav-mobile-auth { display: flex !important; }
+
+  /* Hamburger → X visible */
+  .hamburger { display: flex; z-index: 1001; padding: 8px; }
+  .hamburger.open { background: rgba(255,255,255,.1); border-radius: 10px; }
+
+  /* Ocultar texto del usuario en la nav, solo mostrar icono */
+  #nav-user-name { display: none; }
+  .btn-user-avatar { padding: 7px 10px; gap: 4px; }
+  .btn-user-avatar .fa-chevron-down { display: none; }
+
+  /* ── Hero ── */
+  .hero-eyebrow { font-size: 10px; letter-spacing: 2.5px; }
+  .hero-title { font-size: clamp(54px, 17vw, 90px); letter-spacing: 1px; }
+  .hero-subtitle { font-size: 15px; }
+  .hero-stat-num { font-size: 30px; }
+  .hero-stats { gap: 16px; }
+  .hero-cta { gap: 10px; }
+  .hero-cta .btn { font-size: 14px; padding: 11px 22px; }
+
   .form-row { grid-template-columns: 1fr; }
-  .hero-title { font-size: clamp(72px, 20vw, 110px); }
   .beats-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
   .license-grid { grid-template-columns: 1fr; }
   .about-wrap { padding: 28px; }
+}
+
+@media (max-width: 420px) {
+  .hero-eyebrow { font-size: 9px; letter-spacing: 1.5px; }
+  .hero-title { font-size: clamp(44px, 14vw, 60px); letter-spacing: 0px; }
+  .hero-stat-num { font-size: 26px; }
+  .hero-stats { gap: 10px; }
+  .hero-stat-label { font-size: 9px; letter-spacing: 1px; }
+  .section { padding: 50px 4%; }
 }
 
 /* ══════════════════════════════════════════════

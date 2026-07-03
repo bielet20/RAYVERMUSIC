@@ -110,6 +110,24 @@ function updateAuthUI() {
     loginBtn && (loginBtn.style.display = '');
     userMenu && (userMenu.style.display = 'none');
   }
+  _updateMobileAuthBtn();
+}
+
+function _closeMobileMenu() {
+  const h = document.getElementById('hamburger');
+  const n = document.getElementById('nav-links');
+  h?.classList.remove('open');
+  n?.classList.remove('open');
+}
+
+function _updateMobileAuthBtn() {
+  const li = document.querySelector('.nav-mobile-auth');
+  if (!li) return;
+  if (AUTH.user) {
+    li.innerHTML = `<button onclick="_closeMobileMenu();logoutUser()" style="background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.3);color:#f87171;padding:10px 24px;border-radius:999px;font-family:inherit;font-size:1rem;font-weight:600;cursor:pointer"><i class="fas fa-sign-out-alt"></i> Cerrar sesión</button>`;
+  } else {
+    li.innerHTML = `<button onclick="_closeMobileMenu();openAuthModal()" style="background:rgba(61,184,255,.1);border:1px solid rgba(61,184,255,.3);color:var(--logo-blue);padding:10px 28px;border-radius:999px;font-family:inherit;font-size:1rem;font-weight:600;cursor:pointer"><i class="fas fa-user"></i> Entrar</button>`;
+  }
 }
 
 window.toggleUserDropdown = function() {
@@ -614,6 +632,7 @@ document.addEventListener('DOMContentLoaded', () => {
       navLinksList.classList.remove('open');
     });
   });
+  _updateMobileAuthBtn();
 
   // ── SMOOTH SCROLL ────────────────────────────────────────────────
   document.querySelectorAll('a[href^="#"]').forEach(a => {

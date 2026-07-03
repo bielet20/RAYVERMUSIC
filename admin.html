@@ -301,6 +301,7 @@ body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--text);min-
         <button class="ni" onclick="showPage('albums')"><i class="fas fa-compact-disc"></i> Álbumes</button>
         <button class="ni" onclick="showPage('videos')"><i class="fab fa-youtube"></i> Videos</button>
         <button class="ni" onclick="showPage('radio')"><i class="fas fa-broadcast-tower"></i> Radio</button>
+        <button class="ni" onclick="showPage('ambiente')"><i class="fas fa-leaf"></i> Ambiente</button>
         <button class="ni" onclick="showPage('settings')"><i class="fas fa-cog"></i> Ajustes</button>
         <a href="/" class="ni"><i class="fas fa-globe"></i> Ver web</a>
       </nav>
@@ -396,6 +397,201 @@ body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--text);min-
               </div>
             </div>
           </div>
+        </div>
+      </div>
+
+      <!-- ══════════════ AMBIENTE ══════════════ -->
+      <div id="page-ambiente" class="page">
+        <div class="ph">
+          <div><div class="ptitle"><i class="fas fa-leaf" style="color:#34d399"></i> Música Ambiente</div><div class="psub">Biblioteca de pago — tracks, packs y accesos de usuarios</div></div>
+        </div>
+
+        <!-- Sub-tabs -->
+        <div style="display:flex;gap:8px;padding:0 24px 20px;flex-wrap:wrap">
+          <button class="btn btn-p" id="amb-tab-tracks"  onclick="ambSetTab('tracks')" style="font-size:13px"><i class="fas fa-music"></i> Tracks</button>
+          <button class="btn btn-g" id="amb-tab-packs"   onclick="ambSetTab('packs')"  style="font-size:13px"><i class="fas fa-box-open"></i> Packs</button>
+          <button class="btn btn-g" id="amb-tab-access"  onclick="ambSetTab('access')" style="font-size:13px"><i class="fas fa-key"></i> Accesos</button>
+        </div>
+
+        <!-- ── TRACKS ── -->
+        <div id="amb-panel-tracks">
+          <div class="gc" style="margin-bottom:16px">
+            <div class="ch">
+              <span class="ct">Tracks Ambiente</span>
+              <button class="btn btn-p btn-sm" onclick="ambOpenTrackModal()"><i class="fas fa-plus"></i> Nuevo track</button>
+            </div>
+            <div id="amb-tracks-list" style="padding:16px">
+              <div class="re-empty"><i class="fas fa-circle-notch spin"></i><p>Cargando…</p></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── PACKS ── -->
+        <div id="amb-panel-packs" style="display:none">
+          <div class="gc" style="margin-bottom:16px">
+            <div class="ch">
+              <span class="ct">Packs de acceso</span>
+              <button class="btn btn-p btn-sm" onclick="ambOpenPackModal()"><i class="fas fa-plus"></i> Nuevo pack</button>
+            </div>
+            <div id="amb-packs-list" style="padding:16px">
+              <div class="re-empty"><i class="fas fa-circle-notch spin"></i><p>Cargando…</p></div>
+            </div>
+          </div>
+          <!-- Plans inside packs tab -->
+          <div class="gc">
+            <div class="ch"><span class="ct">Planes de suscripción</span></div>
+            <div id="amb-plans-list" style="padding:16px">
+              <div class="re-empty"><i class="fas fa-circle-notch spin"></i><p>Cargando…</p></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── ACCESOS ── -->
+        <div id="amb-panel-access" style="display:none">
+          <div class="gc">
+            <div class="ch">
+              <span class="ct">Accesos activos</span>
+              <button class="btn btn-p btn-sm" onclick="ambOpenAccessModal()"><i class="fas fa-plus"></i> Conceder acceso</button>
+            </div>
+            <div id="amb-access-list" style="padding:16px">
+              <div class="re-empty"><i class="fas fa-circle-notch spin"></i><p>Cargando…</p></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Modal: Track -->
+      <div id="amb-track-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)ambCloseTrackModal()">
+        <div class="modal-box glass" style="max-width:560px;padding:28px;display:block;overflow-y:auto;max-height:90vh">
+          <button class="modal-close" onclick="ambCloseTrackModal()"><i class="fas fa-times"></i></button>
+          <div style="font-weight:700;font-size:1.1rem;margin-bottom:20px" id="amb-track-modal-title">Nuevo track</div>
+          <input type="hidden" id="amb-t-id">
+          <div class="field"><label>Título *</label><input type="text" id="amb-t-title" placeholder="Ej. Forest Rain"></div>
+          <div class="field"><label>Descripción</label><textarea id="amb-t-desc" rows="2" style="width:100%;background:rgba(255,255,255,.06);border:1px solid var(--gb);border-radius:8px;padding:10px;color:var(--text);font-family:inherit;font-size:13px;resize:vertical" placeholder="Descripción corta del track…"></textarea></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <div class="field"><label>Pack</label>
+              <select id="amb-t-pack" style="width:100%;background:rgba(255,255,255,.06);border:1px solid var(--gb);border-radius:8px;padding:10px;color:var(--text);font-family:inherit">
+                <option value="">Sin pack (suscripción)</option>
+              </select>
+            </div>
+            <div class="field"><label>Duración (segundos)</label><input type="number" id="amb-t-duration" placeholder="3600" min="0"></div>
+          </div>
+          <div class="field"><label>Tags (separados por coma)</label><input type="text" id="amb-t-tags" placeholder="naturaleza, lluvia, meditación"></div>
+
+          <!-- Source type -->
+          <div class="field">
+            <label>Fuente de audio</label>
+            <select id="amb-t-srctype" style="width:100%;background:rgba(255,255,255,.06);border:1px solid var(--gb);border-radius:8px;padding:10px;color:var(--text);font-family:inherit;margin-bottom:10px" onchange="ambToggleSrcType()">
+              <option value="url">URL externa (NAS, S3, Backblaze, etc.)</option>
+              <option value="platform">Plataforma (SoundCloud, YouTube)</option>
+              <option value="file">Subir archivo (MP3/FLAC/WAV)</option>
+            </select>
+            <div id="amb-src-url" style="display:block">
+              <input type="text" id="amb-t-url" placeholder="https://nas.ejemplo.com/musica/track.flac" style="width:100%;background:rgba(255,255,255,.06);border:1px solid var(--gb);border-radius:8px;padding:10px;color:var(--text);font-family:inherit">
+              <p style="font-size:11px;color:var(--muted);margin-top:4px">URL directa accesible desde el servidor (NAS con HTTP, Backblaze B2, S3…)</p>
+            </div>
+            <div id="amb-src-platform" style="display:none">
+              <select id="amb-t-plattype" style="width:100%;background:rgba(255,255,255,.06);border:1px solid var(--gb);border-radius:8px;padding:10px;color:var(--text);font-family:inherit;margin-bottom:8px">
+                <option value="soundcloud">SoundCloud</option>
+                <option value="youtube">YouTube</option>
+              </select>
+              <input type="text" id="amb-t-platurl" placeholder="https://soundcloud.com/... o https://youtu.be/..." style="width:100%;background:rgba(255,255,255,.06);border:1px solid var(--gb);border-radius:8px;padding:10px;color:var(--text);font-family:inherit">
+            </div>
+            <div id="amb-src-file" style="display:none">
+              <div style="border:2px dashed var(--gb);border-radius:10px;padding:20px;text-align:center;cursor:pointer" onclick="document.getElementById('amb-t-file-input').click()">
+                <i class="fas fa-cloud-upload-alt" style="font-size:24px;color:var(--purple);margin-bottom:8px;display:block"></i>
+                <div id="amb-file-label" style="font-size:13px;color:var(--muted)">Haz click o arrastra un MP3/FLAC/WAV (máx. 500MB)</div>
+              </div>
+              <input type="file" id="amb-t-file-input" accept="audio/*" style="display:none" onchange="ambHandleAudioFile(this)">
+              <div id="amb-upload-progress" style="display:none;margin-top:8px">
+                <div style="background:var(--gb);border-radius:4px;height:4px"><div id="amb-upload-bar" style="background:var(--purple);height:4px;border-radius:4px;width:0;transition:width .3s"></div></div>
+                <div id="amb-upload-status" style="font-size:11px;color:var(--muted);margin-top:4px">Subiendo…</div>
+              </div>
+              <input type="hidden" id="amb-t-file-url">
+            </div>
+          </div>
+
+          <div class="field">
+            <label>Cover del track</label>
+            <div style="display:flex;gap:10px;align-items:center">
+              <img id="amb-t-cover-preview" src="" style="width:52px;height:52px;border-radius:8px;object-fit:cover;background:var(--bg3);display:none">
+              <div style="flex:1">
+                <input type="text" id="amb-t-cover-url" placeholder="URL del cover (o sube imagen →)" style="width:100%;background:rgba(255,255,255,.06);border:1px solid var(--gb);border-radius:8px;padding:10px;color:var(--text);font-family:inherit;margin-bottom:6px" oninput="ambPreviewCover()">
+                <button class="btn btn-g btn-sm" onclick="document.getElementById('amb-t-cover-file').click()" type="button"><i class="fas fa-image"></i> Subir imagen</button>
+                <input type="file" id="amb-t-cover-file" accept="image/*" style="display:none" onchange="ambHandleCoverFile(this)">
+              </div>
+            </div>
+          </div>
+
+          <div class="field">
+            <label>URL de preview gratuito (30s)</label>
+            <input type="text" id="amb-t-preview" placeholder="URL pública de preview (SoundCloud público, clip corto…)">
+            <p style="font-size:11px;color:var(--muted);margin-top:4px">Opcional. Si no hay preview, los usuarios verán solo metadatos.</p>
+          </div>
+
+          <div style="display:flex;gap:10px;margin-top:8px">
+            <button class="btn btn-p" onclick="ambSaveTrack()" style="flex:1"><i class="fas fa-save"></i> Guardar track</button>
+            <button class="btn btn-g" onclick="ambCloseTrackModal()">Cancelar</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Modal: Pack -->
+      <div id="amb-pack-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)ambClosePackModal()">
+        <div class="modal-box glass" style="max-width:480px;padding:28px;display:block;overflow-y:auto;max-height:90vh">
+          <button class="modal-close" onclick="ambClosePackModal()"><i class="fas fa-times"></i></button>
+          <div style="font-weight:700;font-size:1.1rem;margin-bottom:20px" id="amb-pack-modal-title">Nuevo pack</div>
+          <input type="hidden" id="amb-p-id">
+          <div class="field"><label>Título *</label><input type="text" id="amb-p-title" placeholder="Ej. Pack Naturaleza"></div>
+          <div class="field"><label>Descripción</label><input type="text" id="amb-p-desc" placeholder="Descripción breve del pack"></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+            <div class="field"><label>Precio (€)</label><input type="number" id="amb-p-price" placeholder="9.99" min="0" step="0.01"></div>
+            <div class="field"><label>Moneda</label><input type="text" id="amb-p-currency" value="EUR" style="text-transform:uppercase"></div>
+            <div class="field"><label>Badge (ej. "Popular")</label><input type="text" id="amb-p-badge" placeholder="Opcional"></div>
+          </div>
+          <div class="field">
+            <label>Cover</label>
+            <div style="display:flex;gap:10px;align-items:center">
+              <img id="amb-p-cover-preview" src="" style="width:52px;height:52px;border-radius:8px;object-fit:cover;background:var(--bg3);display:none">
+              <div style="flex:1">
+                <input type="text" id="amb-p-cover-url" placeholder="URL del cover" style="width:100%;background:rgba(255,255,255,.06);border:1px solid var(--gb);border-radius:8px;padding:10px;color:var(--text);font-family:inherit;margin-bottom:6px" oninput="ambPreviewPackCover()">
+                <button class="btn btn-g btn-sm" onclick="document.getElementById('amb-p-cover-file').click()" type="button"><i class="fas fa-image"></i> Subir imagen</button>
+                <input type="file" id="amb-p-cover-file" accept="image/*" style="display:none" onchange="ambHandlePackCoverFile(this)">
+              </div>
+            </div>
+          </div>
+          <div style="display:flex;gap:10px;margin-top:8px">
+            <button class="btn btn-p" onclick="ambSavePack()" style="flex:1"><i class="fas fa-save"></i> Guardar pack</button>
+            <button class="btn btn-g" onclick="ambClosePackModal()">Cancelar</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Modal: Access -->
+      <div id="amb-access-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)document.getElementById('amb-access-modal').style.display='none'">
+        <div class="modal-box glass" style="max-width:440px;padding:28px;display:block;overflow-y:auto;max-height:90vh">
+          <button class="modal-close" onclick="document.getElementById('amb-access-modal').style.display='none'"><i class="fas fa-times"></i></button>
+          <div style="font-weight:700;font-size:1.1rem;margin-bottom:20px">Conceder acceso</div>
+          <div class="field"><label>Email del usuario *</label><input type="email" id="amb-acc-email" placeholder="usuario@email.com"></div>
+          <div class="field">
+            <label>Tipo de acceso *</label>
+            <select id="amb-acc-type" style="width:100%;background:rgba(255,255,255,.06);border:1px solid var(--gb);border-radius:8px;padding:10px;color:var(--text);font-family:inherit" onchange="ambToggleAccessType()">
+              <option value="subscription">Suscripción (toda la biblioteca)</option>
+              <option value="pack">Pack específico</option>
+            </select>
+          </div>
+          <div id="amb-acc-plan-row" class="field">
+            <label>Plan</label>
+            <select id="amb-acc-plan" style="width:100%;background:rgba(255,255,255,.06);border:1px solid var(--gb);border-radius:8px;padding:10px;color:var(--text);font-family:inherit"></select>
+          </div>
+          <div id="amb-acc-pack-row" class="field" style="display:none">
+            <label>Pack</label>
+            <select id="amb-acc-pack" style="width:100%;background:rgba(255,255,255,.06);border:1px solid var(--gb);border-radius:8px;padding:10px;color:var(--text);font-family:inherit"></select>
+          </div>
+          <div class="field"><label>Expira el (vacío = nunca)</label><input type="date" id="amb-acc-expires" style="background:rgba(255,255,255,.06);border:1px solid var(--gb);border-radius:8px;padding:10px;color:var(--text);font-family:inherit;width:100%"></div>
+          <div class="field"><label>Nota interna (pago, referencia…)</label><input type="text" id="amb-acc-note" placeholder="Ej. Pago PayPal #TX123"></div>
+          <div id="amb-acc-error" style="color:#f87171;font-size:13px;margin-bottom:8px;display:none"></div>
+          <button class="btn btn-p" onclick="ambGrantAccess()" style="width:100%"><i class="fas fa-key"></i> Conceder acceso</button>
         </div>
       </div>
 
@@ -1984,5 +2180,372 @@ function attachRadioEditorDnD() {
       renderRadioEditor();
     });
   });
+}
+</script>
+
+<script>
+// ══════════════════════════════════════════════
+// MÓDULO AMBIENTE
+// ══════════════════════════════════════════════
+let _ambTracks = [], _ambPacks = [], _ambPlans = [], _ambAccess = [];
+let _ambEditTrack = null, _ambEditPack = null;
+
+// Helper: wraps apiFetch(method, path, body) para ambient
+async function _ambApi(method, path, body) {
+  const r = await apiFetch(method, path, body || undefined);
+  if (!r.ok) throw new Error(r.data?.error || 'Error de API');
+  return r.data;
+}
+// Upload helper (FormData, usa TOKEN global)
+async function _ambUpload(endpoint, formData) {
+  const resp = await fetch(API + endpoint, { method: 'POST', headers: { Authorization: 'Bearer ' + TOKEN }, body: formData });
+  const data = await resp.json();
+  if (!resp.ok) throw new Error(data.error || 'Error subiendo');
+  return data;
+}
+
+// ── showPage hook ──
+const _origShowPageAmb = window.showPage;
+window.showPage = function(p) {
+  _origShowPageAmb(p);
+  if (p === 'ambiente') ambLoad();
+};
+
+function ambLoad() {
+  ambLoadTracks();
+  ambLoadPacks();
+  ambLoadPlans();
+  ambLoadAccess();
+}
+
+function ambSetTab(tab) {
+  ['tracks','packs','access'].forEach(t => {
+    document.getElementById('amb-panel-' + t).style.display = t === tab ? '' : 'none';
+    const btn = document.getElementById('amb-tab-' + t);
+    if (btn) btn.className = t === tab ? 'btn btn-p' : 'btn btn-g';
+  });
+}
+
+function _esc(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// ── Tracks ──────────────────────────────────────────────────────
+async function ambLoadTracks() {
+  const data = await _ambApi('GET', '/admin/ambient/tracks');
+  _ambTracks = data.tracks || [];
+  const el = document.getElementById('amb-tracks-list');
+  if (!_ambTracks.length) { el.innerHTML = '<div class="re-empty"><i class="fas fa-music"></i><p>No hay tracks. Crea el primero.</p></div>'; return; }
+  el.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:13px">
+    <thead><tr style="color:var(--muted);border-bottom:1px solid var(--gb)">
+      <th style="padding:8px;text-align:left">Cover</th>
+      <th style="padding:8px;text-align:left">Título</th>
+      <th style="padding:8px;text-align:left">Pack</th>
+      <th style="padding:8px;text-align:left">Fuente</th>
+      <th style="padding:8px;text-align:left">Estado</th>
+      <th style="padding:8px;text-align:right">Acciones</th>
+    </tr></thead>
+    <tbody>${_ambTracks.map(t => {
+      const pack = _ambPacks.find(p => p.id === t.packId);
+      const srcIcon = t.source?.type === 'file' ? '📁' : t.source?.type === 'platform' ? (t.source.platformType === 'youtube' ? '▶️' : '☁️') : '🔗';
+      return `<tr style="border-bottom:1px solid rgba(255,255,255,.04)">
+        <td style="padding:8px">${t.cover ? `<img src="${_esc(t.cover)}" onerror="this.style.display='none'" style="width:40px;height:40px;border-radius:6px;object-fit:cover">` : `<div style="width:40px;height:40px;border-radius:6px;background:var(--bg3);display:flex;align-items:center;justify-content:center">🎵</div>`}</td>
+        <td style="padding:8px;font-weight:600">${_esc(t.title)}<br><span style="color:var(--muted);font-size:11px">${(t.tags||[]).join(', ')}</span></td>
+        <td style="padding:8px;color:var(--muted)">${pack ? _esc(pack.title) : '— Suscripción'}</td>
+        <td style="padding:8px">${srcIcon} ${t.source?.type || '—'}</td>
+        <td style="padding:8px"><span style="padding:2px 8px;border-radius:999px;font-size:11px;background:${t.active !== false ? 'rgba(52,211,153,.15)' : 'rgba(239,68,68,.15)'};color:${t.active !== false ? '#34d399' : '#f87171'}">${t.active !== false ? 'Activo' : 'Oculto'}</span></td>
+        <td style="padding:8px;text-align:right;white-space:nowrap">
+          <button class="btn btn-sm btn-g" onclick="ambOpenTrackModal('${t.id}')" style="margin-right:4px"><i class="fas fa-edit"></i></button>
+          <button class="btn btn-sm" style="background:rgba(239,68,68,.15);color:#f87171;border:none;border-radius:6px;padding:5px 10px;cursor:pointer" onclick="ambDeleteTrack('${t.id}')"><i class="fas fa-trash"></i></button>
+        </td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table>`;
+}
+
+function ambOpenTrackModal(id) {
+  _ambEditTrack = id ? _ambTracks.find(t => t.id === id) : null;
+  document.getElementById('amb-track-modal-title').textContent = _ambEditTrack ? 'Editar track' : 'Nuevo track';
+  document.getElementById('amb-t-id').value         = _ambEditTrack?.id || '';
+  document.getElementById('amb-t-title').value      = _ambEditTrack?.title || '';
+  document.getElementById('amb-t-desc').value       = _ambEditTrack?.description || '';
+  document.getElementById('amb-t-tags').value       = (_ambEditTrack?.tags || []).join(', ');
+  document.getElementById('amb-t-duration').value   = _ambEditTrack?.duration || '';
+  document.getElementById('amb-t-preview').value    = _ambEditTrack?.previewUrl || '';
+  document.getElementById('amb-t-cover-url').value  = _ambEditTrack?.cover || '';
+  document.getElementById('amb-t-file-url').value   = '';
+  document.getElementById('amb-file-label').textContent = 'Haz click o arrastra un MP3/FLAC/WAV (máx. 500MB)';
+  document.getElementById('amb-upload-progress').style.display = 'none';
+  ambPreviewCover();
+  const sel = document.getElementById('amb-t-pack');
+  sel.innerHTML = '<option value="">Sin pack (acceso por suscripción)</option>' + _ambPacks.map(p => `<option value="${p.id}"${_ambEditTrack?.packId === p.id ? ' selected' : ''}>${_esc(p.title)}</option>`).join('');
+  const src = _ambEditTrack?.source || { type: 'url' };
+  document.getElementById('amb-t-srctype').value = src.type || 'url';
+  document.getElementById('amb-t-url').value      = src.type === 'url' ? (src.url || '') : '';
+  document.getElementById('amb-t-plattype').value = src.platformType || 'soundcloud';
+  document.getElementById('amb-t-platurl').value  = src.type === 'platform' ? (src.url || '') : '';
+  ambToggleSrcType();
+  document.getElementById('amb-track-modal').style.display = 'flex';
+}
+function ambCloseTrackModal() { document.getElementById('amb-track-modal').style.display = 'none'; }
+
+function ambToggleSrcType() {
+  const v = document.getElementById('amb-t-srctype').value;
+  document.getElementById('amb-src-url').style.display      = v === 'url'      ? '' : 'none';
+  document.getElementById('amb-src-platform').style.display = v === 'platform' ? '' : 'none';
+  document.getElementById('amb-src-file').style.display     = v === 'file'     ? '' : 'none';
+}
+
+async function ambHandleAudioFile(input) {
+  if (!input.files[0]) return;
+  const file = input.files[0];
+  document.getElementById('amb-file-label').textContent = `Subiendo: ${file.name}…`;
+  document.getElementById('amb-upload-progress').style.display = '';
+  document.getElementById('amb-upload-bar').style.width = '30%';
+  const formData = new FormData(); formData.append('audio', file);
+  try {
+    const data = await _ambUpload('/admin/ambient/upload/track', formData);
+    document.getElementById('amb-t-file-url').value = data.filename;
+    document.getElementById('amb-file-label').textContent = `✅ ${data.filename}`;
+    document.getElementById('amb-upload-bar').style.width = '100%';
+  } catch(e) {
+    document.getElementById('amb-file-label').textContent = `❌ ${e.message}`;
+    document.getElementById('amb-upload-bar').style.background = '#f87171';
+  }
+}
+
+async function ambHandleCoverFile(input) {
+  if (!input.files[0]) return;
+  const formData = new FormData(); formData.append('cover', input.files[0]);
+  try {
+    const data = await _ambUpload('/admin/ambient/upload/cover', formData);
+    document.getElementById('amb-t-cover-url').value = data.url;
+    ambPreviewCover();
+  } catch(e) { alert(e.message); }
+}
+
+function ambPreviewCover() {
+  const url = document.getElementById('amb-t-cover-url').value;
+  const img = document.getElementById('amb-t-cover-preview');
+  if (url) { img.src = url; img.style.display = ''; } else { img.style.display = 'none'; }
+}
+
+async function ambSaveTrack() {
+  const id = document.getElementById('amb-t-id').value;
+  const srctype = document.getElementById('amb-t-srctype').value;
+  let source = {};
+  if (srctype === 'url') source = { type: 'url', url: document.getElementById('amb-t-url').value.trim() };
+  else if (srctype === 'platform') source = { type: 'platform', platformType: document.getElementById('amb-t-plattype').value, url: document.getElementById('amb-t-platurl').value.trim() };
+  else if (srctype === 'file') {
+    const fn = document.getElementById('amb-t-file-url').value;
+    if (!fn && !_ambEditTrack?.source?.file) { alert('Sube un archivo primero'); return; }
+    source = { type: 'file', file: fn || _ambEditTrack.source.file };
+  }
+  const body = {
+    title: document.getElementById('amb-t-title').value.trim(),
+    description: document.getElementById('amb-t-desc').value.trim(),
+    cover: document.getElementById('amb-t-cover-url').value.trim() || null,
+    tags: document.getElementById('amb-t-tags').value.split(',').map(s => s.trim()).filter(Boolean),
+    duration: parseInt(document.getElementById('amb-t-duration').value) || 0,
+    packId: document.getElementById('amb-t-pack').value || null,
+    previewUrl: document.getElementById('amb-t-preview').value.trim() || null,
+    source,
+  };
+  if (!body.title) { alert('El título es obligatorio'); return; }
+  try {
+    await _ambApi(id ? 'PUT' : 'POST', id ? `/admin/ambient/tracks/${id}` : '/admin/ambient/tracks', body);
+    ambCloseTrackModal();
+    ambLoadTracks();
+  } catch(e) { alert(e.message); }
+}
+
+async function ambDeleteTrack(id) {
+  if (!confirm('¿Eliminar este track? El archivo de audio también se borrará.')) return;
+  await _ambApi('DELETE', `/admin/ambient/tracks/${id}`);
+  ambLoadTracks();
+}
+
+// ── Packs ───────────────────────────────────────────────────────
+async function ambLoadPacks() {
+  const data = await _ambApi('GET', '/admin/ambient/packs');
+  _ambPacks = data.packs || [];
+  const el = document.getElementById('amb-packs-list');
+  if (!_ambPacks.length) { el.innerHTML = '<div class="re-empty"><i class="fas fa-box-open"></i><p>No hay packs. Crea el primero.</p></div>'; return; }
+  el.innerHTML = _ambPacks.map(p => {
+    const tc = (_ambTracks || []).filter(t => t.packId === p.id).length;
+    return `<div style="display:flex;align-items:center;gap:12px;padding:12px;border:1px solid var(--gb);border-radius:10px;margin-bottom:8px">
+      ${p.cover ? `<img src="${_esc(p.cover)}" style="width:52px;height:52px;border-radius:8px;object-fit:cover">` : `<div style="width:52px;height:52px;border-radius:8px;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:20px">📦</div>`}
+      <div style="flex:1">
+        <div style="font-weight:700">${_esc(p.title)} ${p.badge ? `<span style="background:rgba(168,85,247,.2);color:#c084fc;font-size:11px;padding:2px 8px;border-radius:999px;margin-left:6px">${_esc(p.badge)}</span>` : ''}</div>
+        <div style="font-size:12px;color:var(--muted)">${_esc(p.description || '')} · ${tc} tracks · <strong style="color:var(--text)">${p.price} ${p.currency}</strong></div>
+      </div>
+      <button class="btn btn-sm btn-g" onclick="ambOpenPackModal('${p.id}')" style="margin-right:4px"><i class="fas fa-edit"></i></button>
+      <button class="btn btn-sm" style="background:rgba(239,68,68,.15);color:#f87171;border:none;border-radius:6px;padding:5px 10px;cursor:pointer" onclick="ambDeletePack('${p.id}')"><i class="fas fa-trash"></i></button>
+    </div>`;
+  }).join('');
+}
+
+function ambOpenPackModal(id) {
+  _ambEditPack = id ? _ambPacks.find(p => p.id === id) : null;
+  document.getElementById('amb-pack-modal-title').textContent = _ambEditPack ? 'Editar pack' : 'Nuevo pack';
+  document.getElementById('amb-p-id').value        = _ambEditPack?.id || '';
+  document.getElementById('amb-p-title').value     = _ambEditPack?.title || '';
+  document.getElementById('amb-p-desc').value      = _ambEditPack?.description || '';
+  document.getElementById('amb-p-price').value     = _ambEditPack?.price || '';
+  document.getElementById('amb-p-currency').value  = _ambEditPack?.currency || 'EUR';
+  document.getElementById('amb-p-badge').value     = _ambEditPack?.badge || '';
+  document.getElementById('amb-p-cover-url').value = _ambEditPack?.cover || '';
+  ambPreviewPackCover();
+  document.getElementById('amb-pack-modal').style.display = 'flex';
+}
+function ambClosePackModal() { document.getElementById('amb-pack-modal').style.display = 'none'; }
+
+async function ambHandlePackCoverFile(input) {
+  if (!input.files[0]) return;
+  const formData = new FormData(); formData.append('cover', input.files[0]);
+  try {
+    const data = await _ambUpload('/admin/ambient/upload/cover', formData);
+    document.getElementById('amb-p-cover-url').value = data.url;
+    ambPreviewPackCover();
+  } catch(e) { alert(e.message); }
+}
+function ambPreviewPackCover() {
+  const url = document.getElementById('amb-p-cover-url').value;
+  const img = document.getElementById('amb-p-cover-preview');
+  if (url) { img.src = url; img.style.display = ''; } else { img.style.display = 'none'; }
+}
+
+async function ambSavePack() {
+  const id = document.getElementById('amb-p-id').value;
+  const body = {
+    title: document.getElementById('amb-p-title').value.trim(),
+    description: document.getElementById('amb-p-desc').value.trim(),
+    price: parseFloat(document.getElementById('amb-p-price').value) || 0,
+    currency: (document.getElementById('amb-p-currency').value || 'EUR').toUpperCase(),
+    badge: document.getElementById('amb-p-badge').value.trim() || null,
+    cover: document.getElementById('amb-p-cover-url').value.trim() || null,
+  };
+  if (!body.title) { alert('El título es obligatorio'); return; }
+  try {
+    await _ambApi(id ? 'PUT' : 'POST', id ? `/admin/ambient/packs/${id}` : '/admin/ambient/packs', body);
+    ambClosePackModal();
+    ambLoadPacks();
+  } catch(e) { alert(e.message); }
+}
+
+async function ambDeletePack(id) {
+  if (!confirm('¿Eliminar este pack?')) return;
+  await _ambApi('DELETE', `/admin/ambient/packs/${id}`);
+  ambLoadPacks();
+}
+
+// ── Plans ───────────────────────────────────────────────────────
+async function ambLoadPlans() {
+  const data = await _ambApi('GET', '/admin/ambient/plans');
+  _ambPlans = data.plans || [];
+  const el = document.getElementById('amb-plans-list');
+  el.innerHTML = _ambPlans.map(p => `
+    <div style="display:flex;align-items:center;gap:12px;padding:12px;border:1px solid var(--gb);border-radius:10px;margin-bottom:8px">
+      <div style="flex:1">
+        <div style="font-weight:700">${_esc(p.title)} ${p.badge ? `<span style="background:rgba(52,211,153,.15);color:#34d399;font-size:11px;padding:2px 8px;border-radius:999px;margin-left:6px">${_esc(p.badge)}</span>` : ''}
+          <span style="color:var(--purple);margin-left:8px">${p.price} ${p.currency}</span></div>
+        <div style="font-size:12px;color:var(--muted)">${_esc(p.description || '')} — ${p.durationDays} días</div>
+      </div>
+      <button class="btn btn-sm btn-g" onclick="ambEditPlan('${p.id}')"><i class="fas fa-edit"></i> Editar</button>
+    </div>`).join('') || '<div class="re-empty"><i class="fas fa-tags"></i><p>No hay planes configurados.</p></div>';
+}
+
+function ambEditPlan(id) {
+  const plan = _ambPlans.find(p => p.id === id);
+  if (!plan) return;
+  const price = prompt(`Precio para "${plan.title}" (actual: ${plan.price} ${plan.currency}):`, plan.price);
+  if (price === null) return;
+  _ambApi('PUT', `/admin/ambient/plans/${id}`, { ...plan, price: parseFloat(price) || plan.price })
+    .then(() => ambLoadPlans()).catch(e => alert(e.message));
+}
+
+// ── Access ──────────────────────────────────────────────────────
+async function ambLoadAccess() {
+  const data = await _ambApi('GET', '/admin/ambient/access');
+  _ambAccess = data.access || [];
+  const el = document.getElementById('amb-access-list');
+  const now = Date.now();
+  if (!_ambAccess.length) { el.innerHTML = '<div class="re-empty"><i class="fas fa-key"></i><p>Sin accesos concedidos aún. Usa "Conceder acceso" para añadir usuarios.</p></div>'; return; }
+  el.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:13px">
+    <thead><tr style="color:var(--muted);border-bottom:1px solid var(--gb)">
+      <th style="padding:8px;text-align:left">Usuario</th>
+      <th style="padding:8px;text-align:left">Tipo</th>
+      <th style="padding:8px;text-align:left">Plan/Pack</th>
+      <th style="padding:8px;text-align:left">Expira</th>
+      <th style="padding:8px;text-align:left">Nota</th>
+      <th style="padding:8px;text-align:right">Acción</th>
+    </tr></thead>
+    <tbody>${_ambAccess.map(a => {
+      const expired = a.expiresAt && new Date(a.expiresAt).getTime() < now;
+      return `<tr style="border-bottom:1px solid rgba(255,255,255,.04)${expired ? ';opacity:.5' : ''}">
+        <td style="padding:8px"><div style="font-weight:600">${_esc(a.userName)}</div><div style="font-size:11px;color:var(--muted)">${_esc(a.userEmail)}</div></td>
+        <td style="padding:8px"><span style="padding:2px 8px;border-radius:999px;font-size:11px;background:${a.type==='subscription'?'rgba(168,85,247,.2)':'rgba(52,211,153,.15)'};color:${a.type==='subscription'?'#c084fc':'#34d399'}">${a.type==='subscription'?'📅 Suscripción':'📦 Pack'}</span></td>
+        <td style="padding:8px;color:var(--muted);font-size:12px">${_esc(a.planTitle||a.packTitle||'—')}</td>
+        <td style="padding:8px;font-size:12px">${a.expiresAt?(expired?`<span style="color:#f87171">Expirado ${a.expiresAt.slice(0,10)}</span>`:a.expiresAt.slice(0,10)):'<span style="color:#34d399">∞ Nunca</span>'}</td>
+        <td style="padding:8px;font-size:12px;color:var(--muted)">${a.note?_esc(a.note):'—'}</td>
+        <td style="padding:8px;text-align:right"><button class="btn btn-sm" style="background:rgba(239,68,68,.15);color:#f87171;border:none;border-radius:6px;padding:5px 10px;cursor:pointer" onclick="ambRevokeAccess('${a.id}')"><i class="fas fa-ban"></i> Revocar</button></td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table>`;
+}
+
+function ambOpenAccessModal() {
+  const planSel = document.getElementById('amb-acc-plan');
+  planSel.innerHTML = _ambPlans.map(p => `<option value="${p.id}">${_esc(p.title)} · ${p.price} ${p.currency} · ${p.durationDays}d</option>`).join('') || '<option value="">Sin planes configurados</option>';
+  const packSel = document.getElementById('amb-acc-pack');
+  packSel.innerHTML = _ambPacks.map(p => `<option value="${p.id}">${_esc(p.title)} · ${p.price} ${p.currency}</option>`).join('') || '<option value="">Sin packs configurados</option>';
+  ['amb-acc-email','amb-acc-expires','amb-acc-note'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('amb-acc-type').value = 'subscription';
+  document.getElementById('amb-acc-error').style.display = 'none';
+  ambToggleAccessType();
+  document.getElementById('amb-access-modal').style.display = 'flex';
+}
+
+function ambToggleAccessType() {
+  const t = document.getElementById('amb-acc-type').value;
+  document.getElementById('amb-acc-plan-row').style.display = t === 'subscription' ? '' : 'none';
+  document.getElementById('amb-acc-pack-row').style.display = t === 'pack'         ? '' : 'none';
+}
+
+async function ambGrantAccess() {
+  const errEl = document.getElementById('amb-acc-error');
+  errEl.style.display = 'none';
+  const type    = document.getElementById('amb-acc-type').value;
+  const expires = document.getElementById('amb-acc-expires').value;
+  let expiresAt = null;
+  if (expires) {
+    expiresAt = new Date(expires).toISOString();
+  } else if (type === 'subscription') {
+    const plan = _ambPlans.find(p => p.id === document.getElementById('amb-acc-plan').value);
+    if (plan) { const d = new Date(); d.setDate(d.getDate() + plan.durationDays); expiresAt = d.toISOString(); }
+  }
+  const body = {
+    email:    document.getElementById('amb-acc-email').value.trim(),
+    type,
+    planId:   type === 'subscription' ? document.getElementById('amb-acc-plan').value : null,
+    packId:   type === 'pack'         ? document.getElementById('amb-acc-pack').value  : null,
+    expiresAt,
+    note:     document.getElementById('amb-acc-note').value.trim() || null,
+  };
+  if (!body.email) { errEl.textContent = 'Introduce el email del usuario'; errEl.style.display = ''; return; }
+  try {
+    await _ambApi('POST', '/admin/ambient/access', body);
+    document.getElementById('amb-access-modal').style.display = 'none';
+    ambLoadAccess();
+    toast('Acceso concedido correctamente', 'ok');
+  } catch(e) {
+    errEl.textContent = e.message || 'Error al conceder acceso';
+    errEl.style.display = '';
+  }
+}
+
+async function ambRevokeAccess(id) {
+  if (!confirm('¿Revocar este acceso? El usuario perderá acceso inmediatamente.')) return;
+  await _ambApi('DELETE', `/admin/ambient/access/${id}`);
+  ambLoadAccess();
+  toast('Acceso revocado', 'ok');
 }
 </script>

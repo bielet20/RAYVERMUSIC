@@ -981,6 +981,80 @@ body {
 .yt-card-title { font-size: 13px; font-weight: 600; margin-bottom: 3px; }
 .yt-card-desc  { font-size: 11px; color: var(--muted); }
 
+/* ── AMBIENT MUSIC ──────────────────────────────────────────────── */
+.ambient-section { background: linear-gradient(180deg, var(--bg2) 0%, var(--bg) 100%); }
+
+/* Plans */
+.ambient-plan-card {
+  background: rgba(255,255,255,.04);
+  border: 1px solid var(--glass-b);
+  border-radius: 20px;
+  padding: 28px 24px;
+  text-align: center;
+  min-width: 200px;
+  max-width: 240px;
+  flex: 1;
+  position: relative;
+  transition: all .2s;
+  cursor: default;
+}
+.ambient-plan-card:hover { border-color: rgba(168,85,247,.4); transform: translateY(-4px); box-shadow: 0 16px 48px rgba(168,85,247,.15); }
+.ambient-plan-card.featured { border-color: rgba(168,85,247,.5); background: rgba(168,85,247,.07); }
+.ambient-plan-badge { position: absolute; top: -12px; left: 50%; transform: translateX(-50%); background: linear-gradient(135deg, var(--primary-2), var(--primary-3)); color: #fff; font-size: 11px; font-weight: 700; padding: 3px 14px; border-radius: 999px; white-space: nowrap; }
+.ambient-plan-name { font-size: 1rem; font-weight: 700; margin-bottom: 8px; }
+.ambient-plan-price { font-family: 'Orbitron', sans-serif; font-size: 2rem; font-weight: 700; background: var(--logo-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; line-height: 1; margin-bottom: 4px; }
+.ambient-plan-period { font-size: 12px; color: var(--muted); margin-bottom: 12px; }
+.ambient-plan-desc { font-size: 13px; color: var(--muted); margin-bottom: 20px; line-height: 1.5; }
+
+/* Pack cards */
+.ambient-pack-card {
+  background: rgba(255,255,255,.04);
+  border: 1px solid var(--glass-b);
+  border-radius: 20px;
+  overflow: hidden;
+  transition: all .2s;
+  cursor: pointer;
+}
+.ambient-pack-card:hover { border-color: rgba(168,85,247,.4); transform: translateY(-4px); box-shadow: 0 16px 48px rgba(0,0,0,.3); }
+.ambient-pack-cover { width: 100%; height: 180px; object-fit: cover; background: linear-gradient(135deg, #1a0a2e, #0a1a2e); display: block; }
+.ambient-pack-cover-placeholder { width: 100%; height: 180px; background: linear-gradient(135deg, #1a0a2e, #0a1a2e); display: flex; align-items: center; justify-content: center; font-size: 3rem; }
+.ambient-pack-body { padding: 18px; }
+.ambient-pack-title { font-size: 1rem; font-weight: 700; margin-bottom: 4px; }
+.ambient-pack-meta { font-size: 12px; color: var(--muted); margin-bottom: 14px; }
+.ambient-pack-price { font-size: 1.3rem; font-weight: 700; color: var(--primary-2); }
+.ambient-pack-badge { display: inline-block; background: rgba(168,85,247,.2); color: #c084fc; font-size: 11px; font-weight: 600; padding: 2px 10px; border-radius: 999px; margin-left: 8px; vertical-align: middle; }
+
+/* Track list */
+.ambient-track-list { display: flex; flex-direction: column; gap: 10px; }
+
+.ambient-track-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  background: rgba(255,255,255,.03);
+  border: 1px solid var(--glass-b);
+  border-radius: 14px;
+  transition: all .18s;
+  cursor: pointer;
+}
+.ambient-track-row:hover { background: rgba(168,85,247,.07); border-color: rgba(168,85,247,.3); }
+.ambient-track-cover { width: 52px; height: 52px; border-radius: 10px; object-fit: cover; flex-shrink: 0; background: linear-gradient(135deg, #1a0a2e, #0a1a2e); }
+.ambient-track-info { flex: 1; min-width: 0; }
+.ambient-track-title { font-weight: 600; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ambient-track-tags { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.ambient-track-meta { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.ambient-track-duration { font-size: 12px; color: var(--muted); font-family: 'Orbitron', sans-serif; }
+.ambient-track-lock { font-size: 14px; color: var(--muted); }
+.ambient-track-lock.unlocked { color: #34d399; }
+
+/* Responsive */
+@media (max-width: 480px) {
+  .ambient-plan-card { min-width: 160px; padding: 22px 16px; }
+  .ambient-track-row { padding: 12px 12px; gap: 10px; }
+  .ambient-track-cover { width: 44px; height: 44px; }
+}
+
 /* ── BEATS ──────────────────────────────────────────────────────── */
 .beats-section { background: var(--bg); }
 

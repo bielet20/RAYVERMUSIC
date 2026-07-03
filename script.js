@@ -1511,4 +1511,258 @@ document.addEventListener('DOMContentLoaded', () => {
   loadVideos();
   loadBeats();
   loadGenres();
+  loadAmbient();
 });
+
+// ══════════════════════════════════════════════════════════════
+// MÓDULO MÚSICA AMBIENTE (frontend público)
+// ══════════════════════════════════════════════════════════════
+let _ambData = { packs: [], plans: [], tracks: [], access: null };
+
+async function _ambFetch(path) {
+  const tok = AUTH.token || getToken();
+  const r = await fetch('/api' + path, tok ? { headers: { Authorization: 'Bearer ' + tok } } : {});
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'Error');
+  return r.json();
+}
+
+async function loadAmbient() {
+  try {
+    const [p, pk, tr] = await Promise.all([
+      _ambFetch('/public/ambient/plans'),
+      _ambFetch('/public/ambient/packs'),
+      _ambFetch('/public/ambient/tracks'),
+    ]);
+    _ambData.plans  = p.plans  || [];
+    _ambData.packs  = pk.packs || [];
+    _ambData.tracks = tr.tracks || [];
+  } catch(e) { console.warn('[Ambient] load error', e); }
+
+  // Check access if logged in
+  if (AUTH.user) {
+    try {
+      const acc = await _ambFetch('/ambient/access');
+      _ambData.access = acc;
+    } catch { _ambData.access = null; }
+  }
+
+  renderAmbientPlans();
+  renderAmbientPacks();
+  renderAmbientTracks();
+  renderAmbientAccessBanner();
+}
+
+function _fmtDuration(sec) {
+  if (!sec) return '';
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  return h ? `${h}h ${m}m` : `${m} min`;
+}
+
+function renderAmbientPlans() {
+  const el = document.getElementById('ambient-plans-wrap');
+  if (!el || !_ambData.plans.length) return;
+  el.innerHTML = _ambData.plans.map(p => {
+    const featured = p.badge;
+    return `<div class="ambient-plan-card${featured ? ' featured' : ''}">
+      ${featured ? `<div class="ambient-plan-badge">${p.badge}</div>` : ''}
+      <div class="ambient-plan-name">${p.title}</div>
+      <div class="ambient-plan-price">${p.price} <span style="font-size:1rem">${p.currency}</span></div>
+      <div class="ambient-plan-period">/${p.durationDays === 30 ? 'mes' : p.durationDays === 365 ? 'año' : p.durationDays + ' días'}</div>
+      <div class="ambient-plan-desc">${p.description || ''}</div>
+      <button class="btn btn-primary btn-sm" style="width:100%" onclick="ambRequestSubscription('${p.id}','${p.title}')">
+        <i class="fas fa-star"></i> Suscribirse
+      </button>
+    </div>`;
+  }).join('');
+}
+
+function renderAmbientPacks() {
+  const el = document.getElementById('ambient-packs-wrap');
+  if (!el || !_ambData.packs.length) { if (el) el.style.display = 'none'; return; }
+  el.innerHTML = _ambData.packs.map(p => {
+    const owned = _ambData.access?.packs?.includes(p.id);
+    return `<div class="ambient-pack-card" onclick="ambFilterByPack('${p.id}')">
+      ${p.cover
+        ? `<img class="ambient-pack-cover" src="${p.cover}" alt="${p.title}">`
+        : `<div class="ambient-pack-cover-placeholder">🎵</div>`}
+      <div class="ambient-pack-body">
+        <div class="ambient-pack-title">${p.title} ${p.badge ? `<span class="ambient-pack-badge">${p.badge}</span>` : ''}</div>
+        <div class="ambient-pack-meta">${p.trackCount || 0} tracks${p.description ? ' · ' + p.description : ''}</div>
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <div class="ambient-pack-price">${p.price} ${p.currency}</div>
+          ${owned
+            ? '<span style="font-size:12px;color:#34d399"><i class="fas fa-check-circle"></i> Adquirido</span>'
+            : `<button class="btn btn-sm btn-primary" onclick="event.stopPropagation();ambRequestPack('${p.id}','${p.title}','${p.price}','${p.currency}')"><i class="fas fa-shopping-bag"></i> Comprar</button>`}
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+let _ambActivePackFilter = null;
+function ambFilterByPack(packId) {
+  _ambActivePackFilter = _ambActivePackFilter === packId ? null : packId;
+  renderAmbientTracks();
+}
+
+function renderAmbientTracks() {
+  const el = document.getElementById('ambient-track-list');
+  if (!el) return;
+
+  const tracks = _ambActivePackFilter
+    ? _ambData.tracks.filter(t => t.packId === _ambActivePackFilter)
+    : _ambData.tracks;
+
+  const hasSub  = _ambData.access?.hasSubscription;
+  const myPacks = _ambData.access?.packs || [];
+
+  if (!tracks.length) {
+    el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted)">No hay tracks disponibles aún.</div>';
+    return;
+  }
+
+  el.innerHTML = tracks.map(t => {
+    const unlocked = hasSub || myPacks.includes(t.packId);
+    const durationStr = _fmtDuration(t.duration);
+    const pack = _ambData.packs.find(p => p.id === t.packId);
+    return `<div class="ambient-track-row" onclick="ambPlayTrack('${t.id}')">
+      ${t.cover
+        ? `<img class="ambient-track-cover" src="${t.cover}" alt="${t.title}">`
+        : `<div class="ambient-track-cover" style="display:flex;align-items:center;justify-content:center;font-size:22px">🎵</div>`}
+      <div class="ambient-track-info">
+        <div class="ambient-track-title">${t.title}</div>
+        <div class="ambient-track-tags">${pack ? pack.title + ' · ' : ''}${(t.tags||[]).join(', ')}</div>
+      </div>
+      <div class="ambient-track-meta">
+        ${durationStr ? `<div class="ambient-track-duration">${durationStr}</div>` : ''}
+        <div class="ambient-track-lock ${unlocked ? 'unlocked' : ''}">
+          <i class="fas fa-${unlocked ? 'unlock' : 'lock'}"></i>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
+  // Show CTA if not logged in
+  const ctaEl = document.getElementById('ambient-cta-login');
+  if (ctaEl) ctaEl.style.display = AUTH.user ? 'none' : '';
+}
+
+function renderAmbientAccessBanner() {
+  const el = document.getElementById('ambient-access-banner');
+  const lbl = document.getElementById('ambient-access-label');
+  if (!el || !AUTH.user || !_ambData.access) return;
+  const { hasSubscription, subscription, packs } = _ambData.access;
+  if (hasSubscription) {
+    el.style.display = '';
+    const exp = subscription?.expiresAt ? ' (hasta ' + subscription.expiresAt.slice(0,10) + ')' : ' (sin límite)';
+    lbl.textContent = '✓ Suscripción activa' + exp;
+  } else if (packs?.length) {
+    el.style.display = '';
+    lbl.textContent = `✓ ${packs.length} pack${packs.length > 1 ? 's' : ''} adquirido${packs.length > 1 ? 's' : ''}`;
+  }
+}
+
+async function ambPlayTrack(id) {
+  const track = _ambData.tracks.find(t => t.id === id);
+  if (!track) return;
+
+  // Open modal with track info
+  const modal = document.getElementById('ambient-player-modal');
+  document.getElementById('ambient-player-title').textContent = track.title;
+  document.getElementById('ambient-player-tags').textContent = (track.tags || []).join(' · ');
+  const coverEl = document.getElementById('ambient-player-cover');
+  if (track.cover) { coverEl.src = track.cover; coverEl.style.display = ''; } else { coverEl.style.display = 'none'; }
+
+  // Reset all player areas
+  ['ambient-player-sc','ambient-player-yt','ambient-player-paywall','ambient-player-noauth'].forEach(elId => {
+    document.getElementById(elId).style.display = 'none';
+  });
+  const audio = document.getElementById('ambient-player-audio');
+  audio.style.display = 'none'; audio.pause(); audio.src = '';
+
+  modal.style.display = 'flex';
+
+  // If not logged in
+  if (!AUTH.user) {
+    // Show preview if available
+    if (track.previewUrl) {
+      audio.src = track.previewUrl; audio.style.display = ''; audio.play().catch(() => {});
+    } else {
+      document.getElementById('ambient-player-noauth').style.display = '';
+    }
+    return;
+  }
+
+  // Try to get stream
+  try {
+    const tok = AUTH.token || getToken();
+    const r = await fetch('/api/ambient/stream/' + id, { headers: { Authorization: 'Bearer ' + tok } });
+    const data = await r.json();
+    if (r.status === 403) {
+      // No access — show preview or paywall
+      if (track.previewUrl) {
+        audio.src = track.previewUrl; audio.style.display = '';
+        audio.play().catch(() => {});
+        const pw = document.getElementById('ambient-player-paywall');
+        pw.style.display = ''; // show paywall below
+      } else {
+        document.getElementById('ambient-player-paywall').style.display = '';
+      }
+      return;
+    }
+    if (!r.ok) throw new Error(data.error);
+
+    if (data.type === 'file' || data.type === 'url') {
+      audio.src = data.url; audio.style.display = ''; audio.play().catch(() => {});
+    } else if (data.type === 'platform') {
+      if (data.platformType === 'youtube') {
+        const ytEl = document.getElementById('ambient-player-yt');
+        const vid = data.url.match(/(?:v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/)?.[1];
+        if (vid) { ytEl.innerHTML = `<iframe width="100%" height="200" src="https://www.youtube.com/embed/${vid}?autoplay=1" frameborder="0" allow="autoplay;encrypted-media" allowfullscreen></iframe>`; ytEl.style.display = ''; }
+      } else {
+        const scEl = document.getElementById('ambient-player-sc');
+        scEl.innerHTML = `<iframe width="100%" height="166" scrolling="no" frameborder="no" allow="autoplay" src="https://w.soundcloud.com/player/?url=${encodeURIComponent(data.url)}&color=%23a855f7&auto_play=true&show_user=false"></iframe>`;
+        scEl.style.display = '';
+      }
+    }
+  } catch(e) {
+    console.error('[Ambient] stream error', e);
+    if (track.previewUrl) { audio.src = track.previewUrl; audio.style.display = ''; audio.play().catch(() => {}); }
+    else { document.getElementById('ambient-player-paywall').style.display = ''; }
+  }
+}
+
+function ambClosePlayer() {
+  const modal = document.getElementById('ambient-player-modal');
+  if (modal) modal.style.display = 'none';
+  const audio = document.getElementById('ambient-player-audio');
+  if (audio) { audio.pause(); audio.src = ''; }
+  ['ambient-player-sc','ambient-player-yt'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = '';
+  });
+}
+
+function ambRequestSubscription(planId, planTitle) {
+  if (!AUTH.user) { openAuthModal(); return; }
+  showToastGlobal(`Para suscribirte al plan "${planTitle}", contacta con el administrador o usa el método de pago habitual.`);
+}
+
+function ambRequestPack(packId, packTitle, price, currency) {
+  if (!AUTH.user) { openAuthModal(); return; }
+  showToastGlobal(`Para comprar "${packTitle}" (${price} ${currency}), contacta con el administrador.`);
+}
+
+// Hook into updateAuthUI to reload access info
+const _origUpdateAuthUI = window.updateAuthUI ? window.updateAuthUI.bind(window) : null;
+// Also reload ambient on login/logout
+const _ambOrigUpdateUI = updateAuthUI;
+function updateAuthUI() {
+  _ambOrigUpdateUI();
+  if (document.getElementById('ambient-track-list')) {
+    _ambData.access = null;
+    loadAmbient();
+  }
+}
+window.updateAuthUI = updateAuthUI;

@@ -1089,4 +1089,255 @@ app.put('/api/admin/radio-playlist', authMiddleware, (req, res) => {
   res.json({ ok: true, count: db.radioPlaylist.length });
 });
 
+// ══════════════════════════════════════════════════════════════
+// AMBIENT MUSIC SYSTEM
+// ══════════════════════════════════════════════════════════════
+const multer = require('multer');
+
+const AMBIENT_DIR        = path.join(DATA_DIR, 'ambient');
+const AMBIENT_TRACKS_DIR = path.join(AMBIENT_DIR, 'tracks');
+const AMBIENT_COVERS_DIR = path.join(AMBIENT_DIR, 'covers');
+[AMBIENT_DIR, AMBIENT_TRACKS_DIR, AMBIENT_COVERS_DIR].forEach(d => {
+  if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
+});
+
+// DB migrations
+if (!db.ambientTracks) { db.ambientTracks = []; saveDB(db); }
+if (!db.ambientPacks)  { db.ambientPacks  = []; saveDB(db); }
+if (!db.ambientAccess) { db.ambientAccess = []; saveDB(db); }
+if (!db.ambientPlans) {
+  db.ambientPlans = [
+    { id: 'plan_monthly', title: 'Mensual',   description: 'Acceso completo a toda la biblioteca',    price: 4.99,  currency: 'EUR', durationDays: 30,  badge: null,             active: true, order: 0 },
+    { id: 'plan_annual',  title: 'Anual',     description: 'Acceso completo — 2 meses de regalo',     price: 39.99, currency: 'EUR', durationDays: 365, badge: '2 meses gratis', active: true, order: 1 },
+  ];
+  saveDB(db);
+}
+
+// Multer: audio (500MB) y covers (5MB)
+const _audioStorage = multer.diskStorage({
+  destination: AMBIENT_TRACKS_DIR,
+  filename: (req, file, cb) => cb(null, Date.now() + '_' + file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_')),
+});
+const _coverStorage = multer.diskStorage({
+  destination: AMBIENT_COVERS_DIR,
+  filename: (req, file, cb) => cb(null, Date.now() + '_' + file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_')),
+});
+const uploadAudio = multer({ storage: _audioStorage, limits: { fileSize: 500 * 1024 * 1024 } });
+const uploadCover = multer({ storage: _coverStorage, limits: { fileSize: 10  * 1024 * 1024 } });
+
+// ── Helper: check user ambient access ──────────────────────────
+function checkAmbientAccess(userId, packId) {
+  const now    = Date.now();
+  const access = (db.ambientAccess || []).filter(a => a.userId === userId);
+  const hasSub = access.some(a => a.type === 'subscription' && (!a.expiresAt || new Date(a.expiresAt).getTime() > now));
+  if (hasSub) return { ok: true, type: 'subscription' };
+  if (packId) {
+    const hasPack = access.some(a => a.type === 'pack' && a.packId === packId);
+    if (hasPack) return { ok: true, type: 'pack' };
+  }
+  return { ok: false };
+}
+
+// ── PUBLIC endpoints ────────────────────────────────────────────
+app.get('/api/public/ambient/packs', (req, res) => {
+  const packs = (db.ambientPacks || [])
+    .filter(p => p.active !== false)
+    .sort((a, b) => (a.order ?? 999) - (b.order ?? 999))
+    .map(p => ({
+      ...p,
+      trackCount: (db.ambientTracks || []).filter(t => t.packId === p.id && t.active !== false).length,
+    }));
+  res.json({ packs });
+});
+
+app.get('/api/public/ambient/tracks', (req, res) => {
+  const { packId } = req.query;
+  let tracks = (db.ambientTracks || []).filter(t => t.active !== false);
+  if (packId) tracks = tracks.filter(t => t.packId === packId);
+  res.json({
+    tracks: tracks
+      .sort((a, b) => (a.order ?? 999) - (b.order ?? 999))
+      .map(({ id, title, description, cover, tags, duration, packId, previewUrl }) =>
+        ({ id, title, description, cover: cover || null, tags: tags || [], duration: duration || 0, packId: packId || null, previewUrl: previewUrl || null })),
+  });
+});
+
+app.get('/api/public/ambient/plans', (req, res) => {
+  res.json({ plans: (db.ambientPlans || []).filter(p => p.active !== false).sort((a, b) => (a.order ?? 999) - (b.order ?? 999)) });
+});
+
+// ── USER: access check + stream ─────────────────────────────────
+app.get('/api/ambient/access', userAuth, (req, res) => {
+  const now    = Date.now();
+  const myAcc  = (db.ambientAccess || []).filter(a => a.userId === req.user.userId);
+  const sub    = myAcc.find(a => a.type === 'subscription' && (!a.expiresAt || new Date(a.expiresAt).getTime() > now));
+  const packs  = myAcc.filter(a => a.type === 'pack').map(a => a.packId);
+  res.json({ hasSubscription: !!sub, subscription: sub || null, packs });
+});
+
+app.get('/api/ambient/stream/:id', userAuth, (req, res) => {
+  const track = (db.ambientTracks || []).find(t => t.id === req.params.id && t.active !== false);
+  if (!track) return res.status(404).json({ error: 'Track no encontrado' });
+  const acc = checkAmbientAccess(req.user.userId, track.packId);
+  if (!acc.ok) return res.status(403).json({ error: 'Sin acceso', code: 'NO_ACCESS' });
+  const src = track.source || {};
+  if (src.type === 'file') return res.json({ type: 'file', url: `/api/ambient/media/${path.basename(src.file)}` });
+  if (src.type === 'url')  return res.json({ type: 'url',  url: src.url });
+  if (src.type === 'platform') return res.json({ type: 'platform', platformType: src.platformType, url: src.url });
+  res.status(400).json({ error: 'Fuente no configurada para este track' });
+});
+
+// Serve uploaded audio (requires user auth + access)
+app.get('/api/ambient/media/:filename', userAuth, (req, res) => {
+  const filename = path.basename(req.params.filename); // sanitize
+  const track    = (db.ambientTracks || []).find(t => t.source?.type === 'file' && t.source.file && path.basename(t.source.file) === filename);
+  if (!track) return res.status(404).json({ error: 'No encontrado' });
+  const acc = checkAmbientAccess(req.user.userId, track.packId);
+  if (!acc.ok) return res.status(403).json({ error: 'Sin acceso', code: 'NO_ACCESS' });
+  const filePath = path.join(AMBIENT_TRACKS_DIR, filename);
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Archivo no encontrado en disco' });
+  const stat     = fs.statSync(filePath);
+  const range    = req.headers.range;
+  const mime     = filename.endsWith('.flac') ? 'audio/flac' : filename.endsWith('.wav') ? 'audio/wav' : 'audio/mpeg';
+  if (range) {
+    const [s, e]    = range.replace(/bytes=/, '').split('-');
+    const start     = parseInt(s, 10);
+    const end       = e ? parseInt(e, 10) : stat.size - 1;
+    res.writeHead(206, { 'Content-Range': `bytes ${start}-${end}/${stat.size}`, 'Accept-Ranges': 'bytes', 'Content-Length': end - start + 1, 'Content-Type': mime });
+    fs.createReadStream(filePath, { start, end }).pipe(res);
+  } else {
+    res.writeHead(200, { 'Content-Length': stat.size, 'Content-Type': mime, 'Accept-Ranges': 'bytes' });
+    fs.createReadStream(filePath).pipe(res);
+  }
+});
+
+// Covers are public (no auth)
+app.use('/api/ambient/covers', express.static(AMBIENT_COVERS_DIR));
+
+// ── ADMIN: File uploads ─────────────────────────────────────────
+app.post('/api/admin/ambient/upload/track', authMiddleware, uploadAudio.single('audio'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No se recibió archivo' });
+  res.json({ filename: req.file.filename, url: `/api/ambient/media/${req.file.filename}` });
+});
+app.post('/api/admin/ambient/upload/cover', authMiddleware, uploadCover.single('cover'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No se recibió archivo' });
+  res.json({ filename: req.file.filename, url: `/api/ambient/covers/${req.file.filename}` });
+});
+
+// ── ADMIN: Tracks CRUD ──────────────────────────────────────────
+app.get('/api/admin/ambient/tracks', authMiddleware, (req, res) => res.json({ tracks: db.ambientTracks || [] }));
+
+app.post('/api/admin/ambient/tracks', authMiddleware, (req, res) => {
+  const { title, description, cover, tags, duration, packId, previewUrl, source, order } = req.body || {};
+  if (!title) return res.status(400).json({ error: 'Título requerido' });
+  const track = {
+    id: uid(), title, description: description || '', cover: cover || null,
+    tags: tags || [], duration: duration || 0, packId: packId || null,
+    previewUrl: previewUrl || null, source: source || { type: 'url', url: '' },
+    order: order ?? (db.ambientTracks || []).length,
+    active: true, createdAt: new Date().toISOString(),
+  };
+  db.ambientTracks = [...(db.ambientTracks || []), track];
+  saveDB(db);
+  res.json({ track });
+});
+
+app.put('/api/admin/ambient/tracks/:id', authMiddleware, (req, res) => {
+  const idx = (db.ambientTracks || []).findIndex(t => t.id === req.params.id);
+  if (idx < 0) return res.status(404).json({ error: 'No encontrado' });
+  db.ambientTracks[idx] = { ...db.ambientTracks[idx], ...req.body, id: req.params.id };
+  saveDB(db);
+  res.json({ track: db.ambientTracks[idx] });
+});
+
+app.delete('/api/admin/ambient/tracks/:id', authMiddleware, (req, res) => {
+  const track = (db.ambientTracks || []).find(t => t.id === req.params.id);
+  if (!track) return res.status(404).json({ error: 'No encontrado' });
+  if (track.source?.type === 'file' && track.source.file) {
+    const fp = path.join(AMBIENT_TRACKS_DIR, path.basename(track.source.file));
+    try { if (fs.existsSync(fp)) fs.unlinkSync(fp); } catch(e) {}
+  }
+  db.ambientTracks = (db.ambientTracks || []).filter(t => t.id !== req.params.id);
+  saveDB(db);
+  res.json({ ok: true });
+});
+
+// ── ADMIN: Packs CRUD ──────────────────────────────────────────
+app.get('/api/admin/ambient/packs', authMiddleware, (req, res) => res.json({ packs: db.ambientPacks || [] }));
+
+app.post('/api/admin/ambient/packs', authMiddleware, (req, res) => {
+  const { title, description, cover, price, currency, order, badge } = req.body || {};
+  if (!title) return res.status(400).json({ error: 'Título requerido' });
+  const pack = {
+    id: uid(), title, description: description || '', cover: cover || null,
+    price: price || 0, currency: currency || 'EUR', badge: badge || null,
+    order: order ?? (db.ambientPacks || []).length,
+    active: true, createdAt: new Date().toISOString(),
+  };
+  db.ambientPacks = [...(db.ambientPacks || []), pack];
+  saveDB(db);
+  res.json({ pack });
+});
+
+app.put('/api/admin/ambient/packs/:id', authMiddleware, (req, res) => {
+  const idx = (db.ambientPacks || []).findIndex(p => p.id === req.params.id);
+  if (idx < 0) return res.status(404).json({ error: 'No encontrado' });
+  db.ambientPacks[idx] = { ...db.ambientPacks[idx], ...req.body, id: req.params.id };
+  saveDB(db);
+  res.json({ pack: db.ambientPacks[idx] });
+});
+
+app.delete('/api/admin/ambient/packs/:id', authMiddleware, (req, res) => {
+  db.ambientPacks = (db.ambientPacks || []).filter(p => p.id !== req.params.id);
+  saveDB(db);
+  res.json({ ok: true });
+});
+
+// ── ADMIN: Plans ────────────────────────────────────────────────
+app.get('/api/admin/ambient/plans', authMiddleware, (req, res) => res.json({ plans: db.ambientPlans || [] }));
+
+app.put('/api/admin/ambient/plans/:id', authMiddleware, (req, res) => {
+  const idx = (db.ambientPlans || []).findIndex(p => p.id === req.params.id);
+  if (idx < 0) {
+    db.ambientPlans = [...(db.ambientPlans || []), { id: req.params.id, ...req.body }];
+  } else {
+    db.ambientPlans[idx] = { ...db.ambientPlans[idx], ...req.body, id: req.params.id };
+  }
+  saveDB(db);
+  res.json({ ok: true });
+});
+
+// ── ADMIN: Access management ────────────────────────────────────
+app.get('/api/admin/ambient/access', authMiddleware, (req, res) => {
+  const enriched = (db.ambientAccess || []).map(a => {
+    const user = (db.users || []).find(u => u.id === a.userId);
+    const pack = a.packId ? (db.ambientPacks || []).find(p => p.id === a.packId) : null;
+    const plan = a.planId ? (db.ambientPlans || []).find(p => p.id === a.planId) : null;
+    return { ...a, userName: user?.name || '—', userEmail: user?.email || a.email || '—', packTitle: pack?.title || null, planTitle: plan?.title || null };
+  }).sort((a, b) => new Date(b.grantedAt) - new Date(a.grantedAt));
+  res.json({ access: enriched });
+});
+
+app.post('/api/admin/ambient/access', authMiddleware, (req, res) => {
+  const { email, type, packId, planId, expiresAt, note } = req.body || {};
+  if (!email || !type) return res.status(400).json({ error: 'email y type son requeridos' });
+  const user = (db.users || []).find(u => u.email.toLowerCase() === email.toLowerCase());
+  if (!user) return res.status(404).json({ error: 'Usuario no encontrado — debe registrarse primero en la web.' });
+  const access = {
+    id: uid(), userId: user.id, email: user.email, type,
+    packId: packId || null, planId: planId || null,
+    grantedAt: new Date().toISOString(), expiresAt: expiresAt || null, note: note || null,
+  };
+  db.ambientAccess = [...(db.ambientAccess || []), access];
+  saveDB(db);
+  res.json({ access });
+});
+
+app.delete('/api/admin/ambient/access/:id', authMiddleware, (req, res) => {
+  if (!(db.ambientAccess || []).some(a => a.id === req.params.id)) return res.status(404).json({ error: 'No encontrado' });
+  db.ambientAccess = (db.ambientAccess || []).filter(a => a.id !== req.params.id);
+  saveDB(db);
+  res.json({ ok: true });
+});
+
 app.listen(PORT, () => console.log('Backend escuchando en :' + PORT));

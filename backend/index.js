@@ -395,6 +395,66 @@ async function scOEmbed(targetUrl) {
   return r.json;
 }
 
+// ── SC API v2 pública (la misma que usa el web player de SC) ──────────────
+// No requiere credenciales OAuth — extrae el client_id del propio sitio de SC.
+// Permite obtener TODOS los tracks públicos de una cuenta sin límite de Widget.
+let _scPublicClientId = null;
+
+async function getSCPublicClientId() {
+  if (_scPublicClientId) return _scPublicClientId;
+  try {
+    // 1. Página principal de SC → encontrar URLs de los app bundles
+    const page = await httpRequest('https://soundcloud.com/');
+    if (page.status !== 200) throw new Error('SC no disponible');
+    const scriptUrls = [];
+    const re = /https:\/\/a-v2\.sndcdn\.com\/assets\/[^"' ]+\.js/g;
+    let m;
+    while ((m = re.exec(page.body)) !== null) scriptUrls.push(m[1]);
+
+    // 2. Buscar client_id en los bundles (suele estar en los más pequeños)
+    for (const url of scriptUrls.slice(0, 10)) {
+      const r = await httpRequest(url);
+      if (r.status !== 200) continue;
+      const match = r.body.match(/client_id[=:"]+([a-zA-Z0-9]{20,50})/);
+      if (match) { _scPublicClientId = match[1]; return _scPublicClientId; }
+    }
+  } catch (e) {
+    console.warn('[SC] getSCPublicClientId error:', e.message);
+  }
+  return null;
+}
+
+async function syncSCTracksPublic(username) {
+  const clientId = await getSCPublicClientId();
+  if (!clientId) throw new Error('No se pudo obtener client_id público de SC');
+
+  // Resolver el usuario via API v2
+  const resolveR = await httpJSON(
+    `https://api-v2.soundcloud.com/resolve?url=https://soundcloud.com/${encodeURIComponent(username)}&client_id=${clientId}`
+  );
+  if (resolveR.status !== 200 || !resolveR.json?.id) {
+    throw new Error(`Usuario SC no encontrado: ${username} (HTTP ${resolveR.status})`);
+  }
+  const userId = resolveR.json.id;
+
+  // Paginar todos los tracks públicos (limit=200 por página)
+  let allTracks = [];
+  let nextUrl = `https://api-v2.soundcloud.com/users/${userId}/tracks?client_id=${clientId}&limit=200&linked_partitioning=1`;
+  let guard = 0;
+  while (nextUrl && guard < 20) {
+    const r = await httpJSON(nextUrl);
+    if (r.status !== 200 || !r.json) break;
+    const items = r.json.collection || (Array.isArray(r.json) ? r.json : []);
+    allTracks = allTracks.concat(items);
+    nextUrl = r.json.next_href || null;
+    // Asegurar que next_href lleva el client_id
+    if (nextUrl && !nextUrl.includes('client_id')) nextUrl += `&client_id=${clientId}`;
+    guard++;
+  }
+  console.log(`[SC v2 public] ${username}: ${allTracks.length} tracks obtenidos`);
+  return allTracks;
+}
+
 async function syncSoundCloud() {
   const result = { added: 0, updated: 0, skipped: 0, errors: [], mode: null };
 
@@ -451,7 +511,36 @@ async function syncSoundCloud() {
     }
   }
 
-  // 2. Fallback: oEmbed de la playlist pública (no requiere credenciales, siempre funciona si la URL es correcta)
+  // 2. Fallback: SC API v2 pública (extrae client_id del propio sitio de SC, sin credenciales OAuth)
+  //    Obtiene TODOS los tracks públicos del usuario con paginación real
+  if (result.added === 0 && result.updated === 0 && CONFIG.scUser) {
+    try {
+      result.mode = (result.mode ? result.mode + '+' : '') + 'sc_v2_public';
+      const scTracks = await syncSCTracksPublic(CONFIG.scUser);
+      for (const t of scTracks) {
+        const existing = db.tracks.find(x => x.scId === String(t.id));
+        const trackData = {
+          id:         existing ? existing.id : uid(),
+          title:      t.title,
+          artist:     (t.user && t.user.username) || 'RAYVER',
+          scId:       String(t.id),
+          scUrl:      t.permalink_url,
+          cover:      t.artwork_url ? t.artwork_url.replace('-large', '-t500x500') : ((t.user && t.user.avatar_url) || ''),
+          durationMs: t.duration,
+          genre:      t.genre || '',
+          source:     existing && existing.source === 'spotify' ? existing.source : 'soundcloud',
+          order:      existing ? existing.order : db.tracks.length,
+          updatedAt:  new Date().toISOString(),
+        };
+        if (existing) { Object.assign(existing, trackData); result.updated++; }
+        else { db.tracks.push(trackData); result.added++; }
+      }
+    } catch (e) {
+      result.errors.push('SC v2 public: ' + e.message);
+    }
+  }
+
+  // 3. Fallback final: oEmbed de la playlist pública (solo da datos de 1 URL)
   if (CONFIG.scPlaylistUrl && (result.added === 0 && result.updated === 0)) {
     try {
       result.mode = (result.mode ? result.mode + '+' : '') + 'oembed';

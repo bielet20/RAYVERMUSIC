@@ -415,10 +415,43 @@ body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--text);min-
 
         <!-- ── TRACKS ── -->
         <div id="amb-panel-tracks">
+          <!-- Scanner box -->
+          <div class="gc" style="margin-bottom:16px">
+            <div class="ch"><span class="ct"><i class="fas fa-folder-open" style="color:#f59e0b"></i> &nbsp;Importar desde carpeta</span></div>
+            <div style="padding:20px">
+              <p style="font-size:13px;color:var(--muted);margin-bottom:14px">
+                Escanea una carpeta (y subcarpetas) y crea automáticamente los tracks a partir de los archivos de audio encontrados.<br>
+                Los metadatos (título, duración, cover embebido) se extraen de los tags ID3/Vorbis.<br>
+                <strong style="color:var(--text)">Ruta por defecto:</strong> carpeta de uploads del servidor (<code>/data/ambient/tracks</code>).<br>
+                Para NAS o ruta externa, añade la ruta en Coolify como variable de entorno <code>AMBIENT_SCAN_PATHS=/ruta/musica</code>.
+              </p>
+              <div style="display:grid;grid-template-columns:1fr auto;gap:10px;align-items:end;margin-bottom:12px">
+                <div class="field" style="margin:0">
+                  <label>Ruta a escanear (vacío = carpeta de uploads)</label>
+                  <input type="text" id="amb-scan-path" placeholder="/data/ambient/tracks  o  /mnt/nas/musica/ambiente" style="width:100%;background:rgba(255,255,255,.06);border:1px solid var(--gb);border-radius:8px;padding:10px;color:var(--text);font-family:monospace;font-size:13px">
+                </div>
+                <div class="field" style="margin:0">
+                  <label>Asignar a pack (opcional)</label>
+                  <select id="amb-scan-pack" style="background:rgba(255,255,255,.06);border:1px solid var(--gb);border-radius:8px;padding:10px;color:var(--text);font-family:inherit;height:42px">
+                    <option value="">Sin pack</option>
+                  </select>
+                </div>
+              </div>
+              <div style="display:flex;gap:10px;align-items:center">
+                <button class="btn btn-p" onclick="ambScanFolder()" id="amb-scan-btn"><i class="fas fa-search"></i> Escanear e importar</button>
+                <div id="amb-scan-status" style="font-size:13px;color:var(--muted)"></div>
+              </div>
+              <div id="amb-scan-results" style="display:none;margin-top:16px;background:rgba(52,211,153,.05);border:1px solid rgba(52,211,153,.2);border-radius:10px;padding:14px">
+                <div id="amb-scan-summary" style="font-weight:600;margin-bottom:8px"></div>
+                <div id="amb-scan-list" style="font-size:12px;color:var(--muted);max-height:200px;overflow-y:auto"></div>
+              </div>
+            </div>
+          </div>
+
           <div class="gc" style="margin-bottom:16px">
             <div class="ch">
               <span class="ct">Tracks Ambiente</span>
-              <button class="btn btn-p btn-sm" onclick="ambOpenTrackModal()"><i class="fas fa-plus"></i> Nuevo track</button>
+              <button class="btn btn-p btn-sm" onclick="ambOpenTrackModal()"><i class="fas fa-plus"></i> Nuevo track manual</button>
             </div>
             <div id="amb-tracks-list" style="padding:16px">
               <div class="re-empty"><i class="fas fa-circle-notch spin"></i><p>Cargando…</p></div>
@@ -2228,6 +2261,40 @@ function ambSetTab(tab) {
 
 function _esc(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
+// ── Folder scanner ──────────────────────────────────────────────
+async function ambScanFolder() {
+  const btn    = document.getElementById('amb-scan-btn');
+  const status = document.getElementById('amb-scan-status');
+  const resBox = document.getElementById('amb-scan-results');
+  const scanPath = document.getElementById('amb-scan-path').value.trim();
+  const packId   = document.getElementById('amb-scan-pack').value || null;
+
+  btn.disabled = true;
+  status.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Escaneando…';
+  resBox.style.display = 'none';
+
+  try {
+    const r = await apiFetch('POST', '/admin/ambient/scan', { scanPath: scanPath || undefined, packId });
+    if (!r.ok) throw new Error(r.data?.error || 'Error');
+    const d = r.data;
+    status.textContent = '';
+    resBox.style.display = '';
+    document.getElementById('amb-scan-summary').innerHTML =
+      `<i class="fas fa-check-circle" style="color:#34d399"></i> &nbsp;` +
+      `${d.found} archivos encontrados · <span style="color:#34d399">${d.imported} importados</span> · ${d.skipped} ya existían · ${d.errors} errores`;
+    document.getElementById('amb-scan-list').innerHTML = d.tracks.length
+      ? d.tracks.map(t => `<div style="padding:3px 0">🎵 <strong>${_esc(t.title)}</strong>${t.duration ? ` (${Math.round(t.duration/60)} min)` : ''}</div>`).join('')
+      : (d.skipped > 0 ? '<div style="color:var(--muted)">Todos los archivos ya estaban importados.</div>' : '');
+    if (d.imported > 0) ambLoadTracks();
+    toast(`${d.imported} tracks importados correctamente`, 'ok');
+  } catch(e) {
+    status.textContent = '❌ ' + e.message;
+    toast(e.message, 'err');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 // ── Tracks ──────────────────────────────────────────────────────
 async function ambLoadTracks() {
   const data = await _ambApi('GET', '/admin/ambient/tracks');
@@ -2367,6 +2434,12 @@ async function ambDeleteTrack(id) {
 async function ambLoadPacks() {
   const data = await _ambApi('GET', '/admin/ambient/packs');
   _ambPacks = data.packs || [];
+  // Update scanner pack select
+  const scanPackSel = document.getElementById('amb-scan-pack');
+  if (scanPackSel) {
+    scanPackSel.innerHTML = '<option value="">Sin pack (acceso por suscripción)</option>' +
+      _ambPacks.map(p => `<option value="${p.id}">${_esc(p.title)}</option>`).join('');
+  }
   const el = document.getElementById('amb-packs-list');
   if (!_ambPacks.length) { el.innerHTML = '<div class="re-empty"><i class="fas fa-box-open"></i><p>No hay packs. Crea el primero.</p></div>'; return; }
   el.innerHTML = _ambPacks.map(p => {

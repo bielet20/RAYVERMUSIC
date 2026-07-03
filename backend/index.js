@@ -1093,6 +1093,7 @@ app.put('/api/admin/radio-playlist', authMiddleware, (req, res) => {
 // AMBIENT MUSIC SYSTEM
 // ══════════════════════════════════════════════════════════════
 const multer = require('multer');
+const mm     = require('music-metadata');
 
 const AMBIENT_DIR        = path.join(DATA_DIR, 'ambient');
 const AMBIENT_TRACKS_DIR = path.join(AMBIENT_DIR, 'tracks');
@@ -1213,6 +1214,128 @@ app.get('/api/ambient/media/:filename', userAuth, (req, res) => {
 
 // Covers are public (no auth)
 app.use('/api/ambient/covers', express.static(AMBIENT_COVERS_DIR));
+
+// ── ADMIN: Folder scanner ───────────────────────────────────────
+const AUDIO_EXTS = new Set(['.mp3', '.flac', '.wav', '.ogg', '.aac', '.m4a', '.opus', '.wma']);
+
+// Allowed scan roots: DATA_DIR always allowed + any path in AMBIENT_SCAN_PATHS env var
+function _getAllowedRoots() {
+  const roots = [DATA_DIR];
+  const extra = process.env.AMBIENT_SCAN_PATHS || '';
+  extra.split(':').map(s => s.trim()).filter(Boolean).forEach(p => roots.push(p));
+  return roots;
+}
+
+function _isAllowedPath(p) {
+  const resolved = path.resolve(p);
+  return _getAllowedRoots().some(root => resolved.startsWith(path.resolve(root)));
+}
+
+function _walkDir(dir, results = []) {
+  let entries;
+  try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return results; }
+  for (const e of entries) {
+    const full = path.join(dir, e.name);
+    if (e.isDirectory()) {
+      _walkDir(full, results);
+    } else if (e.isFile() && AUDIO_EXTS.has(path.extname(e.name).toLowerCase())) {
+      results.push(full);
+    }
+  }
+  return results;
+}
+
+async function _extractMeta(filePath) {
+  try {
+    const meta    = await mm.parseFile(filePath, { duration: true, skipCovers: false });
+    const { common, format } = meta;
+    let coverUrl = null;
+    // Save embedded cover art if present
+    if (common.picture && common.picture.length > 0) {
+      const pic  = common.picture[0];
+      const ext  = pic.format.replace('image/', '.').replace('jpeg', 'jpg') || '.jpg';
+      const fn   = path.basename(filePath, path.extname(filePath)) + '_cover' + ext;
+      const dest = path.join(AMBIENT_COVERS_DIR, fn);
+      if (!fs.existsSync(dest)) fs.writeFileSync(dest, pic.data);
+      coverUrl = `/api/ambient/covers/${fn}`;
+    }
+    return {
+      title:    common.title  || path.basename(filePath, path.extname(filePath)),
+      artist:   common.artist || common.albumartist || null,
+      album:    common.album  || null,
+      year:     common.year   || null,
+      genre:    common.genre  || [],
+      duration: format.duration ? Math.round(format.duration) : 0,
+      cover:    coverUrl,
+    };
+  } catch {
+    return {
+      title:    path.basename(filePath, path.extname(filePath)),
+      artist:   null, album: null, year: null, genre: [], duration: 0, cover: null,
+    };
+  }
+}
+
+app.post('/api/admin/ambient/scan', authMiddleware, async (req, res) => {
+  const { scanPath, packId, autoActive = true } = req.body || {};
+
+  // Default: ambient tracks dir
+  const targetPath = scanPath ? path.resolve(scanPath) : AMBIENT_TRACKS_DIR;
+
+  if (!_isAllowedPath(targetPath)) {
+    return res.status(403).json({ error: `Ruta no permitida. Añade la ruta a AMBIENT_SCAN_PATHS en las variables de entorno.` });
+  }
+  if (!fs.existsSync(targetPath)) {
+    return res.status(404).json({ error: `Ruta no encontrada: ${targetPath}` });
+  }
+
+  const files   = _walkDir(targetPath);
+  const results = { found: files.length, imported: 0, skipped: 0, errors: 0, tracks: [] };
+
+  // Build set of already-known files to skip duplicates
+  const knownFiles = new Set(
+    (db.ambientTracks || [])
+      .filter(t => t.source?.type === 'file' && t.source.file)
+      .map(t => path.resolve(t.source.file))
+  );
+
+  for (const filePath of files) {
+    const resolved = path.resolve(filePath);
+    if (knownFiles.has(resolved)) { results.skipped++; continue; }
+
+    let meta;
+    try { meta = await _extractMeta(filePath); } catch(e) { results.errors++; continue; }
+
+    // Determine if file is inside AMBIENT_TRACKS_DIR (served via /api/ambient/media)
+    // or in an external path (served directly — user must ensure it's accessible)
+    const isInternal = resolved.startsWith(path.resolve(AMBIENT_TRACKS_DIR));
+    const sourceFile = isInternal ? path.basename(filePath) : filePath;
+
+    const track = {
+      id:          uid(),
+      title:       meta.title,
+      description: [meta.artist, meta.album, meta.year].filter(Boolean).join(' · '),
+      cover:       meta.cover || null,
+      tags:        meta.genre || [],
+      duration:    meta.duration,
+      packId:      packId || null,
+      previewUrl:  null,
+      source:      { type: 'file', file: sourceFile },
+      order:       (db.ambientTracks || []).length + results.imported,
+      active:      autoActive !== false,
+      createdAt:   new Date().toISOString(),
+      importedFrom: filePath,
+    };
+
+    db.ambientTracks = [...(db.ambientTracks || []), track];
+    knownFiles.add(resolved);
+    results.imported++;
+    results.tracks.push({ id: track.id, title: track.title, duration: track.duration, cover: track.cover });
+  }
+
+  if (results.imported > 0) saveDB(db);
+  res.json(results);
+});
 
 // ── ADMIN: File uploads ─────────────────────────────────────────
 app.post('/api/admin/ambient/upload/track', authMiddleware, uploadAudio.single('audio'), (req, res) => {

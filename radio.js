@@ -44,6 +44,7 @@
   let ytPlayerReady = false;   // true cuando el YT.Player está listo
   let ytPlayerDiv = null;      // contenedor del YT player dentro del radio card
   let ytProgressTimer = null;  // intervalo para barra de progreso YouTube
+  let _prevPlaylistState = null; // estado guardado antes de un "Escuchar" del catálogo
 
   // ── AUTOMIX STATE ────────────────────────────────────────────────
   let automixEnabled     = false;
@@ -468,12 +469,55 @@
               const next = customCurrentIdx + 1;
               if (next < customTrackList.length) setTimeout(() => window.playCustomTrack(next), 400);
               else if (loopPlaylist) setTimeout(() => window.playCustomTrack(0), 400);
-              else setPlaying(false);
+              else if (!_restorePrevState()) setPlaying(false);
             }
           }
         },
       },
     });
+  }
+
+  // ── RESTAURAR ESTADO PREVIO tras un "Escuchar" del catálogo ────────
+  function _restorePrevState() {
+    if (!_prevPlaylistState) return false;
+    const prev = _prevPlaylistState;
+    _prevPlaylistState = null;
+    stopCrossfade();
+
+    const nameEl  = document.getElementById('radio-pl-name');
+    const loopBtn = document.getElementById('radio-loop-btn');
+
+    if (prev.mode === 'radio') {
+      // Volver a RAYVER Radio y reanudar desde donde estaba
+      activeRadioPlaylist = null;
+      customTrackList = [];
+      if (nameEl)  nameEl.textContent    = 'RAYVER Radio';
+      if (loopBtn) loopBtn.style.display = 'none';
+      renderList(); highlight(prev.scIdx); showTrack(prev.scIdx);
+      userPlayed = true; currentIdx = prev.scIdx;
+      widget.skip(prev.scIdx); widget.play();
+      iframe.style.height = '116px';
+    } else {
+      // Volver a la lista personalizada y continuar con el siguiente track
+      activeRadioPlaylist = prev.playlist;
+      customTrackList     = prev.list;
+      customCurrentIdx    = prev.idx;
+      customPlaylistStarted = false;
+      const pl = (window.userPlaylists || []).find(p => p.id === prev.playlist);
+      if (nameEl) nameEl.textContent = pl?.name || (prev.playlist === '__default__' ? 'RAYVER Radio' : 'Lista');
+      if (loopBtn) loopBtn.style.display = '';
+      renderCustomTracklist(prev.list);
+      const nextIdx = prev.idx + 1;
+      if (nextIdx < prev.list.length) {
+        setTimeout(() => window.playCustomTrack(nextIdx), 400);
+      } else if (prev.loop) {
+        setTimeout(() => window.playCustomTrack(0), 400);
+      } else {
+        showCustomTrack(0);
+        setPlaying(false);
+      }
+    }
+    return true;
   }
 
   function startYtProgress() {
@@ -625,8 +669,8 @@
             setTimeout(() => window.playCustomTrack(0), 400);
           }
         } else {
-          stopCrossfade();
-          setPlaying(false);
+          // Fin de lista — intentar restaurar estado previo (tras "Escuchar")
+          if (!_restorePrevState()) { stopCrossfade(); setPlaying(false); }
         }
         return;
       }
@@ -818,18 +862,49 @@
     isPlaying: () => playing,
     isUsingMiniPlayer: () => youtubeActive,
     getPlaylist: () => enriched,
-    // Busca el track por título/id en la playlist y lo reproduce
-    addAndPlay: (track) => {
-      if (!enriched || !enriched.length) {
-        document.getElementById('radio')?.scrollIntoView({behavior:'smooth'});
-        return;
-      }
-      const title = (track.title || '').toLowerCase();
-      const scId  = track.scId || track.id || '';
-      let idx = enriched.findIndex(t => (t.scId && t.scId === scId) || (t.title||'').toLowerCase() === title);
-      if (idx < 0) idx = 0; // fallback: primera canción
-      window.RADIO_PLAYER.skip(idx);
-      document.getElementById('radio')?.scrollIntoView({behavior:'smooth'});
+    // Reproduce un track del catálogo y luego reanuda lo que había antes
+    addAndPlay: (catalogTrack) => {
+      // Construir objeto de track estándar desde los datos del catálogo
+      const t = {
+        id:         String(catalogTrack.id || ''),
+        itemId:     String(catalogTrack.id || ''),
+        title:      catalogTrack.title || '—',
+        cover:      catalogTrack.cover || null,
+        scUrl:      catalogTrack.scUrl || null,
+        url:        catalogTrack.scUrl || null,
+        videoId:    catalogTrack.youtubeId || catalogTrack.videoId || null,
+        spotifyUrl: catalogTrack.spotifyUrl || catalogTrack.platforms?.spotify || null,
+        type:       'track',
+      };
+
+      // Guardar estado actual para restaurar después
+      _prevPlaylistState = activeRadioPlaylist === null
+        ? { mode: 'radio',  scIdx: currentIdx }
+        : { mode: 'custom', playlist: activeRadioPlaylist, idx: customCurrentIdx,
+            list: customTrackList.slice(), loop: loopPlaylist };
+
+      // Parar lo que hay
+      if (youtubeActive) stopYoutube();
+      else { widget.pause(); iframe.style.height = '0px'; }
+      if (window.MINI_PLAYER?.pause) window.MINI_PLAYER.pause();
+      stopCrossfade();
+      pendingPlay = false;
+
+      // Modo one-shot: lista de un solo track
+      activeRadioPlaylist = '__oneshot__';
+      customCurrentIdx    = 0;
+      customPlaylistStarted = false;
+      loopPlaylist        = false;
+      customTrackList     = [t];
+
+      const nameEl  = document.getElementById('radio-pl-name');
+      const loopBtn = document.getElementById('radio-loop-btn');
+      if (nameEl)  nameEl.textContent    = t.title;
+      if (loopBtn) loopBtn.style.display = 'none';
+      renderCustomTracklist([t]);
+      showCustomTrack(0);
+      window.playCustomTrack(0);
+      document.getElementById('radio')?.scrollIntoView({ behavior: 'smooth' });
     },
   };
   window.radioPlayIdx = idx => window.RADIO_PLAYER.skip(idx);

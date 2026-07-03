@@ -1463,4 +1463,168 @@ app.delete('/api/admin/ambient/access/:id', authMiddleware, (req, res) => {
   res.json({ ok: true });
 });
 
+// ══════════════════════════════════════════════════════════════
+// ANALYTICS SYSTEM
+// ══════════════════════════════════════════════════════════════
+const ANALYTICS_MAX = 200000; // eventos máximos en DB
+const ANALYTICS_TTL = 90;     // días de retención
+
+// Migración
+if (!db.analyticsEvents) { db.analyticsEvents = []; saveDB(db); }
+
+// Rate limiting en memoria (sessionId → timestamp del último lote)
+const _aRateMap = new Map();
+const _aRateLimit = 10000; // ms mínimos entre lotes del mismo session
+
+function _saveAnalytics() {
+  // Limpiar eventos > TTL días
+  const cutoff = new Date(Date.now() - ANALYTICS_TTL * 86400000).toISOString();
+  const before = db.analyticsEvents.length;
+  db.analyticsEvents = db.analyticsEvents.filter(e => e.ts > cutoff);
+  // Cap al máximo
+  if (db.analyticsEvents.length > ANALYTICS_MAX) {
+    db.analyticsEvents = db.analyticsEvents.slice(-ANALYTICS_MAX);
+  }
+  saveDB(db);
+}
+
+// POST /api/analytics/batch — ingesta de eventos (sin auth, anónimo)
+app.post('/api/analytics/batch', (req, res) => {
+  const { events } = req.body || {};
+  if (!Array.isArray(events) || !events.length) return res.json({ ok: true });
+
+  const sid = events[0]?.sessionId || 'unknown';
+  const now = Date.now();
+
+  // Rate limiting: un lote cada 10s por sesión
+  if (_aRateMap.has(sid) && now - _aRateMap.get(sid) < _aRateLimit) {
+    return res.json({ ok: true, skipped: true });
+  }
+  _aRateMap.set(sid, now);
+  // Limpiar el map si crece demasiado
+  if (_aRateMap.size > 50000) {
+    const old = now - 3600000; // 1h
+    _aRateMap.forEach((t, k) => { if (t < old) _aRateMap.delete(k); });
+  }
+
+  // Anonimizar IP: guardar solo país aproximado via header CF o similar
+  // No guardamos IP completa — solo primeros 2 octetos para geo muy aproximado
+  const rawIp = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || '';
+  const anonIp = rawIp.split('.').slice(0, 2).join('.') + '.x.x';
+
+  const ua = req.headers['user-agent'] || '';
+
+  const stored = events.slice(0, 200).map(ev => ({ // max 200 eventos por lote
+    id:        uid(),
+    type:      String(ev.type || 'unknown').slice(0, 60),
+    sessionId: String(ev.sessionId || sid).slice(0, 64),
+    data:      ev.data && typeof ev.data === 'object' ? ev.data : {},
+    device:    String(ev.device || '').slice(0, 20),
+    ua:        ua.slice(0, 200),
+    ip:        anonIp,
+    ts:        typeof ev.ts === 'string' ? ev.ts : new Date().toISOString(),
+  }));
+
+  db.analyticsEvents = [...(db.analyticsEvents || []), ...stored];
+  _saveAnalytics();
+  res.json({ ok: true, received: stored.length });
+});
+
+// ── Helpers de análisis ────────────────────────────────────────
+function _windowStart(days) {
+  return new Date(Date.now() - days * 86400000).toISOString();
+}
+
+function _groupBy(arr, fn) {
+  const out = {};
+  for (const item of arr) {
+    const key = fn(item);
+    if (key == null) continue;
+    out[key] = (out[key] || 0) + 1;
+  }
+  return Object.entries(out).sort((a, b) => b[1] - a[1]);
+}
+
+function _topN(arr, fn, n = 10) {
+  return _groupBy(arr, fn).slice(0, n).map(([k, v]) => ({ label: k, count: v }));
+}
+
+function _uniqueSessions(events) {
+  return new Set(events.map(e => e.sessionId)).size;
+}
+
+function _playsPerDay(events, days = 14) {
+  const map = {};
+  for (let i = 0; i < days; i++) {
+    const d = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
+    map[d] = 0;
+  }
+  for (const e of events) {
+    const d = e.ts.slice(0, 10);
+    if (d in map) map[d]++;
+  }
+  return Object.entries(map).sort((a, b) => a[0].localeCompare(b[0])).map(([date, count]) => ({ date, count }));
+}
+
+// GET /api/admin/analytics/summary
+app.get('/api/admin/analytics/summary', authMiddleware, (req, res) => {
+  const all   = db.analyticsEvents || [];
+  const now7  = _windowStart(7);
+  const now30 = _windowStart(30);
+  const now1  = _windowStart(1);
+
+  const last30 = all.filter(e => e.ts >= now30);
+  const last7  = all.filter(e => e.ts >= now7);
+  const last1  = all.filter(e => e.ts >= now1);
+
+  const plays30 = last30.filter(e => e.type === 'track_play');
+  const plays7  = last7.filter(e => e.type === 'track_play');
+  const plays1  = last1.filter(e => e.type === 'track_play');
+
+  const summary = {
+    totals: {
+      events:    all.length,
+      sessions:  _uniqueSessions(last30),
+      sessions7: _uniqueSessions(last7),
+      sessions1: _uniqueSessions(last1),
+      plays:     plays30.length,
+      plays7:    plays7.length,
+      plays1:    plays1.length,
+      logins:    last30.filter(e => e.type === 'auth_login').length,
+      registers: last30.filter(e => e.type === 'auth_register').length,
+    },
+    topTracks:    _topN(plays30, e => e.data?.title, 15),
+    topSections:  _topN(last30.filter(e => e.type === 'section_view'), e => e.data?.label, 10),
+    topPlatforms: _topN(last30.filter(e => e.type === 'link_click'),   e => e.data?.platform, 8),
+    topSources:   _topN(last30.filter(e => e.type === 'session_start' && e.data?.source), e => e.data?.source, 10),
+    devices:      _topN(last30, e => e.device, 4),
+    playsPerDay:  _playsPerDay(plays30, 14),
+    beatClicks:   _topN(last30.filter(e => e.type === 'beat_card_click' || e.type === 'beat_buy_intent'), e => e.data?.title, 5),
+    ambientPlays: _topN(last30.filter(e => e.type === 'ambient_play'), e => e.data?.title, 5),
+    finishRate: (() => {
+      const finished = last30.filter(e => e.type === 'track_finish').length;
+      const played   = plays30.length;
+      return played ? Math.round((finished / played) * 100) : 0;
+    })(),
+  };
+
+  res.json(summary);
+});
+
+// GET /api/admin/analytics/events?page=0&limit=50&type=
+app.get('/api/admin/analytics/events', authMiddleware, (req, res) => {
+  const page  = Math.max(0, parseInt(req.query.page) || 0);
+  const limit = Math.min(200, parseInt(req.query.limit) || 50);
+  const type  = req.query.type || '';
+
+  let evs = [...(db.analyticsEvents || [])].reverse(); // más recientes primero
+  if (type) evs = evs.filter(e => e.type === type);
+
+  res.json({
+    total: evs.length,
+    page,
+    items: evs.slice(page * limit, (page + 1) * limit),
+  });
+});
+
 app.listen(PORT, () => console.log('Backend escuchando en :' + PORT));

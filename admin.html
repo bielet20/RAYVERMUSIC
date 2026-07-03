@@ -302,6 +302,7 @@ body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--text);min-
         <button class="ni" onclick="showPage('videos')"><i class="fab fa-youtube"></i> Videos</button>
         <button class="ni" onclick="showPage('radio')"><i class="fas fa-broadcast-tower"></i> Radio</button>
         <button class="ni" onclick="showPage('ambiente')"><i class="fas fa-leaf"></i> Ambiente</button>
+        <button class="ni" onclick="showPage('analytics')"><i class="fas fa-chart-bar"></i> Analytics</button>
         <button class="ni" onclick="showPage('settings')"><i class="fas fa-cog"></i> Ajustes</button>
         <a href="/" class="ni"><i class="fas fa-globe"></i> Ver web</a>
       </nav>
@@ -625,6 +626,92 @@ body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--text);min-
           <div class="field"><label>Nota interna (pago, referencia…)</label><input type="text" id="amb-acc-note" placeholder="Ej. Pago PayPal #TX123"></div>
           <div id="amb-acc-error" style="color:#f87171;font-size:13px;margin-bottom:8px;display:none"></div>
           <button class="btn btn-p" onclick="ambGrantAccess()" style="width:100%"><i class="fas fa-key"></i> Conceder acceso</button>
+        </div>
+      </div>
+
+      <!-- ANALYTICS -->
+      <div id="page-analytics" class="page">
+        <div class="page-header">
+          <div><div class="ptitle"><i class="fas fa-chart-bar" style="color:#a855f7"></i> Analytics</div><div class="psub">Interacciones de los últimos 30 días · actualización en tiempo real</div></div>
+          <button class="btn btn-g btn-sm" onclick="analyticsLoad()"><i class="fas fa-sync"></i> Actualizar</button>
+        </div>
+
+        <!-- Stat cards -->
+        <div id="an-cards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:24px"></div>
+
+        <!-- Chart plays/día + top tracks (2 cols) -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+          <div class="gc">
+            <div class="ch"><span class="ct"><i class="fas fa-play-circle" style="color:#a855f7"></i> Plays por día (14d)</span></div>
+            <div style="padding:16px">
+              <div id="an-chart" style="display:flex;align-items:flex-end;gap:4px;height:100px"></div>
+              <div id="an-chart-labels" style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-top:4px"></div>
+            </div>
+          </div>
+          <div class="gc">
+            <div class="ch"><span class="ct"><i class="fas fa-fire" style="color:#f59e0b"></i> Top tracks (30d)</span></div>
+            <div id="an-top-tracks" style="padding:0 0 4px"></div>
+          </div>
+        </div>
+
+        <!-- Secciones + plataformas + fuentes + dispositivos -->
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:16px">
+          <div class="gc">
+            <div class="ch"><span class="ct"><i class="fas fa-layer-group"></i> Secciones más vistas</span></div>
+            <div id="an-sections" style="padding:8px 0"></div>
+          </div>
+          <div class="gc">
+            <div class="ch"><span class="ct"><i class="fas fa-external-link-alt"></i> Clics por plataforma</span></div>
+            <div id="an-platforms" style="padding:8px 0"></div>
+          </div>
+          <div class="gc">
+            <div class="ch"><span class="ct"><i class="fas fa-globe"></i> Fuentes de tráfico</span></div>
+            <div id="an-sources" style="padding:8px 0"></div>
+          </div>
+        </div>
+
+        <!-- Beats + Ambient + Dispositivos -->
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:16px">
+          <div class="gc">
+            <div class="ch"><span class="ct"><i class="fas fa-tag"></i> Beats más vistos</span></div>
+            <div id="an-beats" style="padding:8px 0"></div>
+          </div>
+          <div class="gc">
+            <div class="ch"><span class="ct"><i class="fas fa-leaf" style="color:#34d399"></i> Ambiente más reproducido</span></div>
+            <div id="an-ambient" style="padding:8px 0"></div>
+          </div>
+          <div class="gc">
+            <div class="ch"><span class="ct"><i class="fas fa-mobile-alt"></i> Dispositivos</span></div>
+            <div id="an-devices" style="padding:8px 0"></div>
+          </div>
+        </div>
+
+        <!-- Feed de eventos recientes -->
+        <div class="gc">
+          <div class="ch">
+            <span class="ct"><i class="fas fa-stream"></i> Eventos recientes</span>
+            <div style="display:flex;gap:8px;align-items:center">
+              <select id="an-feed-filter" onchange="analyticsLoadFeed()" style="background:rgba(255,255,255,.06);border:1px solid var(--gb);border-radius:6px;padding:4px 8px;color:var(--text);font-size:12px">
+                <option value="">Todos los tipos</option>
+                <option value="session_start">session_start</option>
+                <option value="track_play">track_play</option>
+                <option value="track_finish">track_finish</option>
+                <option value="section_view">section_view</option>
+                <option value="link_click">link_click</option>
+                <option value="beat_card_click">beat_card_click</option>
+                <option value="ambient_play">ambient_play</option>
+                <option value="auth_login">auth_login</option>
+                <option value="auth_register">auth_register</option>
+              </select>
+              <button class="btn btn-g btn-sm" onclick="analyticsLoadFeed()"><i class="fas fa-sync"></i></button>
+            </div>
+          </div>
+          <div id="an-feed" style="padding:4px 0;max-height:400px;overflow-y:auto;font-size:12px"></div>
+          <div style="padding:12px 16px;display:flex;gap:8px;align-items:center">
+            <button class="btn btn-g btn-sm" id="an-feed-prev" onclick="anFeedPage--; analyticsLoadFeed()" disabled>← Anterior</button>
+            <span id="an-feed-info" style="font-size:12px;color:var(--muted)"></span>
+            <button class="btn btn-g btn-sm" id="an-feed-next" onclick="anFeedPage++; analyticsLoadFeed()">Siguiente →</button>
+          </div>
         </div>
       </div>
 
@@ -2621,4 +2708,179 @@ async function ambRevokeAccess(id) {
   ambLoadAccess();
   toast('Acceso revocado', 'ok');
 }
+
+// ══════════════════════════════════════════════
+// MÓDULO ANALYTICS
+// ══════════════════════════════════════════════
+let anFeedPage = 0;
+let _anRefresh = null;
+
+const AN_TYPE_ICONS = {
+  session_start:    '🟢',
+  session_end:      '🔴',
+  track_play:       '▶️',
+  track_pause:      '⏸️',
+  track_finish:     '✅',
+  section_view:     '👁️',
+  section_time:     '⏱️',
+  link_click:       '🔗',
+  external_click:   '↗️',
+  beat_card_click:  '🎵',
+  beat_buy_intent:  '🛒',
+  ambient_play:     '🌿',
+  auth_login:       '🔑',
+  auth_register:    '🆕',
+};
+
+function anIcon(type) { return AN_TYPE_ICONS[type] || '·'; }
+function anFmt(ts) {
+  try {
+    const d = new Date(ts);
+    return d.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' })
+         + ' ' + d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+  } catch { return ts?.slice(0, 16) || '—'; }
+}
+
+function _anBar(count, max, color) {
+  const pct = max ? Math.max(4, Math.round((count / max) * 100)) : 0;
+  return `<div style="height:6px;border-radius:3px;background:rgba(255,255,255,.08);overflow:hidden;margin-top:3px">
+    <div style="height:100%;width:${pct}%;background:${color || 'var(--primary-2)'};border-radius:3px;transition:width .4s"></div>
+  </div>`;
+}
+
+function _anList(el, items, color, labelFn) {
+  const container = document.getElementById(el);
+  if (!container) return;
+  if (!items?.length) { container.innerHTML = '<div style="padding:12px 16px;color:var(--muted);font-size:13px">Sin datos aún</div>'; return; }
+  const max = items[0].count;
+  container.innerHTML = items.map((it, i) => `
+    <div style="padding:7px 16px">
+      <div style="display:flex;justify-content:space-between;font-size:13px">
+        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:70%">${i === 0 ? '🥇 ' : i === 1 ? '🥈 ' : i === 2 ? '🥉 ' : ''}${_esc(labelFn ? labelFn(it) : it.label)}</span>
+        <span style="color:${color || 'var(--primary-2)'};font-weight:700;flex-shrink:0">${it.count}</span>
+      </div>
+      ${_anBar(it.count, max, color)}
+    </div>`).join('');
+}
+
+async function analyticsLoad() {
+  const r = await apiFetch('GET', '/admin/analytics/summary');
+  if (!r.ok) return;
+  const d = r.data;
+
+  // Cards
+  const cards = document.getElementById('an-cards');
+  if (cards) cards.innerHTML = [
+    { icon: '📅', label: 'Sesiones hoy',     val: d.totals.sessions1, sub: 'últimas 24h' },
+    { icon: '📊', label: 'Sesiones (7d)',     val: d.totals.sessions7, sub: 'últimos 7 días' },
+    { icon: '🌍', label: 'Sesiones (30d)',    val: d.totals.sessions,  sub: 'últimos 30 días' },
+    { icon: '▶️', label: 'Plays hoy',         val: d.totals.plays1,    sub: 'últimas 24h' },
+    { icon: '🎵', label: 'Plays (7d)',         val: d.totals.plays7,    sub: 'últimos 7 días' },
+    { icon: '🔥', label: 'Plays (30d)',        val: d.totals.plays,     sub: 'últimos 30 días' },
+    { icon: '✅', label: 'Tasa de fin',        val: d.finishRate + '%', sub: 'tracks escuchados al final' },
+    { icon: '🔑', label: 'Logins (30d)',       val: d.totals.logins,    sub: 'inicios de sesión' },
+    { icon: '🆕', label: 'Registros (30d)',    val: d.totals.registers, sub: 'cuentas nuevas' },
+    { icon: '📁', label: 'Total eventos',      val: d.totals.events,    sub: 'en base de datos' },
+  ].map(c => `<div style="background:rgba(255,255,255,.04);border:1px solid var(--gb);border-radius:14px;padding:16px">
+    <div style="font-size:1.6rem;margin-bottom:4px">${c.icon}</div>
+    <div style="font-size:1.4rem;font-weight:800;color:var(--text)">${c.val}</div>
+    <div style="font-size:12px;font-weight:600;margin-bottom:2px">${c.label}</div>
+    <div style="font-size:11px;color:var(--muted)">${c.sub}</div>
+  </div>`).join('');
+
+  // Bar chart plays/día
+  const chartEl  = document.getElementById('an-chart');
+  const labelsEl = document.getElementById('an-chart-labels');
+  if (chartEl && d.playsPerDay?.length) {
+    const maxP = Math.max(...d.playsPerDay.map(x => x.count), 1);
+    chartEl.innerHTML = d.playsPerDay.map(x => {
+      const h = Math.max(4, Math.round((x.count / maxP) * 92));
+      const dow = new Date(x.date).toLocaleDateString('es-ES', { weekday: 'short' });
+      return `<div title="${x.date}: ${x.count} plays" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;cursor:default">
+        <span style="font-size:10px;color:var(--muted)">${x.count || ''}</span>
+        <div style="width:100%;height:${h}px;background:linear-gradient(to top,var(--primary-2),var(--primary-3));border-radius:4px 4px 0 0;opacity:${x.count ? 1 : 0.2}"></div>
+      </div>`;
+    }).join('');
+    if (labelsEl) labelsEl.innerHTML = d.playsPerDay.map(x => {
+      const dow = new Date(x.date).toLocaleDateString('es-ES', { weekday: 'short' });
+      return `<span>${dow}</span>`;
+    }).join('');
+  }
+
+  // Top tracks
+  _anList('an-top-tracks', d.topTracks, '#a855f7');
+  // Secciones
+  _anList('an-sections', d.topSections, '#6366f1');
+  // Plataformas
+  _anList('an-platforms', d.topPlatforms, '#f59e0b');
+  // Fuentes
+  _anList('an-sources', d.topSources, '#34d399');
+  // Beats
+  _anList('an-beats', d.beatClicks, '#ec4899');
+  // Ambient
+  _anList('an-ambient', d.ambientPlays, '#10b981');
+  // Dispositivos
+  _anList('an-devices', d.devices, '#8b5cf6');
+
+  analyticsLoadFeed();
+}
+
+async function analyticsLoadFeed() {
+  const filter  = document.getElementById('an-feed-filter')?.value || '';
+  const limit   = 50;
+  const r = await apiFetch('GET', `/admin/analytics/events?page=${anFeedPage}&limit=${limit}&type=${filter}`);
+  if (!r.ok) return;
+  const { total, items, page } = r.data;
+
+  const feedEl = document.getElementById('an-feed');
+  const infoEl = document.getElementById('an-feed-info');
+  const prevBtn = document.getElementById('an-feed-prev');
+  const nextBtn = document.getElementById('an-feed-next');
+
+  if (infoEl) infoEl.textContent = `${total} eventos · página ${anFeedPage + 1}`;
+  if (prevBtn) prevBtn.disabled = anFeedPage === 0;
+  if (nextBtn) nextBtn.disabled = (anFeedPage + 1) * limit >= total;
+
+  if (!items?.length) {
+    if (feedEl) feedEl.innerHTML = '<div style="padding:16px;color:var(--muted)">Sin eventos en este filtro.</div>';
+    return;
+  }
+
+  if (feedEl) feedEl.innerHTML = `<table style="width:100%;border-collapse:collapse">
+    <thead><tr style="font-size:11px;color:var(--muted);border-bottom:1px solid var(--gb)">
+      <th style="padding:6px 12px;text-align:left;width:110px">Hora</th>
+      <th style="padding:6px 8px;text-align:left;width:32px"></th>
+      <th style="padding:6px 8px;text-align:left">Tipo</th>
+      <th style="padding:6px 8px;text-align:left">Datos</th>
+      <th style="padding:6px 8px;text-align:left;width:70px">Disp.</th>
+      <th style="padding:6px 8px;text-align:left;width:80px">Sesión</th>
+    </tr></thead>
+    <tbody>${items.map(ev => {
+      const dataStr = Object.entries(ev.data || {}).filter(([k,v]) => v).map(([k,v]) => `<span style="color:var(--muted)">${k}:</span> ${_esc(String(v).slice(0,50))}`).join(' · ');
+      return `<tr style="border-bottom:1px solid rgba(255,255,255,.03);font-size:12px">
+        <td style="padding:5px 12px;color:var(--muted);white-space:nowrap">${anFmt(ev.ts)}</td>
+        <td style="padding:5px 8px;font-size:14px">${anIcon(ev.type)}</td>
+        <td style="padding:5px 8px;font-family:monospace;color:var(--primary-2)">${_esc(ev.type)}</td>
+        <td style="padding:5px 8px;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${dataStr}</td>
+        <td style="padding:5px 8px;color:var(--muted)">${ev.device || '—'}</td>
+        <td style="padding:5px 8px;color:var(--muted);font-family:monospace">${ev.sessionId?.slice(0,8) || '—'}</td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table>`;
+}
+
+// Hook en showPage para cargar analytics al entrar
+const _origShowPageAn = window.showPage;
+window.showPage = function(p) {
+  _origShowPageAn(p);
+  if (p === 'analytics') {
+    anFeedPage = 0;
+    analyticsLoad();
+    clearInterval(_anRefresh);
+    _anRefresh = setInterval(analyticsLoad, 30000); // refresh cada 30s
+  } else {
+    clearInterval(_anRefresh);
+    _anRefresh = null;
+  }
+};
 </script>

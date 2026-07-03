@@ -62,6 +62,7 @@ window.submitLogin = async function(e) {
   btn.disabled = false; btn.textContent = 'Iniciar sesión';
   if (!r.ok) { errEl.textContent = r.data.error || 'Error al iniciar sesión'; return; }
   setToken(r.data.token, r.data.user);
+  window.TRACKER?.onLogin('email');
   closeAuthModal();
   updateAuthUI();
   await loadUserPlaylists();
@@ -82,6 +83,7 @@ window.submitRegister = async function(e) {
   btn.disabled = false; btn.textContent = 'Crear cuenta';
   if (!r.ok) { errEl.textContent = r.data.error || 'Error al registrarse'; return; }
   setToken(r.data.token, r.data.user);
+  window.TRACKER?.onRegister('email');
   closeAuthModal();
   updateAuthUI();
   await loadUserPlaylists();

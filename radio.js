@@ -558,6 +558,11 @@
       widget.getCurrentSoundIndex(idx => {
         if (typeof idx !== 'number') return;
         currentIdx = idx;
+        // Tracker: registrar reproducción
+        const playTitle = activeRadioPlaylist !== null
+          ? (customTrackList[customCurrentIdx]?.title || '')
+          : (scSounds[idx]?.title || '');
+        if (playTitle) window.TRACKER?.onTrackPlay(playTitle, activeRadioPlaylist ? 'custom' : 'radio');
         // Si hay lista personalizada activa, no sobrescribir el header con datos de SC
         if (activeRadioPlaylist !== null) return;
         if (!scSounds[idx]?.title) {
@@ -570,12 +575,25 @@
       });
     });
 
-    widget.bind(SC.Widget.Events.PAUSE, () => setPlaying(false));
+    widget.bind(SC.Widget.Events.PAUSE, () => {
+      setPlaying(false);
+      // Tracker: pausa (aproximación de % escuchado via fillEl)
+      const pct = parseFloat(fillEl?.style.width) || 0;
+      const title = activeRadioPlaylist !== null
+        ? (customTrackList[customCurrentIdx]?.title || '')
+        : (scSounds[currentIdx]?.title || '');
+      if (title) window.TRACKER?.onTrackPause(title, pct);
+    });
 
     widget.bind(SC.Widget.Events.FINISH, () => {
       iframe.style.height = '0px';
       if (fillEl) fillEl.style.width = '0%';
       if (curEl) curEl.textContent = '0:00';
+      // Tracker: track terminado
+      const finTitle = activeRadioPlaylist !== null
+        ? (customTrackList[customCurrentIdx]?.title || '')
+        : (scSounds[currentIdx]?.title || '');
+      if (finTitle) window.TRACKER?.onTrackFinish(finTitle);
       // Modo lista personalizada: avanzar al siguiente track de la lista
       if (activeRadioPlaylist !== null) {
         const next = customCurrentIdx + 1;

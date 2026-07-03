@@ -59,7 +59,17 @@ app.use(express.json({ limit: '5mb' }));
 
 // ───────────────────────── DB helpers ─────────────────────────
 function loadDB() {
+  const BAK = DATA_FILE + '.bak';
   if (!fs.existsSync(DATA_FILE)) {
+    // Intentar recuperar desde backup antes de crear DB vacía
+    if (fs.existsSync(BAK)) {
+      try {
+        const bak = JSON.parse(fs.readFileSync(BAK, 'utf8'));
+        console.log('[DB] db.json no encontrado — restaurando desde backup');
+        fs.writeFileSync(DATA_FILE, JSON.stringify(bak, null, 2));
+        return bak;
+      } catch (e) { console.warn('[DB] Backup corrupto, creando DB nueva:', e.message); }
+    }
     const defaultPass = process.env.ADMIN_PASSWORD || 'rayver2025';
     const initial = {
       tracks: [], albums: [], videos: [], products: [], members: [], orders: [],
@@ -69,9 +79,28 @@ function loadDB() {
     fs.writeFileSync(DATA_FILE, JSON.stringify(initial, null, 2));
     return initial;
   }
-  return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+  try {
+    return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+  } catch (e) {
+    // DB corrupta — intentar backup
+    console.error('[DB] ERROR leyendo db.json:', e.message);
+    if (fs.existsSync(BAK)) {
+      try {
+        const bak = JSON.parse(fs.readFileSync(BAK, 'utf8'));
+        console.log('[DB] Restaurando desde backup tras error de lectura');
+        fs.copyFileSync(BAK, DATA_FILE);
+        return bak;
+      } catch (_) {}
+    }
+    throw e;
+  }
 }
-function saveDB(db) { fs.writeFileSync(DATA_FILE, JSON.stringify(db, null, 2)); }
+function saveDB(db) {
+  const BAK = DATA_FILE + '.bak';
+  // Backup del estado anterior antes de sobreescribir
+  try { if (fs.existsSync(DATA_FILE)) fs.copyFileSync(DATA_FILE, BAK); } catch (_) {}
+  fs.writeFileSync(DATA_FILE, JSON.stringify(db, null, 2));
+}
 let db = loadDB();
 console.log(`[DB] Archivo: ${DATA_FILE} | Usuarios: ${(db.users||[]).length} | Listas: ${(db.playlists||[]).length} | Tracks: ${(db.tracks||[]).length}`);
 
@@ -963,7 +992,7 @@ app.get('/api/admin/sc-diag', authMiddleware, async (req, res) => {
 
 // Diagnóstico del sistema de ficheros
 app.get('/api/admin/diag', authMiddleware, (req, res) => {
-  const info = { DATA_DIR, DATA_FILE, fileExists: false, fileSize: 0, files: [], mountInfo: 'unknown', users: 0, playlists: 0 };
+  const info = { DATA_DIR, DATA_FILE, fileExists: false, fileSize: 0, files: [], mountInfo: 'unknown', users: 0, playlists: 0, tracks: 0, totalPlaylistTracks: 0 };
   info.fileExists = fs.existsSync(DATA_FILE);
   if (info.fileExists) try { info.fileSize = fs.statSync(DATA_FILE).size; } catch(e) {}
   try { info.files = fs.readdirSync(DATA_DIR); } catch(e) { info.files = ['ERR:' + e.message]; }
@@ -974,6 +1003,8 @@ app.get('/api/admin/diag', authMiddleware, (req, res) => {
   } catch(e) { info.mountInfo = 'error: ' + e.message; }
   info.users = (db.users || []).length;
   info.playlists = (db.playlists || []).length;
+  info.tracks = (db.tracks || []).length;
+  info.totalPlaylistTracks = (db.playlists || []).reduce((s, p) => s + (p.tracks?.length || 0), 0);
   res.json(info);
 });
 

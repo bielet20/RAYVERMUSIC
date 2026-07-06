@@ -60,7 +60,7 @@ window.submitLogin = async function(e) {
     body: JSON.stringify({ email: document.getElementById('login-email').value, password: document.getElementById('login-password').value })
   });
   btn.disabled = false; btn.textContent = 'Iniciar sesión';
-  if (!r.ok) { errEl.textContent = r.data.error || 'Error al iniciar sesión'; return; }
+  if (!r.ok || !r.data?.token) { errEl.textContent = r.data?.error || 'Error de conexión. Inténtalo de nuevo.'; return; }
   setToken(r.data.token, r.data.user);
   window.TRACKER?.onLogin('email');
   closeAuthModal();
@@ -81,7 +81,7 @@ window.submitRegister = async function(e) {
     body: JSON.stringify({ name: document.getElementById('reg-name').value, email: document.getElementById('reg-email').value, password: document.getElementById('reg-password').value })
   });
   btn.disabled = false; btn.textContent = 'Crear cuenta';
-  if (!r.ok) { errEl.textContent = r.data.error || 'Error al registrarse'; return; }
+  if (!r.ok || !r.data?.token) { errEl.textContent = r.data?.error || 'Error de conexión. Inténtalo de nuevo.'; return; }
   setToken(r.data.token, r.data.user);
   window.TRACKER?.onRegister('email');
   closeAuthModal();
@@ -703,8 +703,15 @@ document.addEventListener('DOMContentLoaded', () => {
   // ── API ──────────────────────────────────────────────────────────
   const API = '/api/public';
   async function apiGet(path) {
-    try { const r = await fetch(API+path); if(!r.ok) return null; return await r.json(); }
-    catch { return null; }
+    try {
+      const ctrl = new AbortController();
+      const tid = setTimeout(() => ctrl.abort(), 10000); // 10s máximo
+      const r = await fetch(API + path, { signal: ctrl.signal });
+      clearTimeout(tid);
+      if (!r.ok) return null;
+      const json = await r.json();
+      return json ?? null; // si el backend devuelve literal null, tratar como vacío
+    } catch { return null; }
   }
 
   const PLATS = {

@@ -860,7 +860,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     _renderedTracks = tracks;
-    grid.innerHTML = tracks.map((t, i) => {
+    try { grid.innerHTML = tracks.map((t, i) => {
       const pillsArr = Object.entries(t.platforms||{}).filter(([,v])=>v).map(([k,v])=>{
         const p = PLATS[k]||{l:k,c:'ptag-lk',i:'fas fa-link'};
         return `<a href="${esc(v)}" target="_blank" class="ptag ${p.c}"><i class="${p.i}"></i> ${p.l}</a>`;
@@ -904,7 +904,11 @@ document.addEventListener('DOMContentLoaded', () => {
           <div class="track-hold-hint">Mantén pulsado para más opciones</div>
         </div>`;
     }).join('');
-    grid.querySelectorAll('.reveal').forEach(el => revealObs.observe(el));
+      grid.querySelectorAll('.reveal').forEach(el => revealObs.observe(el));
+    } catch (e) {
+      console.error('[renderMusicGrid] ERROR al renderizar tracks:', e);
+      grid.innerHTML = '<div class="music-empty" style="color:#f87171">Error al mostrar canciones.<br><small>Revisa la consola del navegador.</small></div>';
+    }
   }
 
   // ── TRACK ACTION SHEET (bottom sheet) ────────────────────────────
@@ -1155,24 +1159,30 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   async function loadTracks() {
-    const tracks = await apiGet('/tracks');
-    const grid   = document.getElementById('music-grid');
+    const grid = document.getElementById('music-grid');
     if (!grid) return;
+    try {
+      const tracks = await apiGet('/tracks');
+      console.log('[loadTracks] respuesta API:', tracks ? tracks.length + ' tracks' : 'null/vacío');
 
-    if (tracks?.length) {
-      allTracks = tracks;
-      const el = document.getElementById('stat-tracks');  if (el) el.textContent = tracks.length;
-      const ab = document.getElementById('about-tracks'); if (ab) ab.textContent = tracks.length;
-    } else {
-      allTracks = [{
-        id: 'feel-it', title: 'Feel It In The Air', artist: 'RAYVER', type: 'single',
-        platforms: { spotify: 'https://open.spotify.com/artist/0GmwWh84e70RNGNkYOwE6d' }
-      }];
+      if (tracks?.length) {
+        allTracks = tracks;
+        const el = document.getElementById('stat-tracks');  if (el) el.textContent = tracks.length;
+        const ab = document.getElementById('about-tracks'); if (ab) ab.textContent = tracks.length;
+      } else {
+        allTracks = [{
+          id: 'feel-it', title: 'Feel It In The Air', artist: 'RAYVER', type: 'single',
+          platforms: { spotify: 'https://open.spotify.com/artist/0GmwWh84e70RNGNkYOwE6d' }
+        }];
+      }
+
+      buildFilterBar();
+      applyFilters();
+      attachTrackCtxMenu();
+    } catch (e) {
+      console.error('[loadTracks] ERROR:', e);
+      grid.innerHTML = '<div class="music-empty" style="color:#f87171">Error al cargar el catálogo.<br><small>Recarga la página o contacta al administrador.</small></div>';
     }
-
-    buildFilterBar();
-    applyFilters();
-    attachTrackCtxMenu();
   }
 
   // ── VIDEOS + MINI PLAYER ─────────────────────────────────────────

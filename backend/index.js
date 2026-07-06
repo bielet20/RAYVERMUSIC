@@ -549,6 +549,7 @@ async function syncSoundCloud() {
             genre: t.genre || '',
             source: existing && existing.source === 'spotify' ? existing.source : 'soundcloud',
             order: existing ? existing.order : db.tracks.length,
+            visible: existing ? existing.visible !== false : true,
             updatedAt: new Date().toISOString()
           };
           if (existing) { Object.assign(existing, trackData); result.updated++; }
@@ -579,6 +580,7 @@ async function syncSoundCloud() {
           genre:      t.genre || '',
           source:     existing && existing.source === 'spotify' ? existing.source : 'soundcloud',
           order:      existing ? existing.order : db.tracks.length,
+          visible:    existing ? existing.visible !== false : true,
           updatedAt:  new Date().toISOString(),
         };
         if (existing) { Object.assign(existing, trackData); result.updated++; }
@@ -650,6 +652,10 @@ app.get('/api/sync/status', authMiddleware, (req, res) => {
   res.json({
     running: syncRunning,
     logs: db.syncLog || [],
+    totals: {
+      tracks: (db.tracks || []).length,
+      videos: (db.videos || []).length,
+    },
     config: {
       spotifyArtists: CONFIG.spotifyArtistIds,
       youtubeChannels: CONFIG.youtubeChannelIds,
@@ -673,7 +679,7 @@ setInterval(() => runFullSync('scheduled').catch(e => console.error('sync schedu
 
 // ───────────────────────── RUTAS PÚBLICAS (frontend) ─────────────────────────
 app.get('/api/public/tracks', (req, res) => {
-  let tracks = (db.tracks || []).slice();
+  let tracks = (db.tracks || []).filter(t => t.visible !== false);
 
   // Filtros opcionales: ?genre=Trance&type=single&q=feel&sort=newest&bpm_min=120&bpm_max=140
   const { genre, type, q, sort, bpm_min, bpm_max } = req.query;
@@ -1042,6 +1048,27 @@ app.post('/api/admin/db-restore', authMiddleware, (req, res) => {
 });
 
 // Enlazar video de YouTube con un track manualmente
+// Visibilidad masiva — activar o desactivar todos los tracks de una vez
+// (debe ir ANTES de /:id/visible para que Express no lo trate como id)
+app.patch('/api/admin/tracks/bulk-visible', authMiddleware, (req, res) => {
+  const { visible, ids } = req.body || {};
+  const targets = ids?.length
+    ? (db.tracks || []).filter(t => ids.includes(String(t.id)))
+    : (db.tracks || []);
+  targets.forEach(t => { t.visible = visible !== false; });
+  saveDB(db);
+  res.json({ ok: true, updated: targets.length, visible: visible !== false });
+});
+
+// Toggle visibilidad en la web pública
+app.patch('/api/admin/tracks/:id/visible', authMiddleware, (req, res) => {
+  const track = (db.tracks || []).find(t => String(t.id) === String(req.params.id));
+  if (!track) return res.status(404).json({ error: 'Track no encontrado' });
+  track.visible = req.body.visible !== false;
+  saveDB(db);
+  res.json({ ok: true, id: track.id, visible: track.visible });
+});
+
 app.patch('/api/admin/tracks/:id/videoId', authMiddleware, (req, res) => {
   const track = (db.tracks || []).find(t => String(t.id) === String(req.params.id));
   if (!track) return res.status(404).json({ error: 'Track no encontrado' });

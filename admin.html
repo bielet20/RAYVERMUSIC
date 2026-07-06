@@ -119,6 +119,14 @@ body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--text);min-
 .tad{background:rgba(167,139,250,.1);color:var(--purple);border:1px dashed rgba(167,139,250,.4)}
 .tact{display:flex;gap:2px;flex-shrink:0}
 
+/* VISIBILITY TOGGLE */
+.vis-toggle{position:relative;display:inline-block;width:36px;height:20px;flex-shrink:0;cursor:pointer}
+.vis-toggle input{opacity:0;width:0;height:0;position:absolute}
+.vis-slider{position:absolute;inset:0;border-radius:20px;background:rgba(255,255,255,.12);transition:.2s}
+.vis-slider:before{content:'';position:absolute;width:14px;height:14px;left:3px;top:3px;border-radius:50%;background:#666;transition:.2s}
+.vis-toggle input:checked+.vis-slider{background:#22c55e}
+.vis-toggle input:checked+.vis-slider:before{background:#fff;transform:translateX(16px)}
+
 /* VIDEO LIST */
 .vrow{display:flex;align-items:center;gap:14px;padding:14px 20px;
   border-bottom:1px solid var(--gb);transition:background .1s}
@@ -337,7 +345,13 @@ body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--text);min-
         </div>
 
         <div class="gc">
-          <div class="ch"><span class="ct">Todas las canciones</span></div>
+          <div class="ch">
+            <span class="ct">Todas las canciones <span id="tracks-count-badge" style="font-size:12px;color:var(--muted);font-weight:400"></span></span>
+            <div style="display:flex;gap:8px;align-items:center">
+              <button class="btn btn-g btn-sm" onclick="bulkVisible(true)" title="Activar todas en la web"><i class="fas fa-eye"></i> Activar todas</button>
+              <button class="btn btn-g btn-sm" onclick="bulkVisible(false)" title="Ocultar todas de la web"><i class="fas fa-eye-slash"></i> Ocultar todas</button>
+            </div>
+          </div>
           <ul class="tlist" id="track-list"><li class="loading"><i class="fas fa-circle-notch spin"></i> Cargando…</li></ul>
         </div>
       </div>
@@ -1152,7 +1166,10 @@ async function syncScUrls() {
 
 function renderTracks() {
   const ul = document.getElementById('track-list');
-  if (!tracks.length) { ul.innerHTML=`<li class="empty"><i class="fas fa-music"></i><p>Sin canciones. Añade la primera.</p></li>`; return; }
+  const badge = document.getElementById('tracks-count-badge');
+  if (!tracks.length) { ul.innerHTML=`<li class="empty"><i class="fas fa-music"></i><p>Sin canciones. Sincroniza o añade la primera.</p></li>`; if(badge) badge.textContent=''; return; }
+  const visibleCount = tracks.filter(t => t.visible !== false).length;
+  if (badge) badge.textContent = `— ${visibleCount} visibles / ${tracks.length} total`;
   ul.innerHTML = tracks.map((t,i) => {
     const g = GRADS[i%GRADS.length];
     const cov = t.cover ? `<img src="${t.cover}" alt="">` : '<i class="fas fa-music" style="color:rgba(255,255,255,.4)"></i>';
@@ -1160,7 +1177,8 @@ function renderTracks() {
       const p=PLATS[k]||{l:k,c:'tad',i:'fas fa-link'};
       return `<a href="${esc(v)}" target="_blank" class="ptag ${p.c}"><i class="${p.i}"></i>${p.l}</a>`;
     }).join('');
-    return `<li class="trow">
+    const isVisible = t.visible !== false;
+    return `<li class="trow" style="${isVisible?'':'opacity:.45'}">
       <div class="tcov" style="background:${g}">${cov}</div>
       <div class="tinfo">
         <div class="tname">${esc(t.title)}</div>
@@ -1169,12 +1187,34 @@ function renderTracks() {
           <button class="ptag tad" onclick="openTrackModal('${t.id}')"><i class="fas fa-pen"></i> editar links</button>
         </div>
       </div>
-      <div class="tact">
+      <div class="tact" style="display:flex;align-items:center;gap:10px">
+        <label class="vis-toggle" title="${isVisible?'Visible en la web — click para ocultar':'Oculto en la web — click para activar'}">
+          <input type="checkbox" ${isVisible?'checked':''} onchange="toggleVisible('${t.id}',this.checked)">
+          <span class="vis-slider"></span>
+        </label>
         <button class="ib" onclick="openTrackModal('${t.id}')" title="Editar"><i class="fas fa-pen"></i></button>
         <button class="db" onclick="delTrack('${t.id}')" title="Eliminar"><i class="fas fa-trash"></i></button>
       </div>
     </li>`;
   }).join('');
+}
+
+async function toggleVisible(id, visible) {
+  const r = await apiFetch('PATCH', '/admin/tracks/' + id + '/visible', { visible });
+  if (!r.ok) return toast('Error al actualizar visibilidad', 'err');
+  const t = tracks.find(x => x.id === id);
+  if (t) t.visible = visible;
+  renderTracks();
+}
+
+async function bulkVisible(visible) {
+  const label = visible ? 'Activar todas las canciones en la web' : 'Ocultar todas las canciones de la web';
+  if (!confirm(label + '?')) return;
+  const r = await apiFetch('PATCH', '/admin/tracks/bulk-visible', { visible });
+  if (!r.ok) return toast('Error', 'err');
+  tracks.forEach(t => t.visible = visible);
+  renderTracks();
+  toast(visible ? `${r.data.updated} canciones activadas ✓` : `${r.data.updated} canciones ocultas`);
 }
 
 function renderAlbums() {

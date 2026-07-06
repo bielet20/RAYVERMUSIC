@@ -538,13 +538,15 @@ async function syncSoundCloud() {
         }
         for (const t of allTracks) {
           const existing = db.tracks.find(x => x.scId === t.id);
+          const newCover = (t.artwork_url ? t.artwork_url.replace('-large', '-t500x500') : '')
+            || (t.user && t.user.avatar_url) || (existing ? existing.cover : '') || '';
           const trackData = {
             id: existing ? existing.id : uid(),
             title: t.title,
             artist: (t.user && t.user.username) || 'RAYVER',
             scId: t.id,
             scUrl: t.permalink_url,
-            cover: t.artwork_url ? t.artwork_url.replace('-large', '-t500x500') : ((t.user && t.user.avatar_url) || ''),
+            cover: newCover,
             durationMs: t.duration,
             genre: t.genre || '',
             source: existing && existing.source === 'spotify' ? existing.source : 'soundcloud',
@@ -569,13 +571,15 @@ async function syncSoundCloud() {
       const scTracks = await syncSCTracksPublic(CONFIG.scUser);
       for (const t of scTracks) {
         const existing = db.tracks.find(x => x.scId === String(t.id));
+        const newCoverPub = (t.artwork_url ? t.artwork_url.replace('-large', '-t500x500') : '')
+          || (t.user && t.user.avatar_url) || (existing ? existing.cover : '') || '';
         const trackData = {
           id:         existing ? existing.id : uid(),
           title:      t.title,
           artist:     (t.user && t.user.username) || 'RAYVER',
           scId:       String(t.id),
           scUrl:      t.permalink_url,
-          cover:      t.artwork_url ? t.artwork_url.replace('-large', '-t500x500') : ((t.user && t.user.avatar_url) || ''),
+          cover:      newCoverPub,
           durationMs: t.duration,
           genre:      t.genre || '',
           source:     existing && existing.source === 'spotify' ? existing.source : 'soundcloud',

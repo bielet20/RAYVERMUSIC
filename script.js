@@ -869,6 +869,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const p = PLATS.spotify;
         pillsArr.push(`<a href="${esc(t.spotifyUrl)}" target="_blank" class="ptag ${p.c}"><i class="${p.i}"></i> ${p.l}</a>`);
       }
+      if (t.scUrl && !pillsArr.length) {
+        pillsArr.push(`<a href="${esc(t.scUrl)}" target="_blank" class="ptag ptag-sc"><i class="fab fa-soundcloud"></i> SoundCloud</a>`);
+      }
       const pills = pillsArr.join('');
       const coverStyle = t.cover
         ? `background-image:url(${esc(t.cover)});background-size:cover;background-position:center`

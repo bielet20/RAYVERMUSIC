@@ -113,6 +113,11 @@ function updateAuthUI() {
     userMenu && (userMenu.style.display = 'none');
   }
   _updateMobileAuthBtn();
+  // Recargar sección ambient al cambiar estado de auth
+  if (typeof _ambData !== 'undefined' && document.getElementById('ambient-track-list')) {
+    _ambData.access = null;
+    if (typeof loadAmbient === 'function') loadAmbient();
+  }
 }
 
 function _closeMobileMenu() {
@@ -1534,6 +1539,11 @@ document.addEventListener('DOMContentLoaded', () => {
   loadBeats();
   loadGenres();
   loadAmbient();
+
+  // Auto-refresco del catálogo al volver a la pestaña (captura cambios de sync)
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') loadTracks();
+  });
 });
 
 // ══════════════════════════════════════════════════════════════
@@ -1775,16 +1785,3 @@ function ambRequestPack(packId, packTitle, price, currency) {
   if (!AUTH.user) { openAuthModal(); return; }
   showToastGlobal(`Para comprar "${packTitle}" (${price} ${currency}), contacta con el administrador.`);
 }
-
-// Hook into updateAuthUI to reload access info
-const _origUpdateAuthUI = window.updateAuthUI ? window.updateAuthUI.bind(window) : null;
-// Also reload ambient on login/logout
-const _ambOrigUpdateUI = updateAuthUI;
-function updateAuthUI() {
-  _ambOrigUpdateUI();
-  if (document.getElementById('ambient-track-list')) {
-    _ambData.access = null;
-    loadAmbient();
-  }
-}
-window.updateAuthUI = updateAuthUI;

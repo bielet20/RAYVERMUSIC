@@ -104,6 +104,17 @@ function saveDB(db) {
 let db = loadDB();
 console.log(`[DB] Archivo: ${DATA_FILE} | Usuarios: ${(db.users||[]).length} | Listas: ${(db.playlists||[]).length} | Tracks: ${(db.tracks||[]).length}`);
 
+// Si ADMIN_PASSWORD está definida en el entorno, aplicarla siempre al arrancar.
+// Esto permite resetear la contraseña desde Coolify sin perder datos.
+if (process.env.ADMIN_PASSWORD) {
+  const envHash = crypto.createHash('sha256').update(process.env.ADMIN_PASSWORD).digest('hex');
+  if (db.password_hash !== envHash) {
+    db.password_hash = envHash;
+    saveDB(db);
+    console.log('[DB] Contraseña de admin actualizada desde ADMIN_PASSWORD env var');
+  }
+}
+
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
 
 // Migrate: seed missing collections

@@ -652,21 +652,22 @@
       if (finTitle) window.TRACKER?.onTrackFinish(finTitle);
       // Modo lista personalizada: avanzar al siguiente track de la lista
       if (activeRadioPlaylist !== null) {
-        const next = customCurrentIdx + 1;
-        if (next < customTrackList.length) {
+        const next = _nextCustomIdx();
+        const withinBounds = shuffle ? true : next < customTrackList.length;
+        if (withinBounds && customTrackList[next]) {
           if (automixEnabled) {
-            // Arranque inmediato (audio ya en RAM) + fade-in
             window.playCustomTrack(next);
             startFadeIn();
           } else {
             setTimeout(() => window.playCustomTrack(next), 400);
           }
-        } else if (loopPlaylist) {
+        } else if (loopPlaylist || shuffle) {
+          const loopIdx = shuffle ? _nextCustomIdx() : 0;
           if (automixEnabled) {
-            window.playCustomTrack(0);
+            window.playCustomTrack(loopIdx);
             startFadeIn();
           } else {
-            setTimeout(() => window.playCustomTrack(0), 400);
+            setTimeout(() => window.playCustomTrack(loopIdx), 400);
           }
         } else {
           // Fin de lista — intentar restaurar estado previo (tras "Escuchar")
@@ -722,6 +723,16 @@
     if (r === currentIdx && scSounds.length > 1) r = (r+1) % scSounds.length;
     userPlayed = true;
     widget.skip(r); widget.play();
+  }
+
+  // Calcula el siguiente índice en la playlist personalizada respetando shuffle
+  function _nextCustomIdx() {
+    if (shuffle && customTrackList.length > 1) {
+      let r = Math.floor(Math.random() * customTrackList.length);
+      if (r === customCurrentIdx) r = (r + 1) % customTrackList.length;
+      return r;
+    }
+    return customCurrentIdx + 1; // secuencial por defecto
   }
 
   // ── REPEAT BTN ───────────────────────────────────────────────────
@@ -795,9 +806,12 @@
     if (!widgetRdy) return;
     userPlayed = true;
     if (activeRadioPlaylist !== null && customTrackList.length > 0) {
-      const next = customCurrentIdx + 1;
-      if (next < customTrackList.length) window.playCustomTrack(next);
-      else if (loopPlaylist) window.playCustomTrack(0);
+      const next = _nextCustomIdx();
+      if (shuffle || next < customTrackList.length) {
+        window.playCustomTrack(customTrackList[next] ? next : 0);
+      } else if (loopPlaylist) {
+        window.playCustomTrack(0);
+      }
       return;
     }
     if (shuffle) doShuffle(); else widget.next();

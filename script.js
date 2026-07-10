@@ -1384,7 +1384,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const wrap = document.getElementById('mini-yt-wrap');
     const iframe = document.getElementById('mini-yt-iframe');
     if (wrap) { wrap.style.display = ''; }
-    if (iframe) iframe.src = `https://www.youtube.com/embed/${v.videoId}?autoplay=1&rel=0&enablejsapi=1`;
+    // Si ya hay un player YouTube activo, usar loadVideoById para evitar bloqueo de autoplay
+    const alreadyLoaded = iframe && iframe.src && iframe.src.includes('youtube.com/embed/');
+    if (alreadyLoaded && iframe.contentWindow) {
+      iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'loadVideoById', args: [v.videoId] }), '*');
+    } else if (iframe) {
+      iframe.src = `https://www.youtube.com/embed/${v.videoId}?autoplay=1&rel=0&enablejsapi=1`;
+    }
 
     // Update info
     const thumb = document.getElementById('mini-thumb');

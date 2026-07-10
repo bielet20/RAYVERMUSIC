@@ -37,6 +37,7 @@
   let userPlayed  = false; // true cuando el usuario ha pulsado play explícitamente
   let customCurrentIdx = 0;
   let loopPlaylist = false;
+  let _autoSkipCount = 0;
   let customPlaylistStarted = false;
   let widgetCustomMode = false; // true cuando el widget está cargado con un track custom (no SC_PLAYLIST)
   let youtubeActive = false;   // true cuando el track actual juega desde YouTube IFrame API
@@ -541,6 +542,7 @@
   }
 
   function playYoutubeTrack(videoId, title) {
+    _autoSkipCount = 0;
     window._pendingYtFallback = null;
     youtubeActive = true;
     widget.pause();
@@ -552,13 +554,25 @@
     loadYtApiScript(() => initYtPlayer(videoId));
   }
 
-  // Muestra un aviso de "no disponible en radio" con link a Spotify
+  // Muestra un aviso de "no disponible en radio" o salta al siguiente track
   function showUnavailable(t) {
     const apiTrack = apiTracks.find(a => String(a.id) === String(t.itemId || t.id));
     const spotifyUrl = apiTrack?.spotifyUrl || t.spotifyUrl || null;
-    customPlaylistStarted = true; // para que play button no reintente
+
+    // Auto-skip al siguiente track; protección contra loop infinito si todos son Spotify-only
+    if (_autoSkipCount < customTrackList.length) {
+      const nextIdx = _nextCustomIdx();
+      const target  = nextIdx < customTrackList.length ? nextIdx : (loopPlaylist ? 0 : -1);
+      if (target >= 0) {
+        _autoSkipCount++;
+        setTimeout(() => window.playCustomTrack(target), 200);
+        return;
+      }
+    }
+
+    _autoSkipCount = 0;
+    customPlaylistStarted = true;
     setPlaying(false);
-    // Mostrar badge de "sin fuente" en el artista
     if (artistEl) artistEl.innerHTML = spotifyUrl
       ? `<a href="${esc(spotifyUrl)}" target="_blank" class="radio-ptag ptag-s" style="font-size:12px"><i class="fab fa-spotify"></i> Escuchar en Spotify</a>`
       : '<span style="opacity:.5;font-size:12px">No disponible en radio</span>';
@@ -1175,6 +1189,7 @@
 
       // Helper: carga una URL de SC directamente en el widget (siempre oculto)
       const _loadScUrl = (url, ytFallback) => {
+        _autoSkipCount = 0;
         customPlaylistStarted = true;
         widgetCustomMode = true;
         userPlayed = true;

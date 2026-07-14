@@ -1450,17 +1450,17 @@ body {
    ══════════════════════════════════════════════ */
 #mini-player {
   position: fixed;
-  bottom: 0;
+  top: 0;
   left: 0;
   right: 0;
   z-index: 2000;
   background: rgba(7,7,10,.96);
   backdrop-filter: blur(20px);
-  border-top: 1px solid var(--glass-b);
+  border-bottom: 1px solid var(--glass-b);
   transition: transform .3s ease;
   font-family: 'Outfit', sans-serif;
   display: flex;
-  flex-direction: column-reverse; /* bar queda abajo, yt-wrap y panel abren hacia arriba */
+  flex-direction: column; /* bar queda arriba, yt-wrap y panel abren hacia abajo */
 }
 
 #mini-player.mini-minimized #mini-player-bar { padding: 6px 16px; }
@@ -1561,7 +1561,7 @@ body {
 
 #mini-panel {
   background: rgba(13,13,20,.98);
-  border-bottom: 1px solid var(--glass-b);
+  border-top: 1px solid var(--glass-b);
   max-height: 320px;
   overflow: hidden;
   display: flex;
@@ -1759,9 +1759,8 @@ body {
 
 .mini-pl-video button:hover { color: #ef4444; }
 
-/* Espacio para el mini player en la parte inferior */
-body { padding-bottom: 72px; }
-#mini-player + * { margin-top: 0; }
+/* Espacio para el mini player en la parte superior — gestionado por JS (miniAdjustLayout) */
+.navbar { transition: top .25s cubic-bezier(.4,0,.2,1); }
 
 /* ── TRACK ACTION SHEET (bottom sheet) ───────────────────────────── */
 .ts-backdrop {

@@ -1291,6 +1291,22 @@ document.addEventListener('DOMContentLoaded', () => {
     miniRenderQueue();
   }
 
+  function miniAdjustLayout() {
+    requestAnimationFrame(() => {
+      const mp = document.getElementById('mini-player');
+      const navbar = document.querySelector('.navbar');
+      if (!mp || mp.style.display === 'none') {
+        if (navbar) navbar.style.top = '';
+        document.body.style.paddingTop = '';
+        return;
+      }
+      const mpH = mp.offsetHeight;
+      if (navbar) navbar.style.top = mpH + 'px';
+      const navH = navbar ? navbar.offsetHeight : 0;
+      document.body.style.paddingTop = (mpH + navH) + 'px';
+    });
+  }
+
   function createMiniPlayer() {
     if (document.getElementById('mini-player')) return;
     const mp = document.createElement('div');
@@ -1311,7 +1327,7 @@ document.addEventListener('DOMContentLoaded', () => {
         </div>
         <div id="mini-actions">
           <button onclick="miniToggleQueue()" title="Cola" id="mini-queue-btn"><i class="fas fa-list"></i></button>
-          <button onclick="miniToggleMinimize()" title="Minimizar" id="mini-min-btn"><i class="fas fa-chevron-up"></i></button>
+          <button onclick="miniToggleMinimize()" title="Minimizar" id="mini-min-btn"><i class="fas fa-chevron-down"></i></button>
           <button onclick="miniClose()" title="Cerrar"><i class="fas fa-times"></i></button>
         </div>
       </div>
@@ -1324,6 +1340,7 @@ document.addEventListener('DOMContentLoaded', () => {
     `;
     document.body.appendChild(mp);
     miniRenderQueue();
+    miniAdjustLayout();
   }
 
   let miniPanelOpen = false;
@@ -1332,6 +1349,7 @@ document.addEventListener('DOMContentLoaded', () => {
     miniPanelOpen = !miniPanelOpen;
     const panel = document.getElementById('mini-panel');
     if (panel) panel.style.display = miniPanelOpen ? '' : 'none';
+    miniAdjustLayout();
   };
 
   window.miniToggleMinimize = function() {
@@ -1340,7 +1358,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!mp) return;
     mp.classList.toggle('mini-minimized', miniMinimized);
     const icon = document.getElementById('mini-min-btn')?.querySelector('i');
-    if (icon) icon.className = miniMinimized ? 'fas fa-chevron-down' : 'fas fa-chevron-up';
+    if (icon) icon.className = miniMinimized ? 'fas fa-chevron-up' : 'fas fa-chevron-down';
     if (miniMinimized) {
       const panel = document.getElementById('mini-panel');
       const wrap  = document.getElementById('mini-yt-wrap');
@@ -1348,6 +1366,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (wrap)  wrap.style.display  = 'none';
       miniPanelOpen = false;
     }
+    miniAdjustLayout();
   };
 
   window.miniClose = function() {
@@ -1357,6 +1376,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (ytWrap) ytWrap.style.display = 'none';
     const iframe = document.getElementById('mini-yt-iframe');
     if (iframe) iframe.src = '';
+    miniAdjustLayout();
   };
 
   let miniPlaying = false;
@@ -1383,7 +1403,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Mostrar iframe
     const wrap = document.getElementById('mini-yt-wrap');
     const iframe = document.getElementById('mini-yt-iframe');
-    if (wrap) { wrap.style.display = ''; }
+    if (wrap) { wrap.style.display = ''; miniAdjustLayout(); }
     // Si ya hay un player YouTube activo, usar loadVideoById para evitar bloqueo de autoplay
     const alreadyLoaded = iframe && iframe.src && iframe.src.includes('youtube.com/embed/');
     if (alreadyLoaded && iframe.contentWindow) {

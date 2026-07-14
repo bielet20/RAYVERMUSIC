@@ -1210,6 +1210,7 @@
     renderCustomTracklist(customTrackList);
     showCustomTrack(customCurrentIdx);
     window.playCustomTrack(customCurrentIdx);
+    _syncUpPlaylistBtn();
   };
 
   // Reproducir el vídeo destacado actual (llamado desde el placeholder)
@@ -1233,6 +1234,7 @@
   let activeRadioPlaylist = null; // null o '__default__' = RAYVER Radio; id = lista de usuario
   let customTrackList = [];
   let rplDropOpen = false;
+  let upPlDropOpen = false;
   let defaultRadioTracks = []; // lista curada desde el admin
 
   window.toggleRadioPlSelector = function() {
@@ -1252,6 +1254,86 @@
     if (drop) drop.style.display = 'none';
     if (chev) chev.style.transform = '';
   }
+
+  // ── TOP BAR PLAYLIST SELECTOR ────────────────────────────────────────
+  function _syncUpPlaylistBtn() {
+    const btn = $('up-playlist-btn');
+    if (!btn) return;
+    const isUserPl = activeRadioPlaylist && activeRadioPlaylist !== '__default__' && activeRadioPlaylist !== '__videos__' && activeRadioPlaylist !== '__oneshot__';
+    btn.classList.toggle('up-pl-active', !!isUserPl);
+    if (activeRadioPlaylist === '__videos__') {
+      btn.title = 'Videos';
+    } else if (isUserPl) {
+      const pl = (window.userPlaylists || []).find(p => p.id === activeRadioPlaylist);
+      btn.title = pl?.name || 'Lista personalizada';
+    } else {
+      btn.title = 'RAYVER Radio';
+    }
+  }
+
+  window._closeUpPlDrop = function() {
+    upPlDropOpen = false;
+    const drop = $('up-playlist-drop');
+    const btn  = $('up-playlist-btn');
+    if (drop) drop.style.display = 'none';
+    if (btn)  btn.classList.remove('up-pl-open');
+  };
+
+  window._renderUpPlDrop = function() {
+    const drop = $('up-playlist-drop');
+    if (!drop) return;
+    const q = (document.getElementById('up-pl-search')?.value || '').trim().toLowerCase();
+    const playlists = (window.userPlaylists || []).filter(pl =>
+      !q || pl.name.toLowerCase().includes(q)
+    );
+    const loggedIn = !!(window.getToken?.());
+    const trackCount = (activeRadioPlaylist === '__default__' ? customTrackList.length : null) || defaultRadioTracks.length || scSounds.length;
+
+    drop.innerHTML = `
+      <div class="rpl-header">
+        <span><i class="fas fa-layer-group" style="margin-right:6px"></i>Mis listas</span>
+        <button class="rpl-header-close" onclick="window._closeUpPlDrop()" title="Cerrar"><i class="fas fa-times"></i></button>
+      </div>
+      <div class="rpl-search-wrap">
+        <i class="fas fa-search rpl-search-icon"></i>
+        <input type="text" id="up-pl-search" class="rpl-search" placeholder="Buscar lista…"
+          oninput="window._renderUpPlDrop()" autocomplete="off">
+      </div>
+      <div class="rpl-list">
+        <div class="rpl-item${(activeRadioPlaylist === null || activeRadioPlaylist === '__default__') ? ' rpl-active' : ''}"
+          onclick="window.selectRadioPlaylist(null);window._closeUpPlDrop()">
+          <span class="rpl-icon"><i class="fas fa-broadcast-tower"></i></span>
+          <span class="rpl-name">RAYVER Radio</span>
+          <span class="rpl-count">${trackCount} tracks</span>
+        </div>
+        ${!loggedIn
+          ? `<div class="rpl-login-hint"><i class="fas fa-lock"></i> <a onclick="openAuthModal?.()" style="color:var(--primary-2);cursor:pointer">Inicia sesión</a> para ver tus listas</div>`
+          : !playlists.length && !q
+            ? '<div class="rpl-empty">Sin listas guardadas</div>'
+            : playlists.map(pl => `
+                <div class="rpl-item${activeRadioPlaylist === pl.id ? ' rpl-active' : ''}"
+                  onclick="window.selectRadioPlaylist('${esc(pl.id)}');window._closeUpPlDrop()">
+                  <span class="rpl-icon"><i class="fas fa-music"></i></span>
+                  <span class="rpl-name">${esc(pl.name)}</span>
+                  <span class="rpl-count">${pl.tracks?.length ?? 0} tracks</span>
+                </div>`).join('')
+        }
+      </div>`;
+    setTimeout(() => document.getElementById('up-pl-search')?.focus(), 0);
+  };
+
+  window.toggleUpPlSelector = function() {
+    upPlDropOpen = !upPlDropOpen;
+    const drop = $('up-playlist-drop');
+    const btn  = $('up-playlist-btn');
+    if (!drop) return;
+    // Position the dropdown just below the current player height
+    const upEl = $('up-player');
+    if (upEl) drop.style.top = upEl.offsetHeight + 'px';
+    drop.style.display = upPlDropOpen ? '' : 'none';
+    if (btn) btn.classList.toggle('up-pl-open', upPlDropOpen);
+    if (upPlDropOpen) window._renderUpPlDrop();
+  };
 
   window.renderRplDropdown = function() {
     const drop = document.getElementById('radio-pl-dropdown');
@@ -1355,6 +1437,7 @@
       renderCustomTracklist(tracks);
       if (tracks.length) showCustomTrack(0);
     }
+    _syncUpPlaylistBtn();
   };
 
   function renderCustomTracklist(tracks) {
@@ -1534,6 +1617,7 @@
     if (loopBtn) { loopBtn.style.display = ''; loopBtn.classList.add('active'); }
     renderCustomTracklist(customTrackList);
     showCustomTrack(0);
+    _syncUpPlaylistBtn();
   }
 
   window.toggleRadioLoop = function() {
@@ -1543,10 +1627,13 @@
     btn.title = loopPlaylist ? 'Repetir lista: ON' : 'Repetir lista: OFF';
   };
 
-  // Close dropdown when clicking outside
+  // Close dropdowns when clicking outside
   document.addEventListener('click', e => {
     if (rplDropOpen && !e.target.closest('#radio-pl-dropdown') && !e.target.closest('#radio-pl-selector-btn')) {
       closeRplDropdown();
+    }
+    if (upPlDropOpen && !e.target.closest('#up-playlist-drop') && !e.target.closest('#up-playlist-btn')) {
+      window._closeUpPlDrop();
     }
   });
 
@@ -1599,6 +1686,7 @@
           if (loopBtn) { loopBtn.style.display = ''; loopBtn.classList.add('active'); }
           renderCustomTracklist(customTrackList);
           showCustomTrack(0);
+          _syncUpPlaylistBtn();
         }
         // Si tampoco hay tracks en el backend → SC Widget mode (getSounds())
       }

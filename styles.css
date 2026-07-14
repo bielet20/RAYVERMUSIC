@@ -1693,7 +1693,7 @@ body {
   gap: 6px;
 }
 
-#up-mute, #up-queue-btn, #up-video-btn, #up-min-btn {
+#up-mute, #up-playlist-btn, #up-queue-btn, #up-video-btn, #up-min-btn {
   background: rgba(255,255,255,.07);
   border: 1px solid var(--glass-b);
   color: var(--muted);
@@ -1709,7 +1709,7 @@ body {
   flex-shrink: 0;
 }
 
-#up-mute:hover, #up-queue-btn:hover, #up-video-btn:hover, #up-min-btn:hover {
+#up-mute:hover, #up-playlist-btn:hover, #up-queue-btn:hover, #up-video-btn:hover, #up-min-btn:hover {
   background: rgba(168,85,247,.2);
   color: var(--primary-2);
   border-color: rgba(168,85,247,.3);
@@ -1811,6 +1811,65 @@ body {
   background: rgba(168,85,247,.2);
   color: var(--primary-2);
   border-color: rgba(168,85,247,.3);
+}
+
+/* ── Playlist selector active states ── */
+#up-playlist-btn.up-pl-open {
+  background: rgba(168,85,247,.2);
+  color: var(--primary-2);
+  border-color: rgba(168,85,247,.3);
+}
+
+#up-playlist-btn.up-pl-active {
+  background: rgba(168,85,247,.12);
+  color: var(--primary-2);
+  border-color: rgba(168,85,247,.25);
+}
+
+/* ── Floating playlist dropdown from top bar ── */
+#up-playlist-drop {
+  position: fixed;
+  top: 64px;
+  right: 12px;
+  z-index: 1990;
+  background: rgba(7,7,10,.97);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid var(--glass-b);
+  border-radius: 14px;
+  width: 290px;
+  max-height: 70vh;
+  overflow: hidden;
+  box-shadow: 0 12px 40px rgba(0,0,0,.6);
+}
+
+#up-playlist-drop .rpl-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px 8px;
+  border-bottom: 1px solid var(--glass-b);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+#up-playlist-drop .rpl-header-close {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 2px 6px;
+  font-size: 13px;
+  transition: color .12s;
+}
+#up-playlist-drop .rpl-header-close:hover { color: var(--text); }
+
+#up-playlist-drop .rpl-list {
+  max-height: calc(70vh - 100px);
+  overflow-y: auto;
 }
 
 /* Navbar always sits just below the unified top player */

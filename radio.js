@@ -858,10 +858,10 @@
         }
         return;
       }
-      if (repeat === 'one')   { widget.seekTo(0); widget.play(); }
-      else if (shuffle)       { doShuffle(); }
+      if (repeat === 'one')      { widget.seekTo(0); widget.play(); }
+      else if (shuffle)          { doShuffle(); }
       else if (repeat === 'all') { widget.next(); }
-      else                    { setPlaying(false); }
+      else                       { widget.next(); } // always continue in radio mode
     });
 
     widget.bind(SC.Widget.Events.PLAY_PROGRESS, d => {
@@ -1311,7 +1311,8 @@
       if (nameEl) nameEl.textContent = 'RAYVER Radio';
       if (defaultRadioTracks.length) {
         // Lista curada por el admin
-        if (loopBtn) loopBtn.style.display = '';
+        loopPlaylist = true;
+        if (loopBtn) { loopBtn.style.display = ''; loopBtn.classList.add('active'); }
         activeRadioPlaylist = '__default__';
         customCurrentIdx    = 0;
         customPlaylistStarted = false;
@@ -1347,8 +1348,9 @@
       }
     } else {
       const pl = (window.userPlaylists || []).find(p => p.id === id);
-      if (nameEl)  nameEl.textContent    = pl?.name || 'Lista';
-      if (loopBtn) loopBtn.style.display = '';
+      if (nameEl)  nameEl.textContent = pl?.name || 'Lista';
+      loopPlaylist = true;
+      if (loopBtn) { loopBtn.style.display = ''; loopBtn.classList.add('active'); }
       const tracks = pl?.tracks || [];
       renderCustomTracklist(tracks);
       if (tracks.length) showCustomTrack(0);
@@ -1520,6 +1522,7 @@
     activeRadioPlaylist = '__default__';
     customCurrentIdx    = 0;
     customPlaylistStarted = false;
+    loopPlaylist = true;
     customTrackList = defaultRadioTracks.map(t => ({
       id: t.id, itemId: t.id, title: t.title,
       cover: t.cover, scUrl: t.scUrl, videoId: t.videoId,
@@ -1527,8 +1530,8 @@
     }));
     const nameEl  = document.getElementById('radio-pl-name');
     const loopBtn = document.getElementById('radio-loop-btn');
-    if (nameEl)  nameEl.textContent    = 'RAYVER Radio';
-    if (loopBtn) loopBtn.style.display = '';
+    if (nameEl)  nameEl.textContent = 'RAYVER Radio';
+    if (loopBtn) { loopBtn.style.display = ''; loopBtn.classList.add('active'); }
     renderCustomTracklist(customTrackList);
     showCustomTrack(0);
   }
@@ -1584,6 +1587,7 @@
           activeRadioPlaylist = '__default__';
           customCurrentIdx    = 0;
           customPlaylistStarted = false;
+          loopPlaylist = true;
           customTrackList = playable.map(t => ({
             id: t.id, itemId: t.id, title: t.title, cover: t.cover || null,
             scUrl: t.scUrl || null, videoId: t.videoId || null,
@@ -1591,8 +1595,8 @@
           }));
           const nameEl  = document.getElementById('radio-pl-name');
           const loopBtn = document.getElementById('radio-loop-btn');
-          if (nameEl)  nameEl.textContent    = 'RAYVER Radio';
-          if (loopBtn) loopBtn.style.display = '';
+          if (nameEl)  nameEl.textContent = 'RAYVER Radio';
+          if (loopBtn) { loopBtn.style.display = ''; loopBtn.classList.add('active'); }
           renderCustomTracklist(customTrackList);
           showCustomTrack(0);
         }

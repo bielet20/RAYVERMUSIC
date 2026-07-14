@@ -1105,28 +1105,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const pl = userPlaylists.find(p => p.id === plId);
     if (!pl || !pl.tracks.length) { showToastGlobal('La lista está vacía — añade canciones primero'); return; }
 
-    const videos = pl.tracks.filter(t => t.type === 'video');
-    if (videos.length) {
-      // Delegar al mini player: ya gestiona playlists propias correctamente
-      window.miniPlayPlaylist(plId);
-      closePlaylists();
-      return;
-    }
-
-    // Tracks de SoundCloud: buscar en la lista del radio por título
-    const radioList = window.RADIO_PLAYER?.getPlaylist?.() || [];
-    for (const track of pl.tracks) {
-      const title = (track.title || '').toLowerCase();
-      const idx   = radioList.findIndex(t => (t.title || '').toLowerCase() === title);
-      if (idx >= 0) {
-        window.RADIO_PLAYER.skip(idx);
-        document.getElementById('radio')?.scrollIntoView({behavior:'smooth'});
-        closePlaylists();
-        showToastGlobal('Reproduciendo "' + pl.name + '" en radio');
-        return;
-      }
-    }
-    showToastGlobal('No hay pistas reproducibles en esta lista');
+    // Delegar siempre al radio player unificado (gestiona SC, YouTube, Spotify)
+    window.selectRadioPlaylist?.(plId);
+    document.getElementById('radio')?.scrollIntoView({behavior:'smooth'});
+    closePlaylists();
+    showToastGlobal('Reproduciendo "' + pl.name + '" en radio');
   };
 
   window.mergePlaylistModal = function(sourceId) {
@@ -1229,8 +1212,6 @@ document.addEventListener('DOMContentLoaded', () => {
       grid.querySelectorAll('.reveal').forEach(el => revealObs.observe(el));
     }
 
-    // Añadir todos los videos al mini player
-    miniPlayerSetPlaylist(allVideos);
   }
 
   window.selectVideo = function(videoId, title, desc) {
@@ -1279,201 +1260,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }).join('');
   }
 
-  // ── MINI PLAYER FLOTANTE ─────────────────────────────────────────
-  let miniPlaylist = [];
-  let miniCurrentIdx = 0;
-  let miniVisible = true;
-  let miniMinimized = false;
-  let activeUserPlaylist = null;
-
-  function miniPlayerSetPlaylist(videos) {
-    miniPlaylist = videos;
-    miniRenderQueue();
-  }
-
-  function miniAdjustLayout() {
-    requestAnimationFrame(() => {
-      const mp = document.getElementById('mini-player');
-      const navbar = document.querySelector('.navbar');
-      if (!mp || mp.style.display === 'none') {
-        if (navbar) navbar.style.top = '';
-        document.body.style.paddingTop = '';
-        return;
-      }
-      const mpH = mp.offsetHeight;
-      if (navbar) navbar.style.top = mpH + 'px';
-      const navH = navbar ? navbar.offsetHeight : 0;
-      document.body.style.paddingTop = (mpH + navH) + 'px';
-    });
-  }
-
-  function createMiniPlayer() {
-    if (document.getElementById('mini-player')) return;
-    const mp = document.createElement('div');
-    mp.id = 'mini-player';
-    mp.innerHTML = `
-      <div id="mini-player-bar">
-        <div id="mini-info">
-          <img id="mini-thumb" src="" alt="">
-          <div id="mini-meta">
-            <div id="mini-title">RAYVER Radio</div>
-            <div id="mini-sub">Selecciona un video</div>
-          </div>
-        </div>
-        <div id="mini-controls">
-          <button onclick="miniPrev()" title="Anterior"><i class="fas fa-step-backward"></i></button>
-          <button id="mini-play-btn" onclick="miniTogglePlay()" title="Play/Pausa"><i class="fas fa-play" id="mini-play-icon"></i></button>
-          <button onclick="miniNext()" title="Siguiente"><i class="fas fa-step-forward"></i></button>
-        </div>
-        <div id="mini-actions">
-          <button onclick="miniToggleQueue()" title="Cola" id="mini-queue-btn"><i class="fas fa-list"></i></button>
-          <button onclick="miniToggleMinimize()" title="Minimizar" id="mini-min-btn"><i class="fas fa-chevron-down"></i></button>
-          <button onclick="miniClose()" title="Cerrar"><i class="fas fa-times"></i></button>
-        </div>
-      </div>
-      <div id="mini-yt-wrap" style="display:none">
-        <iframe id="mini-yt-iframe" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
-      </div>
-      <div id="mini-panel" style="display:none">
-        <div id="mini-queue-list"></div>
-      </div>
-    `;
-    document.body.appendChild(mp);
-    miniRenderQueue();
-    miniAdjustLayout();
-  }
-
-  let miniPanelOpen = false;
-
-  window.miniToggleQueue = function() {
-    miniPanelOpen = !miniPanelOpen;
-    const panel = document.getElementById('mini-panel');
-    if (panel) panel.style.display = miniPanelOpen ? '' : 'none';
-    miniAdjustLayout();
-  };
-
-  window.miniToggleMinimize = function() {
-    miniMinimized = !miniMinimized;
-    const mp = document.getElementById('mini-player');
-    if (!mp) return;
-    mp.classList.toggle('mini-minimized', miniMinimized);
-    const icon = document.getElementById('mini-min-btn')?.querySelector('i');
-    if (icon) icon.className = miniMinimized ? 'fas fa-chevron-up' : 'fas fa-chevron-down';
-    if (miniMinimized) {
-      const panel = document.getElementById('mini-panel');
-      const wrap  = document.getElementById('mini-yt-wrap');
-      if (panel) panel.style.display = 'none';
-      if (wrap)  wrap.style.display  = 'none';
-      miniPanelOpen = false;
-    }
-    miniAdjustLayout();
-  };
-
-  window.miniClose = function() {
-    const mp = document.getElementById('mini-player');
-    if (mp) { mp.style.display = 'none'; miniVisible = false; }
-    const ytWrap = document.getElementById('mini-yt-wrap');
-    if (ytWrap) ytWrap.style.display = 'none';
-    const iframe = document.getElementById('mini-yt-iframe');
-    if (iframe) iframe.src = '';
-    miniAdjustLayout();
-  };
-
-  let miniPlaying = false;
-
-  window.miniTogglePlay = function() {
-    if (!miniPlaylist.length) return;
-    if (!miniPlaying) {
-      miniPlayVideo(miniCurrentIdx);
-    } else {
-      const iframe = document.getElementById('mini-yt-iframe');
-      if (iframe) iframe.src = iframe.src.replace('autoplay=1','autoplay=0');
-      const icon = document.getElementById('mini-play-icon');
-      if (icon) icon.className = 'fas fa-play';
-      miniPlaying = false;
-    }
-  };
-
-  function miniPlayVideo(idx) {
-    if (!miniPlaylist.length) return;
-    miniCurrentIdx = ((idx%miniPlaylist.length)+miniPlaylist.length)%miniPlaylist.length;
-    const v = miniPlaylist[miniCurrentIdx];
-    if (!v) return;
-
-    // Mostrar iframe
-    const wrap = document.getElementById('mini-yt-wrap');
-    const iframe = document.getElementById('mini-yt-iframe');
-    if (wrap) { wrap.style.display = ''; miniAdjustLayout(); }
-    // Si ya hay un player YouTube activo, usar loadVideoById para evitar bloqueo de autoplay
-    const alreadyLoaded = iframe && iframe.src && iframe.src.includes('youtube.com/embed/');
-    if (alreadyLoaded && iframe.contentWindow) {
-      iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'loadVideoById', args: [v.videoId] }), '*');
-    } else if (iframe) {
-      iframe.src = `https://www.youtube.com/embed/${v.videoId}?autoplay=1&rel=0&enablejsapi=1`;
-    }
-
-    // Update info
-    const thumb = document.getElementById('mini-thumb');
-    const titleEl = document.getElementById('mini-title');
-    const subEl = document.getElementById('mini-sub');
-    if (thumb) thumb.src = `https://img.youtube.com/vi/${v.videoId}/default.jpg`;
-    if (titleEl) titleEl.textContent = v.title || v.videoId;
-    if (subEl) subEl.textContent = 'RAYVER';
-
-    const icon = document.getElementById('mini-play-icon');
-    if (icon) icon.className = 'fas fa-pause';
-    miniPlaying = true;
-
-    // Pausar el radio SC solo si el radio no está usando intencionalmente el mini player
-    if (window.RADIO_PLAYER?.pause && !window.RADIO_PLAYER?.isUsingMiniPlayer?.()) {
-      window.RADIO_PLAYER.pause();
-    }
-
-    // Si el mini player está cerrado, reabrirlo
-    const mp = document.getElementById('mini-player');
-    if (mp) mp.style.display = '';
-    miniVisible = true;
-
-    // Highlight en queue
-    miniRenderQueue();
-
-    // Actualizar video principal en sección YouTube si está visible
-    setMainVideo(v);
-  }
-
-  window.miniNext = function() { miniPlayVideo(miniCurrentIdx+1); };
-  window.miniPrev = function() { miniPlayVideo(miniCurrentIdx-1); };
-
-  window.miniPlayFromQueue = function(idx) { miniPlayVideo(idx); };
-
-  function miniRenderQueue() {
-    const list = document.getElementById('mini-queue-list');
-    if (!list) return;
-    if (!miniPlaylist.length) {
-      list.innerHTML = '<div style="padding:12px;color:rgba(255,255,255,.4);font-size:12px;text-align:center">Sin videos en cola</div>';
-      return;
-    }
-    list.innerHTML = miniPlaylist.map((v,i) => `
-      <div class="mini-queue-item ${i===miniCurrentIdx?'mini-queue-active':''}" onclick="miniPlayFromQueue(${i})">
-        <img src="https://img.youtube.com/vi/${esc(v.videoId)}/default.jpg" alt="">
-        <div class="mini-queue-info">
-          <div class="mini-queue-title">${esc(v.title||v.videoId)}</div>
-        </div>
-        <button onclick="event.stopPropagation();addToPlaylist('video','${esc(v.videoId)}','${esc(v.title||v.videoId)}','','https://www.youtube.com/watch?v=${esc(v.videoId)}')" class="mini-add-btn" title="Añadir a lista"><i class="fas fa-plus"></i></button>
-      </div>`).join('');
-  }
-
-  // ── MINI PLAYER — REPRODUCIR LISTA ───────────────────────────────
-  window.miniPlayPlaylist = function(id) {
-    const pl = userPlaylists.find(p=>p.id===id);
-    if (!pl) return;
-    const videos = (pl.tracks||[]).filter(t=>t.type==='video').map(t=>({videoId:t.itemId, title:t.title}));
-    if (!videos.length) { showToastGlobal('Sin videos en esta lista'); return; }
-    miniPlaylist = videos;
-    miniCurrentIdx = 0;
-    miniPlayVideo(0);
-    miniRenderQueue();
-  };
 
   // ── GÉNEROS DINÁMICOS ─────────────────────────────────────────────
   async function loadGenres() {
@@ -1505,61 +1291,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // ── TOAST (alias para el global) ─────────────────────────────────
   function showToast(msg) { showToastGlobal(msg); }
 
-  // ── API PÚBLICA MINI-PLAYER (para radio.js) ──────────────────────
-  function ytCommand(func) {
-    const iframe = document.getElementById('mini-yt-iframe');
-    if (iframe?.contentWindow) {
-      iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func, args: [] }), '*');
-    }
-  }
-
-  window.MINI_PLAYER = {
-    pause: () => {
-      ytCommand('pauseVideo');
-      const icon = document.getElementById('mini-play-icon');
-      if (icon) icon.className = 'fas fa-play';
-      miniPlaying = false;
-    },
-    play: () => {
-      ytCommand('playVideo');
-      const icon = document.getElementById('mini-play-icon');
-      if (icon) icon.className = 'fas fa-pause';
-      miniPlaying = true;
-    },
-    isPlaying: () => miniPlaying,
-    loadAndPlay: (videos, startIdx = 0) => {
-      if (!videos?.length) return;
-      miniPlaylist = videos;
-      miniCurrentIdx = startIdx;
-      miniPlayVideo(startIdx);
-      miniRenderQueue();
-    },
-  };
-
-  // Detectar cambios de estado YouTube (enablejsapi=1 envía postMessage)
-  window.addEventListener('message', function(e) {
-    try {
-      const data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
-      if (data?.event !== 'onStateChange') return;
-      const state = data.info;
-      if (state === 0) {
-        // Terminado: avisar al radio o avanzar mini player normal
-        if (typeof window.onYouTubeTrackEnd === 'function') window.onYouTubeTrackEnd();
-        else if (miniPlaylist.length > 1) miniPlayVideo(miniCurrentIdx + 1);
-      } else if (state === 1 || state === 2) {
-        // Playing(1) / Paused(2): sincronizar botón del radio
-        miniPlaying = (state === 1);
-        const icon = document.getElementById('mini-play-icon');
-        if (icon) icon.className = state === 1 ? 'fas fa-pause' : 'fas fa-play';
-        if (typeof window.onYouTubeStateChange === 'function') window.onYouTubeStateChange(state);
-      }
-    } catch (_) {}
-  });
-
   // ── INIT ─────────────────────────────────────────────────────────
   initAuth();
   updateAuthUI();
-  createMiniPlayer();
   loadTracks();
   loadVideos();
   loadBeats();

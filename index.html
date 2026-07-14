@@ -33,6 +33,44 @@
 </head>
 <body>
 
+<!-- ═══════════════════════════════════════ UNIFIED TOP PLAYER -->
+<div id="up-player">
+  <div id="up-bar">
+    <button id="up-cover-btn" onclick="document.getElementById('radio')?.scrollIntoView({behavior:'smooth'})" title="Ver Radio completo" aria-label="Ver radio completo">
+      <img id="up-cover" src="logo.jpg" alt="" class="up-cover-img">
+    </button>
+    <div id="up-meta">
+      <div id="up-title">RAYVER Radio</div>
+      <div id="up-artist-wrap">
+        <span id="up-artist">Pulsa ▶ para escuchar</span>
+        <span id="up-tags"></span>
+      </div>
+    </div>
+    <div id="up-center">
+      <div id="up-controls">
+        <button id="up-shuffle" title="Shuffle" aria-label="Shuffle"><i class="fas fa-random"></i></button>
+        <button id="up-prev" title="Anterior" aria-label="Anterior"><i class="fas fa-step-backward"></i></button>
+        <button id="up-play" title="Play / Pausa" aria-label="Play" class="up-play-btn"><i class="fas fa-play" id="up-play-icon"></i></button>
+        <button id="up-next" title="Siguiente" aria-label="Siguiente"><i class="fas fa-step-forward"></i></button>
+        <button id="up-repeat" title="Repetir" aria-label="Repetir"><i class="fas fa-redo"></i></button>
+      </div>
+      <div id="up-progress-wrap">
+        <span id="up-cur">0:00</span>
+        <div id="up-progress" role="slider" aria-label="Progreso"><div id="up-fill"></div></div>
+        <span id="up-dur">—</span>
+      </div>
+    </div>
+    <div id="up-right">
+      <div id="up-vol-wrap">
+        <button id="up-mute" title="Silenciar" aria-label="Silenciar"><i class="fas fa-volume-up" id="up-vol-icon"></i></button>
+        <input id="up-vol" type="range" min="0" max="100" value="80" class="up-vol-range" aria-label="Volumen">
+      </div>
+      <button id="up-queue-btn" onclick="document.getElementById('radio')?.scrollIntoView({behavior:'smooth'})" title="Abrir lista completa" aria-label="Lista"><i class="fas fa-list-music"></i></button>
+      <button id="up-min-btn" title="Minimizar" aria-label="Minimizar"><i class="fas fa-chevron-up" id="up-min-icon"></i></button>
+    </div>
+  </div>
+</div>
+
 <!-- ═══════════════════════════════════════════════════════ NAV -->
 <nav class="navbar" id="navbar">
   <a href="#home" class="logo">
@@ -573,8 +611,8 @@
 </footer>
 
 <script src="tracker.js?v=1" defer></script>
-<script src="script.js?v=14"></script>
-<script src="radio.js?v=12"></script>
+<script src="script.js?v=15"></script>
+<script src="radio.js?v=13"></script>
 <!-- PWA: botón flotante de instalación (oculto por defecto, se muestra solo si el navegador soporta instalar) -->
 <button id="pwa-install-btn" style="display:none;position:fixed;bottom:90px;right:20px;z-index:9999;
   background:#a855f7;color:#fff;border:none;border-radius:999px;padding:12px 18px;

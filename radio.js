@@ -85,6 +85,46 @@
   const audioEl  = $('radio-audio');
   if (audioEl) { audioEl.pause(); audioEl.src = ''; audioEl.style.display = 'none'; }
 
+  // ── UP-PLAYER (unified fixed top bar) ───────────────────────────
+  const upTitleEl  = $('up-title');
+  const upArtistEl = $('up-artist');
+  const upTagsEl   = $('up-tags');
+  const upCoverEl  = $('up-cover');
+  const upPlayIcon = $('up-play-icon');
+  const upFillEl   = $('up-fill');
+  const upCurEl    = $('up-cur');
+  const upDurEl    = $('up-dur');
+  const upVolIcon  = $('up-vol-icon');
+  const upVolEl    = $('up-vol');
+  const upProgress = $('up-progress');
+
+  function _adjustUpLayout() {
+    const up = $('up-player');
+    const navbar = document.querySelector('.navbar');
+    if (!up || !navbar) return;
+    const minimized = up.classList.contains('up-minimized');
+    const h = minimized ? 32 : 64;
+    navbar.style.top = h + 'px';
+  }
+
+  function _syncUp(title, artist, coverSrc, tags) {
+    if (upTitleEl)  upTitleEl.textContent  = title  || 'RAYVER Radio';
+    if (upArtistEl) upArtistEl.textContent = artist || '';
+    if (upTagsEl)   upTagsEl.innerHTML     = tags   || '';
+    if (upCoverEl)  upCoverEl.src = coverSrc || 'logo.jpg';
+  }
+
+  function _syncUpPlayState(p) {
+    if (upPlayIcon) upPlayIcon.className = p ? 'fas fa-pause' : 'fas fa-play';
+  }
+
+  function _syncUpProgress(pos, dur) {
+    const pct = dur > 0 ? Math.min((pos / dur) * 100, 100) : 0;
+    if (upFillEl) upFillEl.style.width = pct + '%';
+    if (upCurEl)  upCurEl.textContent  = fmt(pos);
+    if (upDurEl)  upDurEl.textContent  = dur > 0 ? fmt(dur) : '—';
+  }
+
   // ── UTILS ────────────────────────────────────────────────────────
   const fmt = ms => {
     if (!ms || isNaN(ms)) return '0:00';
@@ -186,6 +226,13 @@
     if (curEl)  curEl.textContent  = '0:00';
     if (durEl)  durEl.textContent  = fmt(sc.duration || 0);
     if (counter) counter.textContent = `${idx + 1} / ${scSounds.length}`;
+
+    const upTags = [];
+    if (sc.permalink_url) upTags.push(`<a href="${esc(sc.permalink_url)}" target="_blank" class="radio-ptag ptag-soundcloud"><i class="fab fa-soundcloud"></i></a>`);
+    const sp = (en && (en.spotifyUrl || en.platforms?.spotify)) || '';
+    if (sp) upTags.push(`<a href="${esc(sp)}" target="_blank" class="radio-ptag ptag-s"><i class="fab fa-spotify"></i></a>`);
+    _syncUp(title, artist, cover || 'logo.jpg', upTags.join(''));
+    _syncUpProgress(0, sc.duration || 0);
   }
 
   // Actualiza el header del radio con datos de la lista personalizada (no SC)
@@ -231,6 +278,16 @@
     if (curEl)   curEl.textContent  = '0:00';
     if (durEl)   durEl.textContent  = '—';
     if (counter) counter.textContent = `${idx + 1} / ${customTrackList.length}`;
+
+    const upLinks = [];
+    const scUrl2 = t.scUrl || t.url || null;
+    const ytId2  = isVideo ? t.itemId : (t.videoId || null);
+    const spUrl2 = t.spotifyUrl || null;
+    if (scUrl2) upLinks.push(`<a href="${esc(scUrl2)}" target="_blank" class="radio-ptag ptag-soundcloud"><i class="fab fa-soundcloud"></i></a>`);
+    if (ytId2)  upLinks.push(`<a href="https://www.youtube.com/watch?v=${esc(ytId2)}" target="_blank" class="radio-ptag" style="color:#ff4444"><i class="fab fa-youtube"></i></a>`);
+    if (spUrl2) upLinks.push(`<a href="${esc(spUrl2)}" target="_blank" class="radio-ptag ptag-s"><i class="fab fa-spotify"></i></a>`);
+    _syncUp(t.title || '—', apiT?.artist || 'RAYVER', coverSrc || 'logo.jpg', upLinks.join(''));
+    _syncUpProgress(0, 0);
   }
 
   function setPlaying(p) {
@@ -239,6 +296,7 @@
     if (onair)   onair.classList.toggle('pulsing', p);
     if (coverEl) coverEl.classList.toggle('spinning', p);
     if (cpulse)  cpulse.classList.toggle('active', p);
+    _syncUpPlayState(p);
   }
 
   // ── TRACKLIST ────────────────────────────────────────────────────
@@ -532,6 +590,7 @@
           if (fillEl) fillEl.style.width = Math.min((pos / dur) * 100, 100) + '%';
           if (curEl)  curEl.textContent  = fmt(pos);
           if (durEl)  durEl.textContent  = fmt(dur);
+          _syncUpProgress(pos, dur);
         }
       } catch (_) {}
     }, 500);
@@ -547,7 +606,6 @@
     youtubeActive = true;
     widget.pause();
     iframe.style.height = '0px';
-    if (window.MINI_PLAYER?.pause) window.MINI_PLAYER.pause();
     customPlaylistStarted = true;
     userPlayed = true;
     setPlaying(true);
@@ -701,6 +759,7 @@
       if (fillEl) fillEl.style.width = Math.min((pos/dur)*100, 100) + '%';
       if (curEl)  curEl.textContent  = fmt(pos);
       if (durEl)  durEl.textContent  = fmt(dur);
+      _syncUpProgress(pos, dur);
 
       // AUTOMIX: solo en modo lista personalizada con SC (no YouTube)
       if (automixEnabled && activeRadioPlaylist !== null && !youtubeActive && dur > 5000) {
@@ -798,7 +857,6 @@
       widget.pause();
       iframe.style.height = '0px';
     } else {
-      if (window.MINI_PLAYER?.pause) window.MINI_PLAYER.pause();
       widget.play();
       iframe.style.height = '116px';
     }
@@ -859,12 +917,71 @@
     widget.getDuration(dur => widget.seekTo(Math.floor(pct * dur)));
   });
 
+  // ── UP-PLAYER CONTROLS ───────────────────────────────────────────
+  (function bindUpPlayer() {
+    const upPlay   = $('up-play');
+    const upPrev   = $('up-prev');
+    const upNext   = $('up-next');
+    const upShuf   = $('up-shuffle');
+    const upRep    = $('up-repeat');
+    const upMute   = $('up-mute');
+    const upMinBtn = $('up-min-btn');
+    const upMinIco = $('up-min-icon');
+
+    upPlay && upPlay.addEventListener('click', () => playBtn?.click());
+    upPrev && upPrev.addEventListener('click', () => prevBtn?.click());
+    upNext && upNext.addEventListener('click', () => nextBtn?.click());
+
+    upShuf && upShuf.addEventListener('click', () => {
+      shufBtn?.click();
+      upShuf.classList.toggle('up-active', shuffle);
+    });
+
+    upRep && upRep.addEventListener('click', () => {
+      const repeatBtn = $('radio-repeat');
+      repeatBtn?.click();
+      const m = ['none','one','all'];
+      const next = m[(m.indexOf(repeat) + 1) % m.length];
+      upRep.querySelector('i').className = next === 'one' ? 'fas fa-redo-alt' : 'fas fa-redo';
+      upRep.classList.toggle('up-active', next !== 'none');
+    });
+
+    upMute && upMute.addEventListener('click', () => {
+      muteBtn?.click();
+      if (upVolIcon) upVolIcon.className = muted ? 'fas fa-volume-mute' : vol() < 50 ? 'fas fa-volume-down' : 'fas fa-volume-up';
+    });
+
+    upVolEl && upVolEl.addEventListener('input', () => {
+      const v = parseInt(upVolEl.value, 10);
+      if (!muted && widget && widgetRdy) widget.setVolume(v);
+      if (!muted && youtubeActive && ytPlayer?.setVolume) try { ytPlayer.setVolume(v); } catch(_) {}
+      if (upVolIcon) upVolIcon.className = v === 0 ? 'fas fa-volume-mute' : v < 50 ? 'fas fa-volume-down' : 'fas fa-volume-up';
+      if (volEl) { volEl.value = v; volEl.dispatchEvent(new Event('input')); }
+    });
+
+    upProgress && upProgress.addEventListener('click', e => {
+      const pct = Math.max(0, Math.min(1, (e.clientX - upProgress.getBoundingClientRect().left) / upProgress.offsetWidth));
+      if (youtubeActive && ytPlayer?.seekTo) {
+        try { ytPlayer.seekTo(ytPlayer.getDuration() * pct, true); } catch(_) {}
+        return;
+      }
+      if (widget && widgetRdy) widget.getDuration(dur => widget.seekTo(Math.floor(pct * dur)));
+    });
+
+    let upMinimized = false;
+    upMinBtn && upMinBtn.addEventListener('click', () => {
+      upMinimized = !upMinimized;
+      $('up-player')?.classList.toggle('up-minimized', upMinimized);
+      if (upMinIco) upMinIco.className = upMinimized ? 'fas fa-chevron-down' : 'fas fa-chevron-up';
+      _adjustUpLayout();
+    });
+  })();
+
   // ── PUBLIC API ───────────────────────────────────────────────────
   window.RADIO_PLAYER = {
     skip: idx => {
       if (!widget || !widgetRdy || !scSounds[idx]) return;
       userPlayed = true;
-      if (window.MINI_PLAYER?.pause) window.MINI_PLAYER.pause();
       currentIdx = idx;
       showTrack(idx);
       highlight(idx);
@@ -873,7 +990,6 @@
       widget.play();
     },
     play: () => {
-      if (window.MINI_PLAYER?.pause) window.MINI_PLAYER.pause();
       playBtn?.click();
     },
     pause: () => {
@@ -890,6 +1006,18 @@
     isPlaying: () => playing,
     isUsingMiniPlayer: () => youtubeActive,
     getPlaylist: () => enriched,
+    setVolume: v => {
+      v = Math.max(0, Math.min(100, v));
+      if (volEl) volEl.value = v;
+      if (upVolEl) upVolEl.value = v;
+      if (widget && widgetRdy) widget.setVolume(v);
+      if (youtubeActive && ytPlayer?.setVolume) try { ytPlayer.setVolume(v); } catch(_) {}
+      if (volIco) volIco.className = v === 0 ? 'fas fa-volume-mute' : v < 50 ? 'fas fa-volume-down' : 'fas fa-volume-up';
+      if (upVolIcon) upVolIcon.className = v === 0 ? 'fas fa-volume-mute' : v < 50 ? 'fas fa-volume-down' : 'fas fa-volume-up';
+    },
+    setShuffle: v => {
+      if (shuffle !== !!v) shufBtn?.click();
+    },
     // Reproduce un track del catálogo y luego reanuda lo que había antes
     addAndPlay: (catalogTrack) => {
       // Construir objeto de track estándar desde los datos del catálogo
@@ -914,7 +1042,6 @@
       // Parar lo que hay
       if (youtubeActive) stopYoutube();
       else { widget.pause(); iframe.style.height = '0px'; }
-      if (window.MINI_PLAYER?.pause) window.MINI_PLAYER.pause();
       stopCrossfade();
       pendingPlay = false;
 
@@ -1012,7 +1139,6 @@
     stopCrossfade();
     pendingPlay = false; // evitar que RAYVER Radio empiece si READY llega tarde
     window._pendingYtFallback = null;
-    if (window.MINI_PLAYER?.pause) window.MINI_PLAYER.pause();
 
     const nameEl  = document.getElementById('radio-pl-name');
     const loopBtn = document.getElementById('radio-loop-btn');
@@ -1164,15 +1290,8 @@
     });
 
     if (t.type === 'video') {
-      const allVids = customTrackList.filter(x => x.type === 'video').map(x => ({ videoId: x.itemId, title: x.title }));
-      const vidIdx  = customTrackList.slice(0, idx + 1).filter(x => x.type === 'video').length - 1;
-      if (window.MINI_PLAYER?.loadAndPlay) {
-        window.MINI_PLAYER.loadAndPlay(allVids, Math.max(0, vidIdx));
-        customPlaylistStarted = true;
-      }
-      if (playing) { widget.pause(); iframe.style.height = '0px'; setPlaying(false); }
+      playYoutubeTrack(t.itemId || t.videoId, t.title || '');
     } else {
-      if (window.MINI_PLAYER?.pause) window.MINI_PLAYER.pause();
 
       // Resolver fuentes del track (SC, YouTube, Spotify)
       // Nota: tracks de playlists de usuario guardan la URL en campo 'url', no 'scUrl'
@@ -1265,6 +1384,8 @@
 
   // ── INIT ─────────────────────────────────────────────────────────
   function init() {
+    _adjustUpLayout();
+    window.addEventListener('resize', _adjustUpLayout);
     addRepeatBtn();
     addAutomixBtn();
     if (titleEl)  titleEl.textContent  = 'RAYVER Radio';

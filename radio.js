@@ -45,6 +45,7 @@
   let ytPlayerReady = false;   // true cuando el YT.Player está listo
   let ytPlayerDiv = null;      // contenedor del YT player
   let ytUsingFeatured = false; // true cuando ytPlayer está montado en #yt-player-mount
+  let videoExpanded = false;   // true cuando el video está expandido en el top bar
   let ytProgressTimer = null;  // intervalo para barra de progreso YouTube
   let _prevPlaylistState = null; // estado guardado antes de un "Escuchar" del catálogo
 
@@ -103,9 +104,11 @@
     const up = $('up-player');
     const navbar = document.querySelector('.navbar');
     if (!up || !navbar) return;
-    const minimized = up.classList.contains('up-minimized');
-    const h = minimized ? 32 : 64;
-    navbar.style.top = h + 'px';
+    if (up.classList.contains('up-minimized')) {
+      navbar.style.top = '32px';
+    } else {
+      navbar.style.top = up.offsetHeight + 'px';
+    }
   }
 
   function _syncUp(title, artist, coverSrc, tags) {
@@ -582,6 +585,57 @@
     if (mount)     mount.style.display     = '';
   }
 
+  function _moveYtToTopBar() {
+    const mount = document.getElementById('yt-player-mount');
+    const videoArea = document.getElementById('up-video-area');
+    if (!mount || !videoArea) return;
+    videoArea.appendChild(mount);
+    const thumbWrap = document.getElementById('yt-featured-thumb-wrap');
+    if (thumbWrap) thumbWrap.style.display = '';
+  }
+
+  function _moveYtToSection() {
+    const mount = document.getElementById('yt-player-mount');
+    const featuredWrap = document.getElementById('yt-featured-player-wrap');
+    if (!mount || !featuredWrap) return;
+    featuredWrap.appendChild(mount);
+    if (youtubeActive) {
+      const thumbWrap = document.getElementById('yt-featured-thumb-wrap');
+      if (thumbWrap) thumbWrap.style.display = 'none';
+    }
+  }
+
+  window._toggleUpVideo = function() {
+    const player = $('up-player');
+    if (!player) return;
+    videoExpanded = !videoExpanded;
+    player.classList.toggle('up-video-open', videoExpanded);
+    if (videoExpanded) _moveYtToTopBar();
+    else _moveYtToSection();
+    // Use rAF so the transition height is already applied before measuring
+    requestAnimationFrame(_adjustUpLayout);
+  };
+
+  function _setVideoMode(active) {
+    const btn = $('up-video-btn');
+    if (btn) btn.style.display = active ? '' : 'none';
+    if (!active && videoExpanded) {
+      const player = $('up-player');
+      if (player) player.classList.remove('up-video-open');
+      videoExpanded = false;
+      _moveYtToSection();
+      _adjustUpLayout();
+    }
+  }
+
+  window._upVideoFullscreen = function() {
+    const videoArea = document.getElementById('up-video-area');
+    if (!videoArea) return;
+    const el = videoArea.querySelector('iframe') || videoArea;
+    const req = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen;
+    if (req) req.call(el);
+  };
+
   function _resetFeaturedPlaceholder(videoId, title) {
     const thumbWrap = document.getElementById('yt-featured-thumb-wrap');
     const thumb     = document.getElementById('yt-featured-thumb');
@@ -664,6 +718,7 @@
     customPlaylistStarted = true;
     userPlayed = true;
     setPlaying(true);
+    _setVideoMode(true);
     loadYtApiScript(() => initYtPlayer(videoId));
   }
 
@@ -695,8 +750,8 @@
     youtubeActive = false;
     stopYtProgress();
     if (ytPlayer?.pauseVideo) try { ytPlayer.pauseVideo(); } catch(_) {}
-    // No ocultar el player cuando está montado en la sección Videos
     if (ytPlayerDiv && !ytUsingFeatured) ytPlayerDiv.style.height = '0px';
+    _setVideoMode(false);
   }
 
   function bindWidget() {
@@ -1496,6 +1551,11 @@
   function init() {
     _adjustUpLayout();
     window.addEventListener('resize', _adjustUpLayout);
+    // Keep navbar position in sync while video area animates open/close
+    const upPlayer = $('up-player');
+    if (upPlayer) upPlayer.addEventListener('transitionend', e => {
+      if (e.target === upPlayer || e.target.id === 'up-video-area') _adjustUpLayout();
+    });
     addRepeatBtn();
     addAutomixBtn();
     if (titleEl)  titleEl.textContent  = 'RAYVER Radio';

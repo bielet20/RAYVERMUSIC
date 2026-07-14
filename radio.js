@@ -43,7 +43,8 @@
   let youtubeActive = false;   // true cuando el track actual juega desde YouTube IFrame API
   let ytPlayer = null;         // instancia YT.Player
   let ytPlayerReady = false;   // true cuando el YT.Player está listo
-  let ytPlayerDiv = null;      // contenedor del YT player dentro del radio card
+  let ytPlayerDiv = null;      // contenedor del YT player
+  let ytUsingFeatured = false; // true cuando ytPlayer está montado en #yt-player-mount
   let ytProgressTimer = null;  // intervalo para barra de progreso YouTube
   let _prevPlaylistState = null; // estado guardado antes de un "Escuchar" del catálogo
 
@@ -288,6 +289,22 @@
     if (spUrl2) upLinks.push(`<a href="${esc(spUrl2)}" target="_blank" class="radio-ptag ptag-s"><i class="fab fa-spotify"></i></a>`);
     _syncUp(t.title || '—', apiT?.artist || 'RAYVER', coverSrc || 'logo.jpg', upLinks.join(''));
     _syncUpProgress(0, 0);
+
+    // Sincronizar sección Videos cuando el track activo es un vídeo de YouTube
+    if (isVideo) {
+      const fTitle = document.getElementById('yt-featured-title');
+      const fDesc  = document.getElementById('yt-featured-desc');
+      const fLink  = document.getElementById('yt-featured-link');
+      const fThumb = document.getElementById('yt-featured-thumb');
+      if (fTitle) fTitle.textContent = t.title || '—';
+      if (fDesc)  fDesc.textContent  = '';
+      if (fLink)  fLink.href = `https://www.youtube.com/watch?v=${esc(ytId2 || '')}`;
+      if (fThumb) fThumb.src = coverSrc || `https://img.youtube.com/vi/${ytId2}/mqdefault.jpg`;
+      // Resaltar card activa en #yt-grid
+      document.querySelectorAll('.yt-card').forEach(c =>
+        c.classList.toggle('yt-card-active', c.dataset.videoid === (ytId2 || ''))
+      );
+    }
   }
 
   function setPlaying(p) {
@@ -474,7 +491,27 @@
     else if (!iframe.parentNode) document.body.appendChild(iframe);
   }
 
-  // ── YOUTUBE IFRAME API (dentro del radio card, igual que SC Widget) ──
+  // ── YOUTUBE IFRAME API ──────────────────────────────────────────────
+  function _ytStateChange(e) {
+    if (!youtubeActive) return;
+    if (e.data === 1) {        // PLAYING
+      setPlaying(true);
+      startYtProgress();
+    } else if (e.data === 2) { // PAUSED
+      setPlaying(false);
+      stopYtProgress();
+    } else if (e.data === 0) { // ENDED
+      stopYtProgress();
+      youtubeActive = false;
+      if (activeRadioPlaylist !== null) {
+        const next = shuffle ? _nextCustomIdx() : customCurrentIdx + 1;
+        if (customTrackList[next]) setTimeout(() => window.playCustomTrack(next), 400);
+        else if (loopPlaylist)     setTimeout(() => window.playCustomTrack(0), 400);
+        else if (!_restorePrevState()) setPlaying(false);
+      }
+    }
+  }
+
   function getYtPlayerDiv() {
     if (ytPlayerDiv) return ytPlayerDiv;
     ytPlayerDiv = document.createElement('div');
@@ -497,43 +534,61 @@
   }
 
   function initYtPlayer(videoId) {
-    const div = getYtPlayerDiv();
+    // Si el player ya existe, solo cambia el video
     if (ytPlayer) {
-      ytPlayer.loadVideoById(videoId);
-      div.style.height = '116px';
+      try {
+        ytPlayer.loadVideoById(videoId);
+        if (!ytUsingFeatured) {
+          if (ytPlayerDiv) ytPlayerDiv.style.height = '116px';
+        } else {
+          _showFeaturedPlayer();
+        }
+      } catch(_) {}
       return;
     }
-    // Crear un <div> interno que YT.Player reemplazará
+
+    const events = { onReady: () => { ytPlayerReady = true; }, onStateChange: _ytStateChange };
+
+    // Intentar montar en la sección Videos (#yt-player-mount)
+    const mount = document.getElementById('yt-player-mount');
+    if (mount) {
+      ytUsingFeatured = true;
+      mount.innerHTML = '<div id="yt-video-inner"></div>';
+      ytPlayerDiv = mount;
+      ytPlayer = new YT.Player('yt-video-inner', {
+        height: '100%', width: '100%', videoId,
+        playerVars: { autoplay: 1, controls: 1, rel: 0, modestbranding: 1, iv_load_policy: 3, origin: location.origin },
+        events: { ...events, onReady: () => { ytPlayerReady = true; } },
+      });
+      _showFeaturedPlayer();
+      return;
+    }
+
+    // Fallback: crear dentro del radio card
+    const div = getYtPlayerDiv();
     div.innerHTML = '<div id="yt-radio-inner"></div>';
     div.style.height = '116px';
     ytPlayer = new YT.Player('yt-radio-inner', {
-      height: '116',
-      width: '100%',
-      videoId,
+      height: '116', width: '100%', videoId,
       playerVars: { autoplay: 1, controls: 1, rel: 0, modestbranding: 1, iv_load_policy: 3 },
-      events: {
-        onReady: () => { ytPlayerReady = true; },
-        onStateChange: (e) => {
-          if (!youtubeActive) return;
-          if (e.data === 1) {        // PLAYING
-            setPlaying(true);
-            startYtProgress();
-          } else if (e.data === 2) { // PAUSED
-            setPlaying(false);
-            stopYtProgress();
-          } else if (e.data === 0) { // ENDED
-            stopYtProgress();
-            youtubeActive = false;
-            if (activeRadioPlaylist !== null) {
-              const next = customCurrentIdx + 1;
-              if (next < customTrackList.length) setTimeout(() => window.playCustomTrack(next), 400);
-              else if (loopPlaylist) setTimeout(() => window.playCustomTrack(0), 400);
-              else if (!_restorePrevState()) setPlaying(false);
-            }
-          }
-        },
-      },
+      events,
     });
+  }
+
+  function _showFeaturedPlayer() {
+    const thumbWrap = document.getElementById('yt-featured-thumb-wrap');
+    const mount     = document.getElementById('yt-player-mount');
+    if (thumbWrap) thumbWrap.style.display = 'none';
+    if (mount)     mount.style.display     = '';
+  }
+
+  function _resetFeaturedPlaceholder(videoId, title) {
+    const thumbWrap = document.getElementById('yt-featured-thumb-wrap');
+    const thumb     = document.getElementById('yt-featured-thumb');
+    const mount     = document.getElementById('yt-player-mount');
+    if (thumbWrap) thumbWrap.style.display = '';
+    if (mount)     mount.style.display     = 'none';
+    if (thumb && videoId) thumb.src = `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`;
   }
 
   // ── RESTAURAR ESTADO PREVIO tras un "Escuchar" del catálogo ────────
@@ -640,7 +695,8 @@
     youtubeActive = false;
     stopYtProgress();
     if (ytPlayer?.pauseVideo) try { ytPlayer.pauseVideo(); } catch(_) {}
-    if (ytPlayerDiv) ytPlayerDiv.style.height = '0px';
+    // No ocultar el player cuando está montado en la sección Videos
+    if (ytPlayerDiv && !ytUsingFeatured) ytPlayerDiv.style.height = '0px';
   }
 
   function bindWidget() {
@@ -842,7 +898,8 @@
         }
       } else {
         if (youtubeActive) {
-          if (ytPlayerDiv) ytPlayerDiv.style.height = '116px';
+          if (!ytUsingFeatured && ytPlayerDiv) ytPlayerDiv.style.height = '116px';
+          if (ytUsingFeatured) _showFeaturedPlayer();
           try { ytPlayer?.playVideo(); } catch(_) {}
         } else {
           widget.play();
@@ -1063,6 +1120,59 @@
     },
   };
   window.radioPlayIdx = idx => window.RADIO_PLAYER.skip(idx);
+
+  // ── VIDEO PLAYLIST (sección YouTube → reproductor unificado) ─────
+  window.playVideoPlaylist = function(videos, startIdx) {
+    if (!videos?.length) return;
+    const tracks = videos.map(v => ({
+      id:         v.videoId || v.id,
+      itemId:     v.videoId,
+      title:      v.title || v.videoId,
+      cover:      v.cover || `https://img.youtube.com/vi/${v.videoId}/mqdefault.jpg`,
+      videoId:    v.videoId,
+      type:       'video',
+    }));
+
+    // Parar reproducción actual
+    if (youtubeActive) stopYoutube();
+    else if (widgetRdy) { widget.pause(); iframe.style.height = '0px'; }
+    stopCrossfade();
+    pendingPlay = false;
+    window._pendingYtFallback = null;
+
+    // Configurar playlist de vídeos
+    activeRadioPlaylist   = '__videos__';
+    customCurrentIdx      = Math.max(0, Math.min(startIdx || 0, tracks.length - 1));
+    customPlaylistStarted = false;
+    loopPlaylist          = true;
+    customTrackList       = tracks;
+
+    const nameEl  = document.getElementById('radio-pl-name');
+    const loopBtn = document.getElementById('radio-loop-btn');
+    if (nameEl)  nameEl.textContent = 'Videos';
+    if (loopBtn) { loopBtn.style.display = ''; loopBtn.classList.add('active'); }
+
+    renderCustomTracklist(customTrackList);
+    showCustomTrack(customCurrentIdx);
+    window.playCustomTrack(customCurrentIdx);
+  };
+
+  // Reproducir el vídeo destacado actual (llamado desde el placeholder)
+  window.selectFeaturedVideo = function() {
+    if (customTrackList.length && activeRadioPlaylist === '__videos__') {
+      // Ya hay playlist de vídeos activa — reanudar
+      _showFeaturedPlayer();
+      window.playCustomTrack(customCurrentIdx);
+    } else {
+      // Delegar a selectVideo (script.js) para que use la lista completa de vídeos
+      const thumb    = document.getElementById('yt-featured-thumb');
+      const titleEl  = document.getElementById('yt-featured-title');
+      const videoId  = thumb?.dataset.videoid;
+      if (videoId && window.selectVideo) {
+        window.selectVideo(videoId, titleEl?.textContent || '', '');
+      }
+    }
+  };
 
   // ── PLAYLIST SELECTOR ────────────────────────────────────────────
   let activeRadioPlaylist = null; // null o '__default__' = RAYVER Radio; id = lista de usuario

@@ -1189,7 +1189,11 @@ document.addEventListener('DOMContentLoaded', () => {
     allVideos.sort((a,b) => (a.order||0)-(b.order||0));
 
     const featured = allVideos.find(v=>v.featured) || allVideos[0];
-    setMainVideo(featured);
+    // Inicializar placeholder con el vídeo destacado (radio.js tomará el control al hacer click)
+    _setVideoMeta(featured);
+    // Exponer el vídeo destacado al placeholder para el botón de play
+    const thumb = document.getElementById('yt-featured-thumb');
+    if (thumb && featured) thumb.dataset.videoid = featured.videoId;
 
     // Grid de videos (todos menos el destacado en la posición principal)
     const grid = document.getElementById('yt-grid');
@@ -1215,26 +1219,33 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   window.selectVideo = function(videoId, title, desc) {
-    setMainVideo({videoId, title, desc});
-    // Actualizar highlight en grid
-    document.querySelectorAll('.yt-card').forEach(c => {
-      c.classList.toggle('yt-card-active', c.dataset.videoid === videoId);
-    });
-    // Scroll al video principal
+    const idx = allVideos.findIndex(v => v.videoId === videoId);
+    // Enrutar SIEMPRE por el reproductor unificado
+    window.playVideoPlaylist?.(allVideos.length ? allVideos : [{videoId, title}], idx >= 0 ? idx : 0);
+    // Actualizar el texto de la sección Videos (radio.js sincroniza el resto)
+    _setVideoMeta({videoId, title, desc});
+    // Scroll a la sección Videos para ver el vídeo
     document.getElementById('youtube')?.scrollIntoView({behavior:'smooth', block:'start'});
   };
 
-  function setMainVideo(video) {
+  // Actualiza título / desc / link de la sección Videos (no toca el iframe — lo gestiona radio.js)
+  function _setVideoMeta(video) {
     if (!video) return;
-    const iframe = document.getElementById('yt-featured-iframe');
     const titleEl = document.getElementById('yt-featured-title');
     const descEl  = document.getElementById('yt-featured-desc');
     const linkEl  = document.getElementById('yt-featured-link');
-    if (iframe)  iframe.src = `https://www.youtube.com/embed/${esc(video.videoId)}?rel=0`;
+    const thumb   = document.getElementById('yt-featured-thumb');
     if (titleEl) titleEl.textContent = video.title || 'RAYVER — Video Musical';
     if (descEl)  descEl.textContent  = video.desc  || '';
     if (linkEl)  linkEl.href = `https://www.youtube.com/watch?v=${esc(video.videoId)}`;
+    if (thumb) {
+      thumb.src = `https://img.youtube.com/vi/${esc(video.videoId)}/mqdefault.jpg`;
+      thumb.dataset.videoid = video.videoId;
+    }
   }
+
+  // Compatibilidad con código interno que llama setMainVideo (solo metadatos ya)
+  function setMainVideo(video) { _setVideoMeta(video); }
 
   // ── BEATS ────────────────────────────────────────────────────────
   async function loadBeats() {

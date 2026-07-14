@@ -19,7 +19,7 @@
 <meta name="twitter:description" content="Progressive & melodic trance desde Palma de Mallorca.">
 <meta name="twitter:image" content="https://rayvermusic.com/hero_bg.png">
 <link rel="preload" href="hero_bg.png" as="image">
-<link rel="stylesheet" href="styles.css?v=2">
+<link rel="stylesheet" href="styles.css?v=4">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Orbitron:wght@400;600;700;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <script async src="https://plausible.io/js/pa-ax8pbKKZr_jYIfg8t1P28.js"></script>
@@ -372,12 +372,16 @@
   </div>
 
   <div class="yt-featured-wrap glass" id="yt-featured-wrap">
-    <div class="yt-featured-player">
-      <iframe id="yt-featured-iframe"
-        src="https://www.youtube.com/embed/LQ11jW94dCk?rel=0"
-        title="RAYVER — Video Musical" frameborder="0" loading="lazy"
-        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-        allowfullscreen></iframe>
+    <div class="yt-featured-player" id="yt-featured-player-wrap">
+      <!-- Placeholder mostrado antes de que el usuario pulse play -->
+      <div id="yt-featured-thumb-wrap" onclick="selectFeaturedVideo()">
+        <img id="yt-featured-thumb" src="" alt="Portada del video" loading="lazy">
+        <div class="yt-featured-play-overlay">
+          <div class="yt-play-circle yt-play-circle--lg"><i class="fas fa-play"></i></div>
+        </div>
+      </div>
+      <!-- Aquí radio.js inyecta el YT.Player cuando el usuario reproduce -->
+      <div id="yt-player-mount"></div>
     </div>
     <div class="yt-featured-info">
       <div class="yt-live-badge"><span class="yt-dot"></span> VIDEO</div>
@@ -611,8 +615,8 @@
 </footer>
 
 <script src="tracker.js?v=1" defer></script>
-<script src="script.js?v=15"></script>
-<script src="radio.js?v=13"></script>
+<script src="script.js?v=17"></script>
+<script src="radio.js?v=15"></script>
 <!-- PWA: botón flotante de instalación (oculto por defecto, se muestra solo si el navegador soporta instalar) -->
 <button id="pwa-install-btn" style="display:none;position:fixed;bottom:90px;right:20px;z-index:9999;
   background:#a855f7;color:#fff;border:none;border-radius:999px;padding:12px 18px;

@@ -1746,10 +1746,16 @@ body {
 
 #up-player.up-minimized #up-bar { height: 32px; padding: 0 12px; }
 
+#up-player.up-minimized #up-cover-btn,
 #up-player.up-minimized #up-meta,
 #up-player.up-minimized #up-center,
 #up-player.up-minimized #up-vol-wrap,
-#up-player.up-minimized #up-queue-btn { display: none; }
+#up-player.up-minimized #up-queue-btn,
+#up-player.up-minimized #up-playlist-btn,
+#up-player.up-minimized #up-video-btn { display: none; }
+
+/* Keep the chevron pinned to the right edge in minimized strip */
+#up-player.up-minimized #up-right { margin-left: auto; }
 
 /* ── Video inline area inside top player ── */
 #up-video-area {

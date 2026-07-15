@@ -1293,10 +1293,36 @@ app.get('/api/admin/ambient/stream/:id', authMiddleware, (req, res) => {
   if (src.type === 'url')  return res.json({ type: 'url', url: src.url });
   if (src.type === 'gdrive') {
     if (!src.fileId) return res.status(400).json({ error: 'fileId no configurado' });
-    return res.json({ type: 'url', url: `https://drive.google.com/uc?export=download&id=${src.fileId}&confirm=t` });
+    return res.json({ type: 'file', url: `/api/admin/ambient/gdrive-proxy/${src.fileId}?token=${tok}` });
   }
   if (src.type === 'platform') return res.json({ type: 'platform', platformType: src.platformType, url: src.url });
   res.status(400).json({ error: 'Fuente no configurada' });
+});
+
+// Proxy Google Drive audio for admin preview (with range support)
+app.get('/api/admin/ambient/gdrive-proxy/:fileId', async (req, res) => {
+  const tok = (req.query.token || '').trim();
+  if (!tok || !verifyAdminToken(tok)) return res.status(401).json({ error: 'No autorizado' });
+  const apiKey = process.env.GOOGLE_API_KEY;
+  if (!apiKey) return res.status(503).json({ error: 'GOOGLE_API_KEY no configurada' });
+  const fileId = req.params.fileId;
+  const gdUrl  = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media&key=${apiKey}`;
+  try {
+    const u = new URL(gdUrl);
+    const headers = { 'User-Agent': 'RayverMusicAdmin/1.0' };
+    if (req.headers.range) headers['Range'] = req.headers.range;
+    const proxyReq = require('https').request({ hostname: u.hostname, path: u.pathname + u.search, method: 'GET', headers }, proxyRes => {
+      const fwd = {};
+      ['content-type','content-length','content-range','accept-ranges'].forEach(h => { if (proxyRes.headers[h]) fwd[h] = proxyRes.headers[h]; });
+      fwd['cache-control'] = 'no-store';
+      res.writeHead(proxyRes.statusCode, fwd);
+      proxyRes.pipe(res);
+    });
+    proxyReq.on('error', e => { if (!res.headersSent) res.status(502).json({ error: e.message }); });
+    proxyReq.end();
+  } catch(e) {
+    if (!res.headersSent) res.status(500).json({ error: e.message });
+  }
 });
 
 // Serve local audio for admin preview (token via query param so <audio> src works)

@@ -1300,52 +1300,51 @@ app.get('/api/admin/ambient/stream/:id', authMiddleware, (req, res) => {
 });
 
 // Proxy Google Drive audio for admin preview (range-aware, provides Content-Length)
-app.get('/api/admin/ambient/gdrive-proxy/:fileId', (req, res) => {
+app.get('/api/admin/ambient/gdrive-proxy/:fileId', async (req, res) => {
   const tok = (req.query.token || '').trim();
   if (!tok || !verifyAdminToken(tok)) return res.status(401).json({ error: 'No autorizado' });
   const apiKey = process.env.GOOGLE_API_KEY;
   if (!apiKey) return res.status(503).json({ error: 'GOOGLE_API_KEY no configurada' });
   const fileId       = req.params.fileId;
   const browserRange = req.headers.range || null;
-  const gdBase       = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media&key=${apiKey}`;
-  const u            = new URL(gdBase);
-  const _https       = require('https');
+  const mediaUrl     = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media&key=${apiKey}`;
+  const mu           = new URL(mediaUrl);
 
-  function makeGdReq(headers, cb) {
-    const r = _https.request({ hostname: u.hostname, path: u.pathname + u.search, method: 'GET', headers }, cb);
-    r.on('error', e => { if (!res.headersSent) res.status(502).json({ error: e.message }); });
-    r.end();
-  }
+  try {
+    // Get file size from metadata API (fast, no body)
+    let fileSize = null;
+    try {
+      const meta = await httpJSON(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?fields=size&key=${apiKey}`);
+      if (meta.json && meta.json.size) fileSize = meta.json.size;
+    } catch (_) {}
 
-  if (browserRange) {
-    // Forward range request directly → 206
-    makeGdReq({ 'User-Agent': 'RayverMusicAdmin/1.0', 'Range': browserRange }, proxyRes => {
-      const cr  = proxyRes.headers['content-range'] || '';
-      const m   = cr.match(/bytes (\d+)-(\d+)\/(\d+)/);
-      const fwd = { 'accept-ranges': 'bytes', 'cache-control': 'no-store' };
-      if (proxyRes.headers['content-type']) fwd['content-type'] = proxyRes.headers['content-type'];
-      if (cr) fwd['content-range'] = cr;
-      if (m)  fwd['content-length'] = String(+m[2] - +m[1] + 1);
-      res.writeHead(206, fwd);
-      proxyRes.pipe(res);
-    });
-  } else {
-    // No browser range → first get total size via bytes=0-0, then serve full content with Content-Length
-    makeGdReq({ 'User-Agent': 'RayverMusicAdmin/1.0', 'Range': 'bytes=0-0' }, sizeRes => {
-      const cr        = sizeRes.headers['content-range'] || '';
-      const m         = cr.match(/bytes \d+-\d+\/(\d+)/);
-      const totalSize = m ? m[1] : null;
-      const contentType = sizeRes.headers['content-type'] || 'audio/mpeg';
-      sizeRes.resume(); // drain without piping
-      // Now fetch full content
-      makeGdReq({ 'User-Agent': 'RayverMusicAdmin/1.0' }, fullRes => {
-        const fwd = { 'accept-ranges': 'bytes', 'cache-control': 'no-store', 'content-type': contentType };
-        if (totalSize) fwd['content-length'] = totalSize;
-        else if (fullRes.headers['content-length']) fwd['content-length'] = fullRes.headers['content-length'];
-        res.writeHead(200, fwd);
-        fullRes.pipe(res);
-      });
-    });
+    const gdHeaders = { 'User-Agent': 'RayverMusicAdmin/1.0' };
+    if (browserRange) gdHeaders['Range'] = browserRange;
+
+    const _https = require('https');
+    const proxyReq = _https.request(
+      { hostname: mu.hostname, path: mu.pathname + mu.search, method: 'GET', headers: gdHeaders },
+      proxyRes => {
+        const cr  = proxyRes.headers['content-range'] || '';
+        const m   = cr.match(/bytes (\d+)-(\d+)\/(\d+)/);
+        const fwd = { 'accept-ranges': 'bytes', 'cache-control': 'no-store' };
+        if (proxyRes.headers['content-type']) fwd['content-type'] = proxyRes.headers['content-type'];
+        if (browserRange) {
+          if (cr) fwd['content-range'] = cr;
+          if (m)  fwd['content-length'] = String(+m[2] - +m[1] + 1);
+          res.writeHead(206, fwd);
+        } else {
+          if (fileSize) fwd['content-length'] = fileSize;
+          else if (proxyRes.headers['content-length']) fwd['content-length'] = proxyRes.headers['content-length'];
+          res.writeHead(200, fwd);
+        }
+        proxyRes.pipe(res);
+      }
+    );
+    proxyReq.on('error', e => { if (!res.headersSent) res.status(502).json({ error: e.message }); });
+    proxyReq.end();
+  } catch(e) {
+    if (!res.headersSent) res.status(500).json({ error: e.message });
   }
 });
 

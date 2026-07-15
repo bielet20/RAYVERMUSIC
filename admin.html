@@ -463,6 +463,38 @@ body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--text);min-
             </div>
           </div>
 
+          <!-- Google Drive Folder importer -->
+          <div class="gc" style="margin-bottom:16px">
+            <div class="ch"><span class="ct"><i class="fab fa-google-drive" style="color:#4285f4"></i> &nbsp;Importar carpeta de Google Drive</span></div>
+            <div style="padding:20px">
+              <p style="font-size:13px;color:var(--muted);margin-bottom:14px">
+                Importa todos los archivos de audio de una carpeta de Google Drive de golpe.<br>
+                La carpeta debe estar compartida como <strong style="color:var(--text)">Cualquiera con el enlace puede ver</strong>.<br>
+                Requiere la variable de entorno <code>GOOGLE_API_KEY</code> configurada en Coolify.
+              </p>
+              <div style="display:grid;grid-template-columns:1fr auto;gap:10px;align-items:end;margin-bottom:12px">
+                <div class="field" style="margin:0">
+                  <label>URL de la carpeta de Google Drive</label>
+                  <input type="text" id="amb-gdrive-folder-url" placeholder="https://drive.google.com/drive/folders/…" style="width:100%;background:rgba(255,255,255,.06);border:1px solid var(--gb);border-radius:8px;padding:10px;color:var(--text);font-family:monospace;font-size:13px">
+                </div>
+                <div class="field" style="margin:0">
+                  <label>Asignar a pack (opcional)</label>
+                  <select id="amb-gdrive-folder-pack" style="background:rgba(255,255,255,.06);border:1px solid var(--gb);border-radius:8px;padding:10px;color:var(--text);font-family:inherit;height:42px">
+                    <option value="">Sin pack</option>
+                  </select>
+                </div>
+              </div>
+              <div style="display:flex;gap:10px;align-items:center">
+                <button class="btn btn-p" onclick="ambImportGdriveFolder()" id="amb-gdrive-import-btn"><i class="fab fa-google-drive"></i> Importar carpeta</button>
+                <div id="amb-gdrive-import-status" style="font-size:13px;color:var(--muted)"></div>
+              </div>
+              <div id="amb-gdrive-import-results" style="display:none;margin-top:16px;background:rgba(66,133,244,.05);border:1px solid rgba(66,133,244,.2);border-radius:10px;padding:14px">
+                <div id="amb-gdrive-import-summary" style="font-weight:600;margin-bottom:8px"></div>
+                <div id="amb-gdrive-import-list" style="font-size:12px;color:var(--muted);max-height:200px;overflow-y:auto"></div>
+              </div>
+            </div>
+          </div>
+
           <div class="gc" style="margin-bottom:16px">
             <div class="ch">
               <span class="ct">Tracks Ambiente</span>
@@ -2579,6 +2611,46 @@ async function ambDeleteTrack(id) {
   ambLoadTracks();
 }
 
+// ── Google Drive folder importer ────────────────────────────────
+async function ambImportGdriveFolder() {
+  const urlInput  = document.getElementById('amb-gdrive-folder-url');
+  const packSel   = document.getElementById('amb-gdrive-folder-pack');
+  const statusEl  = document.getElementById('amb-gdrive-import-status');
+  const resultsEl = document.getElementById('amb-gdrive-import-results');
+  const summaryEl = document.getElementById('amb-gdrive-import-summary');
+  const listEl    = document.getElementById('amb-gdrive-import-list');
+  const btn       = document.getElementById('amb-gdrive-import-btn');
+
+  const folderUrl = (urlInput?.value || '').trim();
+  if (!folderUrl) { statusEl.textContent = 'Introduce la URL de la carpeta.'; return; }
+
+  btn.disabled = true;
+  statusEl.textContent = 'Importando…';
+  resultsEl.style.display = 'none';
+
+  try {
+    const data = await _ambApi('POST', '/admin/ambient/gdrive-folder-import', {
+      folderUrl,
+      packId: packSel?.value || ''
+    });
+    const imported = data.imported || [];
+    const skipped  = data.skipped  || [];
+
+    summaryEl.textContent = `✅ ${imported.length} tracks importados${skipped.length ? `, ${skipped.length} omitidos` : ''}.`;
+    listEl.innerHTML = [
+      ...imported.map(f => `<div style="color:#86efac">✓ ${_esc(f.name)}</div>`),
+      ...skipped.map(f  => `<div style="color:var(--muted)">— ${_esc(f.name)} (ya existe o no es audio)</div>`)
+    ].join('');
+    resultsEl.style.display = '';
+    statusEl.textContent = '';
+    ambLoadTracks();
+  } catch(e) {
+    statusEl.textContent = e.message || 'Error importando carpeta.';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 // ── Packs ───────────────────────────────────────────────────────
 async function ambLoadPacks() {
   const data = await _ambApi('GET', '/admin/ambient/packs');
@@ -2587,6 +2659,12 @@ async function ambLoadPacks() {
   const scanPackSel = document.getElementById('amb-scan-pack');
   if (scanPackSel) {
     scanPackSel.innerHTML = '<option value="">Sin pack (acceso por suscripción)</option>' +
+      _ambPacks.map(p => `<option value="${p.id}">${_esc(p.title)}</option>`).join('');
+  }
+  // Update gdrive folder pack select
+  const gdrivePackSel = document.getElementById('amb-gdrive-folder-pack');
+  if (gdrivePackSel) {
+    gdrivePackSel.innerHTML = '<option value="">Sin pack</option>' +
       _ambPacks.map(p => `<option value="${p.id}">${_esc(p.title)}</option>`).join('');
   }
   const el = document.getElementById('amb-packs-list');

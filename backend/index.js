@@ -1477,6 +1477,86 @@ app.delete('/api/admin/ambient/tracks/:id', authMiddleware, (req, res) => {
   res.json({ ok: true });
 });
 
+// ── ADMIN: Google Drive folder batch import ────────────────────
+app.post('/api/admin/ambient/gdrive-folder-import', authMiddleware, async (req, res) => {
+  const { folderUrl, packId } = req.body || {};
+  if (!folderUrl) return res.status(400).json({ error: 'folderUrl requerido' });
+
+  const apiKey = process.env.GOOGLE_API_KEY;
+  if (!apiKey) return res.status(500).json({ error: 'GOOGLE_API_KEY no configurada en el servidor' });
+
+  // Extract folder ID from URL
+  const folderMatch = folderUrl.match(/\/folders\/([a-zA-Z0-9_-]{10,})/);
+  const folderId = folderMatch ? folderMatch[1] : (/^[a-zA-Z0-9_-]{20,}$/.test(folderUrl.trim()) ? folderUrl.trim() : null);
+  if (!folderId) return res.status(400).json({ error: 'No se pudo extraer el ID de la carpeta de Google Drive de la URL proporcionada' });
+
+  const AUDIO_MIME = new Set([
+    'audio/mpeg', 'audio/mp3', 'audio/flac', 'audio/wav', 'audio/ogg',
+    'audio/aac', 'audio/mp4', 'audio/x-m4a', 'audio/opus', 'audio/webm'
+  ]);
+
+  try {
+    let allFiles = [];
+    let pageToken = null;
+    do {
+      const params = new URLSearchParams({
+        q: `'${folderId}' in parents and trashed=false`,
+        fields: 'nextPageToken,files(id,name,mimeType)',
+        pageSize: '100',
+        key: apiKey,
+      });
+      if (pageToken) params.set('pageToken', pageToken);
+      const apiRes = await fetch(`https://www.googleapis.com/drive/v3/files?${params}`);
+      if (!apiRes.ok) {
+        const err = await apiRes.json().catch(() => ({}));
+        return res.status(502).json({ error: `Error de Google Drive API: ${err.error?.message || apiRes.status}` });
+      }
+      const data = await apiRes.json();
+      allFiles = allFiles.concat(data.files || []);
+      pageToken = data.nextPageToken || null;
+    } while (pageToken);
+
+    const audioFiles = allFiles.filter(f => AUDIO_MIME.has(f.mimeType));
+    const existingIds = new Set((db.ambientTracks || []).map(t => t.source?.fileId).filter(Boolean));
+
+    const imported = [];
+    const skipped  = [];
+
+    for (const f of allFiles) {
+      if (!AUDIO_MIME.has(f.mimeType)) {
+        skipped.push({ name: f.name, reason: 'not-audio' });
+        continue;
+      }
+      if (existingIds.has(f.id)) {
+        skipped.push({ name: f.name, reason: 'exists' });
+        continue;
+      }
+      const track = {
+        id: uid(),
+        title: f.name.replace(/\.[^.]+$/, ''),
+        description: '',
+        cover: null,
+        tags: [],
+        duration: 0,
+        packId: packId || null,
+        previewUrl: null,
+        source: { type: 'gdrive', fileId: f.id },
+        order: (db.ambientTracks || []).length,
+        active: true,
+        createdAt: new Date().toISOString(),
+      };
+      db.ambientTracks = [...(db.ambientTracks || []), track];
+      imported.push({ name: f.name, id: track.id });
+    }
+
+    if (imported.length) saveDB(db);
+    res.json({ imported, skipped, total: allFiles.length });
+  } catch (e) {
+    console.error('gdrive-folder-import error:', e);
+    res.status(500).json({ error: e.message || 'Error interno' });
+  }
+});
+
 // ── ADMIN: Packs CRUD ──────────────────────────────────────────
 app.get('/api/admin/ambient/packs', authMiddleware, (req, res) => res.json({ packs: db.ambientPacks || [] }));
 

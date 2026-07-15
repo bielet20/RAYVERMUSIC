@@ -2633,7 +2633,7 @@ async function ambImportGdriveFolder() {
       folderUrl,
       packId: packSel?.value || ''
     });
-    if (!raw) throw new Error('Respuesta inesperada del servidor. Verifica que el despliegue haya terminado y que GOOGLE_API_KEY esté configurada.');
+    if (!raw) throw new Error('El backend no responde. Verifica en Coolify que el contenedor esté corriendo y que GOOGLE_API_KEY esté configurada.');
     const imported = raw.imported || [];
     const skipped  = raw.skipped  || [];
 

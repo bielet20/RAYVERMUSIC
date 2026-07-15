@@ -1448,7 +1448,8 @@
       return;
     }
     listBody.innerHTML = tracks.map((t, i) => {
-      const isVideo = t.type === 'video';
+      const isVideo   = t.type === 'video';
+      const isAmbient = t.type === 'ambient';
       const vid = t.itemId || '';
       const coverHtml = isVideo
         ? `<img class="rtitem-cover" src="https://img.youtube.com/vi/${esc(vid)}/default.jpg" alt="" onerror="this.style.display='none'">`
@@ -1457,7 +1458,10 @@
           : `<span class="rtitem-cover rtitem-cover-grad" style="background:${GRADS[i%GRADS.length]}">${esc((t.title||'?')[0].toUpperCase())}</span>`;
       const badge = isVideo
         ? `<span class="rtitem-plat-badge" style="color:#ff4444"><i class="fab fa-youtube"></i></span>`
-        : `<span class="rtitem-plat-badge ptag-soundcloud"><i class="fab fa-soundcloud"></i></span>`;
+        : isAmbient
+          ? `<span class="rtitem-plat-badge" style="color:#4ade80"><i class="fas fa-leaf"></i></span>`
+          : `<span class="rtitem-plat-badge ptag-soundcloud"><i class="fab fa-soundcloud"></i></span>`;
+      const subLabel = isVideo ? 'YouTube' : isAmbient ? 'Ambiente' : 'SoundCloud';
       return `
         <div class="radio-track-item${i === customCurrentIdx ? ' active' : ''}" draggable="true" data-ridx="${i}" onclick="window.playCustomTrack(${i})">
           <span class="rtitem-drag-handle" title="Arrastrar"><i class="fas fa-grip-lines"></i></span>
@@ -1465,7 +1469,7 @@
           ${coverHtml}
           <div class="rtitem-info">
             <div class="rtitem-title">${esc(t.title || '—')}</div>
-            <div class="rtitem-sub">${isVideo ? 'YouTube' : 'SoundCloud'}</div>
+            <div class="rtitem-sub">${subLabel}</div>
           </div>
           ${badge}
         </div>`;
@@ -1538,6 +1542,34 @@
       el.classList.toggle('active', i === idx);
       if (i === idx) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     });
+
+    // Limpiar área de ambiente si no es un track ambient
+    const _radioAmbArea  = document.getElementById('radio-ambient-area');
+    const _radioAmbFrame = document.getElementById('radio-ambient-iframe');
+
+    if (t.type === 'ambient') {
+      iframe.style.height = '0px';
+      stopYoutube();
+      stopCrossfade();
+      if (_radioAmbArea)  _radioAmbArea.style.display  = '';
+      if (_radioAmbFrame) _radioAmbFrame.src = '';
+      const token = window.getToken?.();
+      if (!token) return;
+      fetch(`/api/user/ambient/tracks/${encodeURIComponent(t.itemId || t.id)}/stream`, {
+        headers: { 'Authorization': 'Bearer ' + token }
+      })
+        .then(r => r.json())
+        .then(data => {
+          if (data.type === 'gdrive' && data.fileId && _radioAmbFrame) {
+            _radioAmbFrame.src = `https://drive.google.com/file/d/${encodeURIComponent(data.fileId)}/preview`;
+          }
+        })
+        .catch(() => {});
+      return;
+    }
+
+    if (_radioAmbArea)  _radioAmbArea.style.display  = 'none';
+    if (_radioAmbFrame) _radioAmbFrame.src = '';
 
     if (t.type === 'video') {
       playYoutubeTrack(t.itemId || t.videoId, t.title || '');

@@ -437,6 +437,20 @@ window.plSearchTracks = function(plId, query) {
     }
   }
 
+  // 4. Tracks de Ambiente (solo si el usuario tiene acceso)
+  if (typeof _ambData !== 'undefined') {
+    const ambAccess = _ambData.access;
+    const canAmb = ambAccess?.hasSubscription || (ambAccess?.packs || []).length > 0;
+    if (canAmb) {
+      for (const t of (_ambData.tracks || [])) {
+        if ((t.title || '').toLowerCase().includes(q) || (t.tags || []).some(tag => tag.toLowerCase().includes(q))) {
+          results.push({ type: 'ambient', itemId: t.id, title: t.title || '—', sub: 'Ambiente',
+            cover: t.cover || '', url: '', exists: existingKeys.has('ambient:' + t.id) });
+        }
+      }
+    }
+  }
+
   _plSearchCache[plId] = results.slice(0, 25);
 
   if (!results.length) {
@@ -1589,9 +1603,13 @@ function renderAmbientTracks() {
         onclick="event.stopPropagation();toggleAmbientFav('${t.id}',this)">
         <i class="fas fa-heart"></i>
       </button>
-      <button class="amb-add-btn" title="Añadir a lista"
+      <button class="amb-add-btn" title="Añadir a lista de ambiente"
         onclick="event.stopPropagation();ambShowAddToPlaylist('${t.id}')">
-        <i class="fas fa-plus"></i>
+        <i class="fas fa-list-ul"></i>
+      </button>
+      <button class="amb-add-btn" title="Añadir a mi lista personal"
+        onclick="event.stopPropagation();window._lastPickerTrigger=this;addToPlaylist('ambient','${t.id}','${t.title.replace(/'/g,"\\'")}','${(t.cover||'').replace(/'/g,"\\'")}','')">
+        <i class="fas fa-plus-circle"></i>
       </button>` : '';
     return `<div class="ambient-track-row" onclick="ambPlayTrack('${t.id}')">
       ${t.cover

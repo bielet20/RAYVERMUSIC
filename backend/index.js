@@ -864,13 +864,13 @@ app.get('/api/user/playlists', userAuth, (req, res) => {
 });
 
 app.post('/api/user/playlists', userAuth, (req, res) => {
-  const { name } = req.body || {};
+  const { name, kind } = req.body || {};
   if (!name || !name.trim()) return res.status(400).json({ error: 'Nombre requerido' });
   const trimmed = name.trim();
   const userLists = (db.playlists || []).filter(p => p.userId === req.user.userId);
   if (userLists.find(p => p.name.toLowerCase() === trimmed.toLowerCase()))
     return res.status(409).json({ error: 'Ya tienes una lista con ese nombre' });
-  const pl = { id: uid(), userId: req.user.userId, name: trimmed, tracks: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+  const pl = { id: uid(), userId: req.user.userId, name: trimmed, kind: kind || 'music', tracks: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
   db.playlists.push(pl);
   saveDB(db);
   res.json(pl);

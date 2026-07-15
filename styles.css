@@ -1118,6 +1118,18 @@ body {
 .ambient-track-lock { font-size: 14px; color: var(--muted); }
 .ambient-track-lock.unlocked { color: #34d399; }
 
+/* Ambient tabs */
+.amb-tab { display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:20px;border:1px solid var(--gb);background:rgba(255,255,255,.04);color:var(--muted);font-size:13px;font-weight:600;cursor:pointer;transition:all .2s;white-space:nowrap; }
+.amb-tab:hover { border-color:rgba(168,85,247,.4);color:var(--text); }
+.amb-tab.active { background:rgba(168,85,247,.15);border-color:rgba(168,85,247,.5);color:var(--primary-2); }
+.amb-tab-new { background:rgba(168,85,247,.08);border-color:rgba(168,85,247,.25);color:var(--primary-2); }
+/* Favorite & playlist action buttons on track row */
+.amb-fav-btn { background:none;border:none;padding:6px 8px;cursor:pointer;font-size:16px;color:var(--muted);transition:color .15s,transform .15s;flex-shrink:0; }
+.amb-fav-btn:hover { color:#f472b6;transform:scale(1.2); }
+.amb-fav-btn.active { color:#f472b6; }
+.amb-add-btn { background:none;border:none;padding:6px 8px;cursor:pointer;font-size:13px;color:var(--muted);transition:color .15s;flex-shrink:0; }
+.amb-add-btn:hover { color:var(--primary-2); }
+
 /* Responsive */
 @media (max-width: 480px) {
   .ambient-plan-card { min-width: 160px; padding: 22px 16px; }

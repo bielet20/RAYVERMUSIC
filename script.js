@@ -1347,6 +1347,7 @@ async function loadAmbient() {
       const acc = await _ambFetch('/ambient/access');
       _ambData.access = acc;
     } catch { _ambData.access = null; }
+    await loadAmbientPlaylists();
   }
 
   renderAmbientPlans();
@@ -1403,25 +1404,178 @@ function renderAmbientPacks() {
   }).join('');
 }
 
-let _ambActivePackFilter = null;
+let _ambActivePackFilter  = null;
+let _ambActiveTab         = 'all'; // 'all' | 'favs' | playlistId
+let _ambFavs              = new Set();
+let _ambFavPlId           = null;
+let _ambUserPlaylists     = [];
+let _ambPendingAddTrackId = null;
+
 function ambFilterByPack(packId) {
   _ambActivePackFilter = _ambActivePackFilter === packId ? null : packId;
   renderAmbientTracks();
+}
+
+// ── AMBIENT PLAYLISTS & FAVORITES ─────────────────────────────────
+async function loadAmbientPlaylists() {
+  if (!AUTH.user) { _ambFavs = new Set(); _ambFavPlId = null; _ambUserPlaylists = []; return; }
+  try {
+    const r = await apiUser('/playlists');
+    if (!r.ok) return;
+    _ambUserPlaylists = (r.data || []).filter(p => p.kind === 'ambient');
+    const favPl = _ambUserPlaylists.find(p => p.name === '__favs__');
+    _ambFavPlId = favPl?.id || null;
+    _ambFavs    = new Set((favPl?.tracks || []).map(t => t.itemId));
+  } catch {}
+  const hasAccess = _ambData.access?.hasSubscription || (_ambData.access?.packs || []).length;
+  const tabsEl = document.getElementById('ambient-tabs');
+  if (tabsEl) tabsEl.style.display = hasAccess ? 'flex' : 'none';
+  renderAmbientTabs();
+}
+
+function renderAmbientTabs() {
+  const plsEl = document.getElementById('ambtab-playlists');
+  if (!plsEl) return;
+  const userPls = _ambUserPlaylists.filter(p => p.name !== '__favs__');
+  plsEl.innerHTML = userPls.map(p =>
+    `<button class="amb-tab${_ambActiveTab === p.id ? ' active' : ''}" onclick="ambSetTab('${p.id}')">
+      <i class="fas fa-list-ul"></i> ${esc(p.name)}
+      <span onclick="event.stopPropagation();ambDeletePlaylist('${p.id}')" title="Eliminar" style="margin-left:5px;opacity:.5;font-size:12px">✕</span>
+    </button>`
+  ).join('');
+  // Sync active class on fixed tabs
+  ['all','favs'].forEach(id => {
+    const btn = document.getElementById('ambtab-' + id);
+    if (btn) btn.classList.toggle('active', _ambActiveTab === id);
+  });
+}
+
+function ambSetTab(tab) {
+  _ambActiveTab = tab;
+  renderAmbientTabs();
+  renderAmbientTracks();
+}
+
+async function toggleAmbientFav(trackId, e) {
+  if (e) e.stopPropagation();
+  if (!AUTH.user) { openAuthModal(); return; }
+  const track = _ambData.tracks.find(t => t.id === trackId);
+  if (!track) return;
+  if (!_ambFavPlId) {
+    const r = await apiUser('/playlists', { method: 'POST', body: JSON.stringify({ name: '__favs__', kind: 'ambient' }) });
+    if (!r.ok) return;
+    _ambFavPlId = r.data.id;
+    _ambUserPlaylists.push({ ...r.data, tracks: [] });
+  }
+  if (_ambFavs.has(trackId)) {
+    const favPl = _ambUserPlaylists.find(p => p.id === _ambFavPlId);
+    const entry = (favPl?.tracks || []).find(t => t.itemId === trackId);
+    if (entry) {
+      await apiUser(`/playlists/${_ambFavPlId}/tracks/${entry.id}`, { method: 'DELETE' });
+      _ambFavs.delete(trackId);
+      if (favPl) favPl.tracks = favPl.tracks.filter(t => t.itemId !== trackId);
+    }
+  } else {
+    const r = await apiUser(`/playlists/${_ambFavPlId}/tracks`, {
+      method: 'POST',
+      body: JSON.stringify({ type: 'ambient', itemId: trackId, title: track.title, cover: track.cover || '' })
+    });
+    if (r.ok) {
+      _ambFavs.add(trackId);
+      const favPl = _ambUserPlaylists.find(p => p.id === _ambFavPlId);
+      if (favPl) favPl.tracks = [...(favPl.tracks || []), r.data];
+    }
+  }
+  renderAmbientTracks();
+}
+
+function ambNewPlaylistModal() {
+  if (!AUTH.user) { openAuthModal(); return; }
+  document.getElementById('amb-playlist-name-input').value = '';
+  document.getElementById('amb-playlist-new-modal').style.display = 'flex';
+}
+
+async function ambCreatePlaylist() {
+  const name = document.getElementById('amb-playlist-name-input').value.trim();
+  if (!name) return;
+  const r = await apiUser('/playlists', { method: 'POST', body: JSON.stringify({ name, kind: 'ambient' }) });
+  if (!r.ok) { alert(r.data?.error || 'Error al crear la lista'); return; }
+  _ambUserPlaylists.push({ ...r.data, tracks: [] });
+  document.getElementById('amb-playlist-new-modal').style.display = 'none';
+  renderAmbientTabs();
+  ambSetTab(r.data.id);
+}
+
+async function ambDeletePlaylist(plId) {
+  if (!confirm('¿Eliminar esta lista?')) return;
+  await apiUser(`/playlists/${plId}`, { method: 'DELETE' });
+  _ambUserPlaylists = _ambUserPlaylists.filter(p => p.id !== plId);
+  if (_ambActiveTab === plId) _ambActiveTab = 'all';
+  renderAmbientTabs();
+  renderAmbientTracks();
+}
+
+function ambShowAddToPlaylist(trackId, e) {
+  if (e) e.stopPropagation();
+  if (!AUTH.user) { openAuthModal(); return; }
+  _ambPendingAddTrackId = trackId;
+  const listEl = document.getElementById('amb-playlist-picker-list');
+  const userPls = _ambUserPlaylists.filter(p => p.name !== '__favs__');
+  listEl.innerHTML = userPls.length
+    ? userPls.map(p =>
+        `<button class="btn btn-sm" style="width:100%;text-align:left;justify-content:flex-start" onclick="ambAddTrackToPlaylist('${p.id}')">
+          <i class="fas fa-list-ul" style="color:var(--primary-2);margin-right:8px"></i>${esc(p.name)}
+        </button>`
+      ).join('')
+    : `<div style="color:var(--muted);font-size:13px;text-align:center;padding:16px 0">No tienes listas aún.<br>
+        <button class="btn btn-primary btn-sm" style="margin-top:10px" onclick="document.getElementById('amb-add-to-playlist-modal').style.display='none';ambNewPlaylistModal()">
+          <i class="fas fa-plus"></i> Crear lista
+        </button></div>`;
+  document.getElementById('amb-add-to-playlist-modal').style.display = 'flex';
+}
+
+async function ambAddTrackToPlaylist(plId) {
+  const trackId = _ambPendingAddTrackId;
+  if (!trackId) return;
+  const track = _ambData.tracks.find(t => t.id === trackId);
+  const r = await apiUser(`/playlists/${plId}/tracks`, {
+    method: 'POST',
+    body: JSON.stringify({ type: 'ambient', itemId: trackId, title: track?.title || '', cover: track?.cover || '' })
+  });
+  document.getElementById('amb-add-to-playlist-modal').style.display = 'none';
+  if (!r.ok) { alert(r.data?.error || 'Error al añadir'); return; }
+  const pl = _ambUserPlaylists.find(p => p.id === plId);
+  if (pl) pl.tracks = [...(pl.tracks || []), r.data];
+  _ambPendingAddTrackId = null;
 }
 
 function renderAmbientTracks() {
   const el = document.getElementById('ambient-track-list');
   if (!el) return;
 
-  const tracks = _ambActivePackFilter
+  const hasSub   = _ambData.access?.hasSubscription;
+  const myPacks  = _ambData.access?.packs || [];
+  const hasAccess = hasSub || myPacks.length > 0;
+
+  let tracks = _ambActivePackFilter
     ? _ambData.tracks.filter(t => t.packId === _ambActivePackFilter)
     : _ambData.tracks;
 
-  const hasSub  = _ambData.access?.hasSubscription;
-  const myPacks = _ambData.access?.packs || [];
+  if (_ambActiveTab === 'favs') {
+    tracks = tracks.filter(t => _ambFavs.has(t.id));
+  } else if (_ambActiveTab !== 'all') {
+    const pl = _ambUserPlaylists.find(p => p.id === _ambActiveTab);
+    const plIds = new Set((pl?.tracks || []).map(tr => tr.itemId));
+    tracks = tracks.filter(t => plIds.has(t.id));
+  }
 
   if (!tracks.length) {
-    el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted)">No hay tracks disponibles aún.</div>';
+    const msg = _ambActiveTab === 'favs'
+      ? 'Aún no tienes favoritas. Haz clic en ♥ en cualquier track.'
+      : _ambActiveTab !== 'all'
+        ? 'Esta lista no tiene tracks aún. Usa + en cualquier track para añadir.'
+        : 'No hay tracks disponibles aún.';
+    el.innerHTML = `<div style="text-align:center;padding:40px;color:var(--muted)">${msg}</div>`;
     return;
   }
 
@@ -1429,6 +1583,16 @@ function renderAmbientTracks() {
     const unlocked = hasSub || myPacks.includes(t.packId);
     const durationStr = _fmtDuration(t.duration);
     const pack = _ambData.packs.find(p => p.id === t.packId);
+    const isFav = _ambFavs.has(t.id);
+    const actionBtns = AUTH.user && hasAccess ? `
+      <button class="amb-fav-btn ${isFav ? 'active' : ''}" title="${isFav ? 'Quitar de favoritas' : 'Añadir a favoritas'}"
+        onclick="event.stopPropagation();toggleAmbientFav('${t.id}',this)">
+        <i class="fas fa-heart"></i>
+      </button>
+      <button class="amb-add-btn" title="Añadir a lista"
+        onclick="event.stopPropagation();ambShowAddToPlaylist('${t.id}')">
+        <i class="fas fa-plus"></i>
+      </button>` : '';
     return `<div class="ambient-track-row" onclick="ambPlayTrack('${t.id}')">
       ${t.cover
         ? `<img class="ambient-track-cover" src="${t.cover}" alt="${t.title}">`
@@ -1439,6 +1603,7 @@ function renderAmbientTracks() {
       </div>
       <div class="ambient-track-meta">
         ${durationStr ? `<div class="ambient-track-duration">${durationStr}</div>` : ''}
+        ${actionBtns}
         <div class="ambient-track-lock ${unlocked ? 'unlocked' : ''}">
           <i class="fas fa-${unlocked ? 'unlock' : 'lock'}"></i>
         </div>

@@ -2629,17 +2629,18 @@ async function ambImportGdriveFolder() {
   resultsEl.style.display = 'none';
 
   try {
-    const data = await _ambApi('POST', '/admin/ambient/gdrive-folder-import', {
+    const raw = await _ambApi('POST', '/admin/ambient/gdrive-folder-import', {
       folderUrl,
       packId: packSel?.value || ''
     });
-    const imported = data.imported || [];
-    const skipped  = data.skipped  || [];
+    if (!raw) throw new Error('Respuesta inesperada del servidor. Verifica que el despliegue haya terminado y que GOOGLE_API_KEY esté configurada.');
+    const imported = raw.imported || [];
+    const skipped  = raw.skipped  || [];
 
     summaryEl.textContent = `✅ ${imported.length} tracks importados${skipped.length ? `, ${skipped.length} omitidos` : ''}.`;
     listEl.innerHTML = [
       ...imported.map(f => `<div style="color:#86efac">✓ ${_esc(f.name)}</div>`),
-      ...skipped.map(f  => `<div style="color:var(--muted)">— ${_esc(f.name)} (ya existe o no es audio)</div>`)
+      ...skipped.map(f  => `<div style="color:var(--muted)">— ${_esc(f.name)} (${f.reason === 'exists' ? 'ya existe' : 'no es audio'})</div>`)
     ].join('');
     resultsEl.style.display = '';
     statusEl.textContent = '';

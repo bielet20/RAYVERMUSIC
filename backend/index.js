@@ -1509,7 +1509,7 @@ app.post('/api/admin/ambient/gdrive-folder-import', authMiddleware, async (req, 
       const apiRes = await fetch(`https://www.googleapis.com/drive/v3/files?${params}`);
       if (!apiRes.ok) {
         const err = await apiRes.json().catch(() => ({}));
-        return res.status(502).json({ error: `Error de Google Drive API: ${err.error?.message || apiRes.status}` });
+        return res.status(400).json({ error: `Error de Google Drive API: ${err.error?.message || apiRes.status}` });
       }
       const data = await apiRes.json();
       allFiles = allFiles.concat(data.files || []);

@@ -1299,30 +1299,41 @@ app.get('/api/admin/ambient/stream/:id', authMiddleware, (req, res) => {
   res.status(400).json({ error: 'Fuente no configurada' });
 });
 
-// Proxy Google Drive audio for admin preview (with range support)
-app.get('/api/admin/ambient/gdrive-proxy/:fileId', async (req, res) => {
+// Proxy Google Drive audio for admin preview (range-aware, provides Content-Length)
+app.get('/api/admin/ambient/gdrive-proxy/:fileId', (req, res) => {
   const tok = (req.query.token || '').trim();
   if (!tok || !verifyAdminToken(tok)) return res.status(401).json({ error: 'No autorizado' });
   const apiKey = process.env.GOOGLE_API_KEY;
   if (!apiKey) return res.status(503).json({ error: 'GOOGLE_API_KEY no configurada' });
-  const fileId = req.params.fileId;
-  const gdUrl  = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media&key=${apiKey}`;
-  try {
-    const u = new URL(gdUrl);
-    const headers = { 'User-Agent': 'RayverMusicAdmin/1.0' };
-    if (req.headers.range) headers['Range'] = req.headers.range;
-    const proxyReq = require('https').request({ hostname: u.hostname, path: u.pathname + u.search, method: 'GET', headers }, proxyRes => {
-      const fwd = {};
-      ['content-type','content-length','content-range','accept-ranges'].forEach(h => { if (proxyRes.headers[h]) fwd[h] = proxyRes.headers[h]; });
-      fwd['cache-control'] = 'no-store';
-      res.writeHead(proxyRes.statusCode, fwd);
+  const fileId     = req.params.fileId;
+  const browserRange = req.headers.range || null;
+  // Always send a range to Google so the response includes Content-Range (and thus total size)
+  const gdRange    = browserRange || 'bytes=0-';
+  const gdUrl      = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media&key=${apiKey}`;
+  const u          = new URL(gdUrl);
+  const proxyReq   = require('https').request(
+    { hostname: u.hostname, path: u.pathname + u.search, method: 'GET',
+      headers: { 'User-Agent': 'RayverMusicAdmin/1.0', 'Range': gdRange } },
+    proxyRes => {
+      const cr   = proxyRes.headers['content-range'] || '';  // e.g. bytes 0-77439795/77439796
+      const m    = cr.match(/bytes (\d+)-(\d+)\/(\d+)/);
+      const fwd  = { 'accept-ranges': 'bytes', 'cache-control': 'no-store' };
+      if (proxyRes.headers['content-type']) fwd['content-type'] = proxyRes.headers['content-type'];
+      if (browserRange) {
+        // Honour browser range → 206
+        if (cr) fwd['content-range'] = cr;
+        if (m)  fwd['content-length'] = String(+m[2] - +m[1] + 1);
+        res.writeHead(206, fwd);
+      } else {
+        // No browser range → serve as 200 with full Content-Length from range metadata
+        if (m)  fwd['content-length'] = m[3];       // total file size
+        res.writeHead(200, fwd);
+      }
       proxyRes.pipe(res);
-    });
-    proxyReq.on('error', e => { if (!res.headersSent) res.status(502).json({ error: e.message }); });
-    proxyReq.end();
-  } catch(e) {
-    if (!res.headersSent) res.status(500).json({ error: e.message });
-  }
+    }
+  );
+  proxyReq.on('error', e => { if (!res.headersSent) res.status(502).json({ error: e.message }); });
+  proxyReq.end();
 });
 
 // Serve local audio for admin preview (token via query param so <audio> src works)

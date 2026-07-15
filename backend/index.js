@@ -1305,35 +1305,48 @@ app.get('/api/admin/ambient/gdrive-proxy/:fileId', (req, res) => {
   if (!tok || !verifyAdminToken(tok)) return res.status(401).json({ error: 'No autorizado' });
   const apiKey = process.env.GOOGLE_API_KEY;
   if (!apiKey) return res.status(503).json({ error: 'GOOGLE_API_KEY no configurada' });
-  const fileId     = req.params.fileId;
+  const fileId       = req.params.fileId;
   const browserRange = req.headers.range || null;
-  // Always send a range to Google so the response includes Content-Range (and thus total size)
-  const gdRange    = browserRange || 'bytes=0-';
-  const gdUrl      = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media&key=${apiKey}`;
-  const u          = new URL(gdUrl);
-  const proxyReq   = require('https').request(
-    { hostname: u.hostname, path: u.pathname + u.search, method: 'GET',
-      headers: { 'User-Agent': 'RayverMusicAdmin/1.0', 'Range': gdRange } },
-    proxyRes => {
-      const cr   = proxyRes.headers['content-range'] || '';  // e.g. bytes 0-77439795/77439796
-      const m    = cr.match(/bytes (\d+)-(\d+)\/(\d+)/);
-      const fwd  = { 'accept-ranges': 'bytes', 'cache-control': 'no-store' };
+  const gdBase       = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media&key=${apiKey}`;
+  const u            = new URL(gdBase);
+  const _https       = require('https');
+
+  function makeGdReq(headers, cb) {
+    const r = _https.request({ hostname: u.hostname, path: u.pathname + u.search, method: 'GET', headers }, cb);
+    r.on('error', e => { if (!res.headersSent) res.status(502).json({ error: e.message }); });
+    r.end();
+  }
+
+  if (browserRange) {
+    // Forward range request directly → 206
+    makeGdReq({ 'User-Agent': 'RayverMusicAdmin/1.0', 'Range': browserRange }, proxyRes => {
+      const cr  = proxyRes.headers['content-range'] || '';
+      const m   = cr.match(/bytes (\d+)-(\d+)\/(\d+)/);
+      const fwd = { 'accept-ranges': 'bytes', 'cache-control': 'no-store' };
       if (proxyRes.headers['content-type']) fwd['content-type'] = proxyRes.headers['content-type'];
-      if (browserRange) {
-        // Honour browser range → 206
-        if (cr) fwd['content-range'] = cr;
-        if (m)  fwd['content-length'] = String(+m[2] - +m[1] + 1);
-        res.writeHead(206, fwd);
-      } else {
-        // No browser range → serve as 200 with full Content-Length from range metadata
-        if (m)  fwd['content-length'] = m[3];       // total file size
-        res.writeHead(200, fwd);
-      }
+      if (cr) fwd['content-range'] = cr;
+      if (m)  fwd['content-length'] = String(+m[2] - +m[1] + 1);
+      res.writeHead(206, fwd);
       proxyRes.pipe(res);
-    }
-  );
-  proxyReq.on('error', e => { if (!res.headersSent) res.status(502).json({ error: e.message }); });
-  proxyReq.end();
+    });
+  } else {
+    // No browser range → first get total size via bytes=0-0, then serve full content with Content-Length
+    makeGdReq({ 'User-Agent': 'RayverMusicAdmin/1.0', 'Range': 'bytes=0-0' }, sizeRes => {
+      const cr        = sizeRes.headers['content-range'] || '';
+      const m         = cr.match(/bytes \d+-\d+\/(\d+)/);
+      const totalSize = m ? m[1] : null;
+      const contentType = sizeRes.headers['content-type'] || 'audio/mpeg';
+      sizeRes.resume(); // drain without piping
+      // Now fetch full content
+      makeGdReq({ 'User-Agent': 'RayverMusicAdmin/1.0' }, fullRes => {
+        const fwd = { 'accept-ranges': 'bytes', 'cache-control': 'no-store', 'content-type': contentType };
+        if (totalSize) fwd['content-length'] = totalSize;
+        else if (fullRes.headers['content-length']) fwd['content-length'] = fullRes.headers['content-length'];
+        res.writeHead(200, fwd);
+        fullRes.pipe(res);
+      });
+    });
+  }
 });
 
 // Serve local audio for admin preview (token via query param so <audio> src works)

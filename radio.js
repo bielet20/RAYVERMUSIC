@@ -49,6 +49,10 @@
   let ytProgressTimer = null;  // intervalo para barra de progreso YouTube
   let _prevPlaylistState = null; // estado guardado antes de un "Escuchar" del catálogo
 
+  // ── AMBIENT AUDIO STATE ──────────────────────────────────────────
+  let ambientAudioActive = false;  // true cuando el track actual es de Ambiente
+  let ambProgressTimer   = null;   // intervalo para barra de progreso de Ambiente
+
   // ── AUTOMIX STATE ────────────────────────────────────────────────
   let automixEnabled     = false;
   let isCrossfading      = false;
@@ -709,6 +713,67 @@
     if (ytProgressTimer) { clearInterval(ytProgressTimer); ytProgressTimer = null; }
   }
 
+  // ── AMBIENT AUDIO HELPERS ────────────────────────────────────────
+  function _stopAmbientProgress() {
+    if (ambProgressTimer) { clearInterval(ambProgressTimer); ambProgressTimer = null; }
+  }
+
+  function _stopAmbientAudio() {
+    ambientAudioActive = false;
+    _stopAmbientProgress();
+    if (audioEl) { audioEl.pause(); audioEl.src = ''; }
+  }
+
+  function _startAmbientProgress() {
+    _stopAmbientProgress();
+    if (!audioEl) return;
+    ambProgressTimer = setInterval(() => {
+      if (!ambientAudioActive || !audioEl) return;
+      const pos = (audioEl.currentTime || 0) * 1000;
+      const dur = (audioEl.duration   || 0) * 1000;
+      if (dur > 0) {
+        if (fillEl) fillEl.style.width = Math.min((pos / dur) * 100, 100) + '%';
+        if (curEl)  curEl.textContent  = fmt(pos);
+        if (durEl)  durEl.textContent  = fmt(dur);
+        _syncUpProgress(pos, dur);
+      }
+    }, 500);
+  }
+
+  // Bind native audioEl events for ambient playback
+  if (audioEl) {
+    audioEl.addEventListener('play',  () => { if (ambientAudioActive) setPlaying(true);  });
+    audioEl.addEventListener('pause', () => { if (ambientAudioActive) setPlaying(false); });
+    audioEl.addEventListener('ended', () => {
+      if (!ambientAudioActive) return;
+      _stopAmbientAudio();
+      setPlaying(false);
+      if (activeRadioPlaylist !== null) {
+        const next = _nextCustomIdx();
+        const within = shuffle ? true : next < customTrackList.length;
+        if (within && customTrackList[next]) {
+          setTimeout(() => window.playCustomTrack(next), 400);
+        } else if (loopPlaylist || shuffle) {
+          setTimeout(() => window.playCustomTrack(shuffle ? _nextCustomIdx() : 0), 400);
+        } else {
+          if (!_restorePrevState()) { stopCrossfade(); setPlaying(false); }
+        }
+      }
+    });
+    audioEl.addEventListener('error', () => {
+      if (!ambientAudioActive) return;
+      _stopAmbientAudio();
+      setPlaying(false);
+      const t = customTrackList[customCurrentIdx];
+      if (t) showUnavailable(t);
+    });
+    audioEl.addEventListener('durationchange', () => {
+      if (!ambientAudioActive || !audioEl?.duration) return;
+      if (durEl) durEl.textContent = fmt(audioEl.duration * 1000);
+      _syncUpProgress((audioEl.currentTime || 0) * 1000, audioEl.duration * 1000);
+    });
+  }
+
   function playYoutubeTrack(videoId, title) {
     _autoSkipCount = 0;
     window._pendingYtFallback = null;
@@ -946,6 +1011,8 @@
       } else if (playing) {
         if (youtubeActive) {
           try { ytPlayer?.pauseVideo(); } catch(_) {}
+        } else if (ambientAudioActive) {
+          audioEl?.pause();
         } else {
           widget.pause();
           iframe.style.height = '0px';
@@ -956,6 +1023,8 @@
           if (!ytUsingFeatured && ytPlayerDiv) ytPlayerDiv.style.height = '116px';
           if (ytUsingFeatured) _showFeaturedPlayer();
           try { ytPlayer?.playVideo(); } catch(_) {}
+        } else if (ambientAudioActive) {
+          audioEl?.play().catch(() => {});
         } else {
           widget.play();
           // SC widget permanece oculto en modo lista personalizada
@@ -1010,12 +1079,14 @@
     muted = !muted;
     if (widget && widgetRdy) widget.setVolume(muted ? 0 : vol());
     if (youtubeActive && ytPlayer?.setVolume) try { ytPlayer.setVolume(muted ? 0 : vol()); } catch(_) {}
+    if (ambientAudioActive && audioEl) audioEl.volume = muted ? 0 : vol() / 100;
     if (volIco) volIco.className = muted ? 'fas fa-volume-mute' : vol()<50 ? 'fas fa-volume-down' : 'fas fa-volume-up';
   });
 
   volEl && volEl.addEventListener('input', () => {
     if (!muted && widget && widgetRdy) widget.setVolume(vol());
     if (!muted && youtubeActive && ytPlayer?.setVolume) try { ytPlayer.setVolume(vol()); } catch(_) {}
+    if (!muted && ambientAudioActive && audioEl) audioEl.volume = vol() / 100;
     if (volIco) volIco.className = vol()===0 ? 'fas fa-volume-mute' : vol()<50 ? 'fas fa-volume-down' : 'fas fa-volume-up';
   });
 
@@ -1023,6 +1094,11 @@
     const pct = Math.max(0, Math.min(1, (e.clientX - progEl.getBoundingClientRect().left) / progEl.offsetWidth));
     if (youtubeActive && ytPlayer?.seekTo) {
       try { ytPlayer.seekTo(ytPlayer.getDuration() * pct, true); } catch(_) {}
+      return;
+    }
+    if (ambientAudioActive && audioEl?.duration) {
+      audioEl.currentTime = pct * audioEl.duration;
+      if (fillEl) fillEl.style.width = (pct * 100) + '%';
       return;
     }
     if (!widget || !widgetRdy) return;
@@ -1075,6 +1151,11 @@
       const pct = Math.max(0, Math.min(1, (e.clientX - upProgress.getBoundingClientRect().left) / upProgress.offsetWidth));
       if (youtubeActive && ytPlayer?.seekTo) {
         try { ytPlayer.seekTo(ytPlayer.getDuration() * pct, true); } catch(_) {}
+        return;
+      }
+      if (ambientAudioActive && audioEl?.duration) {
+        audioEl.currentTime = pct * audioEl.duration;
+        if (upFillEl) upFillEl.style.width = (pct * 100) + '%';
         return;
       }
       if (widget && widgetRdy) widget.getDuration(dur => widget.seekTo(Math.floor(pct * dur)));
@@ -1384,6 +1465,7 @@
     iframe.style.height = '0px';
     stopYoutube();
     stopCrossfade();
+    if (ambientAudioActive) _stopAmbientAudio();
     pendingPlay = false; // evitar que RAYVER Radio empiece si READY llega tarde
     window._pendingYtFallback = null;
 
@@ -1543,33 +1625,72 @@
       if (i === idx) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     });
 
-    // Limpiar área de ambiente si no es un track ambient
-    const _radioAmbArea  = document.getElementById('radio-ambient-area');
-    const _radioAmbFrame = document.getElementById('radio-ambient-iframe');
+    // Stop ambient if it was playing
+    if (ambientAudioActive) _stopAmbientAudio();
 
     if (t.type === 'ambient') {
       iframe.style.height = '0px';
       stopYoutube();
       stopCrossfade();
-      if (_radioAmbArea)  _radioAmbArea.style.display  = '';
-      if (_radioAmbFrame) _radioAmbFrame.src = '';
+
       const token = window.getToken?.();
-      if (!token) return;
-      fetch(`/api/user/ambient/tracks/${encodeURIComponent(t.itemId || t.id)}/stream`, {
+      if (!token) {
+        if (artistEl) artistEl.textContent = 'Inicia sesión para escuchar';
+        return;
+      }
+
+      if (artistEl) artistEl.textContent = 'Cargando…';
+
+      fetch(`/api/ambient/stream/${encodeURIComponent(t.itemId || t.id)}`, {
         headers: { 'Authorization': 'Bearer ' + token }
       })
         .then(r => r.json())
         .then(data => {
-          if (data.type === 'gdrive' && data.fileId && _radioAmbFrame) {
-            _radioAmbFrame.src = `https://drive.google.com/file/d/${encodeURIComponent(data.fileId)}/preview`;
+          if (data.type === 'audio' && data.streamUrl) {
+            // Native audio — full player control
+            if (!audioEl) return;
+            audioEl.src  = data.streamUrl;
+            audioEl.volume = muted ? 0 : vol() / 100;
+            audioEl.play()
+              .then(() => {
+                ambientAudioActive   = true;
+                customPlaylistStarted = true;
+                userPlayed           = true;
+                setPlaying(true);
+                _startAmbientProgress();
+                if (artistEl) artistEl.textContent = 'Ambiente';
+              })
+              .catch(err => {
+                console.warn('[Ambient] play error:', err);
+                if (artistEl) artistEl.textContent = 'Error al reproducir';
+                setPlaying(false);
+              });
+          } else if (data.type === 'gdrive' && data.fileId) {
+            // Fallback when no GOOGLE_API_KEY: Google Drive iframe in ambient area
+            const ambArea  = document.getElementById('radio-ambient-area');
+            const ambFrame = document.getElementById('radio-ambient-iframe');
+            if (ambArea && ambFrame) {
+              ambFrame.src = `https://drive.google.com/file/d/${encodeURIComponent(data.fileId)}/preview`;
+              ambArea.style.display = '';
+            }
+            customPlaylistStarted = true;
+            userPlayed = true;
+            if (artistEl) artistEl.textContent = 'Ambiente';
+          } else if (data.error) {
+            if (artistEl) artistEl.textContent = data.error;
           }
         })
-        .catch(() => {});
+        .catch(() => {
+          if (artistEl) artistEl.textContent = 'Error de conexión';
+        });
       return;
     }
 
-    if (_radioAmbArea)  _radioAmbArea.style.display  = 'none';
-    if (_radioAmbFrame) _radioAmbFrame.src = '';
+    // Hide ambient fallback area for non-ambient tracks
+    const _ambArea = document.getElementById('radio-ambient-area');
+    const _ambFrame = document.getElementById('radio-ambient-iframe');
+    if (_ambArea)  _ambArea.style.display = 'none';
+    if (_ambFrame) _ambFrame.src = '';
 
     if (t.type === 'video') {
       playYoutubeTrack(t.itemId || t.videoId, t.title || '');

@@ -6,6 +6,10 @@ const path = require('path');
 const crypto = require('crypto');
 const https = require('https');
 
+// Short-lived audio stream tokens — lets <audio> src work without auth headers
+// Map: token (uuid) → { fileId, userId, exp (ms timestamp) }
+const _ambStreamTokens = new Map();
+
 const app = express();
 const PORT = process.env.BACKEND_PORT || 3001;
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
@@ -1273,10 +1277,77 @@ app.get('/api/ambient/stream/:id', userAuth, (req, res) => {
   if (src.type === 'url')  return res.json({ type: 'url',  url: src.url });
   if (src.type === 'gdrive') {
     if (!src.fileId) return res.status(400).json({ error: 'fileId de Google Drive no configurado' });
-    return res.json({ type: 'gdrive', fileId: src.fileId });
+    const apiKey = process.env.GOOGLE_API_KEY;
+    if (apiKey) {
+      // Issue a short-lived token so <audio src> can load without auth headers
+      const streamToken = crypto.randomUUID();
+      _ambStreamTokens.set(streamToken, {
+        fileId: src.fileId,
+        userId: req.user.userId,
+        exp: Date.now() + 4 * 60 * 60 * 1000 // 4 hours
+      });
+      return res.json({ type: 'audio', streamUrl: `/api/ambient/audio/${streamToken}` });
+    }
+    return res.json({ type: 'gdrive', fileId: src.fileId }); // fallback to iframe
   }
   if (src.type === 'platform') return res.json({ type: 'platform', platformType: src.platformType, url: src.url });
   res.status(400).json({ error: 'Fuente no configurada para este track' });
+});
+
+// User audio proxy: streams GDrive audio via short-lived token (no auth headers needed for <audio>)
+app.get('/api/ambient/audio/:token', async (req, res) => {
+  const now = Date.now();
+  // Lazy-clean expired tokens
+  for (const [k, v] of _ambStreamTokens) { if (now > v.exp) _ambStreamTokens.delete(k); }
+
+  const entry = _ambStreamTokens.get(req.params.token);
+  if (!entry || now > entry.exp) {
+    _ambStreamTokens.delete(req.params.token);
+    return res.status(403).json({ error: 'Token inválido o expirado' });
+  }
+
+  const apiKey = process.env.GOOGLE_API_KEY;
+  if (!apiKey) return res.status(503).json({ error: 'GOOGLE_API_KEY no configurada' });
+
+  const { fileId } = entry;
+  const browserRange = req.headers.range || null;
+  const mediaUrl = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media&key=${apiKey}`;
+  const mu = new URL(mediaUrl);
+
+  try {
+    let fileSize = null;
+    try {
+      const meta = await httpJSON(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?fields=size&key=${apiKey}`);
+      if (meta.json?.size) fileSize = String(meta.json.size);
+    } catch (_) {}
+
+    const gdHeaders = { 'User-Agent': 'RayverMusicUser/1.0' };
+    if (browserRange) gdHeaders['Range'] = browserRange;
+
+    const proxyReq = https.request(
+      { hostname: mu.hostname, path: mu.pathname + mu.search, method: 'GET', headers: gdHeaders },
+      proxyRes => {
+        const cr = proxyRes.headers['content-range'] || '';
+        const m  = cr.match(/bytes (\d+)-(\d+)\/(\d+)/);
+        const fwd = { 'accept-ranges': 'bytes', 'cache-control': 'no-store', 'access-control-allow-origin': '*' };
+        if (proxyRes.headers['content-type']) fwd['content-type'] = proxyRes.headers['content-type'];
+        if (browserRange) {
+          if (cr) fwd['content-range'] = cr;
+          if (m)  fwd['content-length'] = String(+m[2] - +m[1] + 1);
+          res.writeHead(206, fwd);
+        } else {
+          if (fileSize) fwd['content-length'] = fileSize;
+          else if (proxyRes.headers['content-length']) fwd['content-length'] = proxyRes.headers['content-length'];
+          res.writeHead(200, fwd);
+        }
+        proxyRes.pipe(res);
+      }
+    );
+    proxyReq.on('error', e => { if (!res.headersSent) res.status(502).json({ error: e.message }); });
+    proxyReq.end();
+  } catch(e) {
+    if (!res.headersSent) res.status(500).json({ error: e.message });
+  }
 });
 
 // Admin preview: stream any track without user-access check

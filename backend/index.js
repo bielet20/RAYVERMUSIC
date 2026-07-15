@@ -1495,12 +1495,15 @@ app.post('/api/admin/ambient/gdrive-folder-import', authMiddleware, async (req, 
     'audio/aac', 'audio/mp4', 'audio/x-m4a', 'audio/opus', 'audio/webm'
   ]);
 
-  try {
-    let allFiles = [];
+  const FOLDER_MIME = 'application/vnd.google-apps.folder';
+
+  async function scanFolder(id, depth = 0) {
+    if (depth > 5) return [];
+    let files = [];
     let pageToken = null;
     do {
       const params = new URLSearchParams({
-        q: `'${folderId}' in parents and trashed=false`,
+        q: `'${id}' in parents and trashed=false`,
         fields: 'nextPageToken,files(id,name,mimeType)',
         pageSize: '100',
         key: apiKey,
@@ -1509,14 +1512,25 @@ app.post('/api/admin/ambient/gdrive-folder-import', authMiddleware, async (req, 
       const apiRes = await fetch(`https://www.googleapis.com/drive/v3/files?${params}`);
       if (!apiRes.ok) {
         const err = await apiRes.json().catch(() => ({}));
-        return res.status(400).json({ error: `Error de Google Drive API: ${err.error?.message || apiRes.status}` });
+        throw new Error(`Error de Google Drive API: ${err.error?.message || apiRes.status}`);
       }
       const data = await apiRes.json();
-      allFiles = allFiles.concat(data.files || []);
+      for (const f of (data.files || [])) {
+        if (f.mimeType === FOLDER_MIME) {
+          const sub = await scanFolder(f.id, depth + 1);
+          files = files.concat(sub);
+        } else {
+          files.push(f);
+        }
+      }
       pageToken = data.nextPageToken || null;
     } while (pageToken);
+    return files;
+  }
 
-    const audioFiles = allFiles.filter(f => AUDIO_MIME.has(f.mimeType));
+  try {
+    const allFiles = await scanFolder(folderId);
+
     const existingIds = new Set((db.ambientTracks || []).map(t => t.source?.fileId).filter(Boolean));
 
     const imported = [];

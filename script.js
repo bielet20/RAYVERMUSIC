@@ -1516,7 +1516,12 @@ async function ambPlayTrack(id) {
     }
     if (!r.ok) throw new Error(data.error);
 
-    if (data.type === 'file' || data.type === 'url') {
+    if (data.type === 'gdrive') {
+      const gd = document.getElementById('ambient-player-gdrive');
+      const gf = document.getElementById('ambient-player-gdrive-frame');
+      gf.src = `https://drive.google.com/file/d/${encodeURIComponent(data.fileId)}/preview`;
+      gd.style.display = '';
+    } else if (data.type === 'file' || data.type === 'url') {
       audio.src = data.url; audio.style.display = ''; audio.play().catch(() => {});
     } else if (data.type === 'platform') {
       if (data.platformType === 'youtube') {
@@ -1541,6 +1546,8 @@ function ambClosePlayer() {
   if (modal) modal.style.display = 'none';
   const audio = document.getElementById('ambient-player-audio');
   if (audio) { audio.pause(); audio.src = ''; }
+  const gf = document.getElementById('ambient-player-gdrive-frame');
+  if (gf) { gf.src = ''; document.getElementById('ambient-player-gdrive').style.display = 'none'; }
   ['ambient-player-sc','ambient-player-yt'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.innerHTML = '';

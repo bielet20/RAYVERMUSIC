@@ -1627,15 +1627,17 @@ if (typeof TOKEN !== 'undefined' && TOKEN) {
     <div id="amp-title" style="font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#fff"></div>
     <div id="amp-status" style="font-size:12px;color:#6b7280;margin-top:2px">Admin Preview</div>
   </div>
-  <audio id="amp-audio" controls style="height:36px;flex-shrink:0;max-width:340px"></audio>
+  <audio id="amp-audio" controls style="height:36px;flex-shrink:0;max-width:340px;display:none"></audio>
+  <iframe id="amp-gdrive-frame" src="" allow="autoplay" style="height:60px;flex-shrink:0;width:340px;border:none;border-radius:8px;display:none"></iframe>
   <button onclick="ambStopPlayer()" title="Cerrar player" style="background:rgba(239,68,68,.18);color:#f87171;border:none;border-radius:8px;padding:8px 12px;cursor:pointer;font-size:13px;flex-shrink:0"><i class="fas fa-times"></i></button>
 </div>
 
 <script>
 async function ambPlayTrack(id) {
   const track = _ambTracks.find(t => t.id === id);
-  const player = document.getElementById('amb-mini-player');
-  const audio  = document.getElementById('amp-audio');
+  const player   = document.getElementById('amb-mini-player');
+  const audio    = document.getElementById('amp-audio');
+  const frame    = document.getElementById('amp-gdrive-frame');
   const titleEl  = document.getElementById('amp-title');
   const statusEl = document.getElementById('amp-status');
   const coverEl  = document.getElementById('amp-cover');
@@ -1648,14 +1650,24 @@ async function ambPlayTrack(id) {
 
   audio.pause();
   audio.src = '';
+  audio.style.display = 'none';
+  frame.src = '';
+  frame.style.display = 'none';
 
   try {
     const d = await _ambApi('GET', `/admin/ambient/stream/${id}`);
     if (d.type === 'platform') {
-      statusEl.textContent = `Plataforma externa (${d.platformType || ''}) — abre la URL en el navegador`;
+      statusEl.textContent = `Plataforma externa (${d.platformType || ''}) — abriendo en nueva pestaña`;
       if (d.url) window.open(d.url, '_blank');
       return;
     }
+    if (d.type === 'gdrive') {
+      frame.src = `https://drive.google.com/file/d/${encodeURIComponent(d.fileId)}/preview`;
+      frame.style.display = '';
+      statusEl.textContent = 'Google Drive ▶';
+      return;
+    }
+    audio.style.display = '';
     audio.src = d.url;
     audio.load();
     audio.play().catch(() => {});
@@ -1668,7 +1680,11 @@ async function ambPlayTrack(id) {
 }
 
 function ambStopPlayer() {
-  document.getElementById('amp-audio').pause();
+  const audio = document.getElementById('amp-audio');
+  const frame = document.getElementById('amp-gdrive-frame');
+  audio.pause();
+  audio.src = '';
+  frame.src = '';
   document.getElementById('amb-mini-player').style.display = 'none';
 }
 </script>

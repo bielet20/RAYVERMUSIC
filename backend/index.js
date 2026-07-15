@@ -1293,9 +1293,7 @@ app.get('/api/admin/ambient/stream/:id', authMiddleware, (req, res) => {
   if (src.type === 'url')  return res.json({ type: 'url', url: src.url });
   if (src.type === 'gdrive') {
     if (!src.fileId) return res.status(400).json({ error: 'fileId no configurado' });
-    const apiKey = process.env.GOOGLE_API_KEY;
-    if (!apiKey) return res.status(503).json({ error: 'GOOGLE_API_KEY no configurada' });
-    return res.json({ type: 'url', url: `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(src.fileId)}?alt=media&key=${apiKey}` });
+    return res.json({ type: 'gdrive', fileId: src.fileId });
   }
   if (src.type === 'platform') return res.json({ type: 'platform', platformType: src.platformType, url: src.url });
   res.status(400).json({ error: 'Fuente no configurada' });

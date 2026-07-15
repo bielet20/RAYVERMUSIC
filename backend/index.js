@@ -1280,6 +1280,47 @@ app.get('/api/ambient/stream/:id', userAuth, (req, res) => {
   res.status(400).json({ error: 'Fuente no configurada para este track' });
 });
 
+// Admin preview: stream any track without user-access check
+app.get('/api/admin/ambient/stream/:id', authMiddleware, (req, res) => {
+  const track = (db.ambientTracks || []).find(t => t.id === req.params.id);
+  if (!track) return res.status(404).json({ error: 'Track no encontrado' });
+  const src = track.source || {};
+  const tok = (req.headers.authorization || '').replace('Bearer ', '').trim();
+  if (src.type === 'file') {
+    const filename = path.basename(src.file || '');
+    return res.json({ type: 'file', url: `/api/admin/ambient/media/${filename}?token=${tok}` });
+  }
+  if (src.type === 'url')  return res.json({ type: 'url', url: src.url });
+  if (src.type === 'gdrive') {
+    if (!src.fileId) return res.status(400).json({ error: 'fileId no configurado' });
+    return res.json({ type: 'url', url: `https://drive.google.com/uc?export=download&id=${src.fileId}&confirm=t` });
+  }
+  if (src.type === 'platform') return res.json({ type: 'platform', platformType: src.platformType, url: src.url });
+  res.status(400).json({ error: 'Fuente no configurada' });
+});
+
+// Serve local audio for admin preview (token via query param so <audio> src works)
+app.get('/api/admin/ambient/media/:filename', (req, res) => {
+  const tok = (req.query.token || '').trim();
+  if (!tok || !verifyAdminToken(tok)) return res.status(401).json({ error: 'No autorizado' });
+  const filename = path.basename(req.params.filename);
+  const filePath = path.join(AMBIENT_TRACKS_DIR, filename);
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Archivo no encontrado' });
+  const stat = fs.statSync(filePath);
+  const range = req.headers.range;
+  const mime = filename.endsWith('.flac') ? 'audio/flac' : filename.endsWith('.wav') ? 'audio/wav' : 'audio/mpeg';
+  if (range) {
+    const [s, e] = range.replace(/bytes=/, '').split('-');
+    const start  = parseInt(s, 10);
+    const end    = e ? parseInt(e, 10) : stat.size - 1;
+    res.writeHead(206, { 'Content-Range': `bytes ${start}-${end}/${stat.size}`, 'Accept-Ranges': 'bytes', 'Content-Length': end - start + 1, 'Content-Type': mime });
+    fs.createReadStream(filePath, { start, end }).pipe(res);
+  } else {
+    res.writeHead(200, { 'Content-Length': stat.size, 'Content-Type': mime, 'Accept-Ranges': 'bytes' });
+    fs.createReadStream(filePath).pipe(res);
+  }
+});
+
 // Serve uploaded audio (requires user auth + access)
 app.get('/api/ambient/media/:filename', userAuth, (req, res) => {
   const filename = path.basename(req.params.filename); // sanitize

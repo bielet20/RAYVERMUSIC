@@ -530,11 +530,16 @@ body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--text);min-
           <div class="field">
             <label>Fuente de audio</label>
             <select id="amb-t-srctype" style="width:100%;background:rgba(255,255,255,.06);border:1px solid var(--gb);border-radius:8px;padding:10px;color:var(--text);font-family:inherit;margin-bottom:10px" onchange="ambToggleSrcType()">
+              <option value="gdrive">Google Drive</option>
               <option value="url">URL externa (NAS, S3, Backblaze, etc.)</option>
               <option value="platform">Plataforma (SoundCloud, YouTube)</option>
               <option value="file">Subir archivo (MP3/FLAC/WAV)</option>
             </select>
-            <div id="amb-src-url" style="display:block">
+            <div id="amb-src-gdrive" style="display:block">
+              <input type="text" id="amb-t-gdrive-url" placeholder="https://drive.google.com/file/d/…/view?usp=sharing" style="width:100%;background:rgba(255,255,255,.06);border:1px solid var(--gb);border-radius:8px;padding:10px;color:var(--text);font-family:inherit">
+              <p style="font-size:11px;color:var(--muted);margin-top:4px">Pega el enlace "Compartir" de Google Drive. El archivo debe ser accesible para <strong style="color:var(--text)">cualquiera con el enlace</strong>.</p>
+            </div>
+            <div id="amb-src-url" style="display:none">
               <input type="text" id="amb-t-url" placeholder="https://nas.ejemplo.com/musica/track.flac" style="width:100%;background:rgba(255,255,255,.06);border:1px solid var(--gb);border-radius:8px;padding:10px;color:var(--text);font-family:inherit">
               <p style="font-size:11px;color:var(--muted);margin-top:4px">URL directa accesible desde el servidor (NAS con HTTP, Backblaze B2, S3…)</p>
             </div>
@@ -2439,7 +2444,7 @@ async function ambLoadTracks() {
     </tr></thead>
     <tbody>${_ambTracks.map(t => {
       const pack = _ambPacks.find(p => p.id === t.packId);
-      const srcIcon = t.source?.type === 'file' ? '📁' : t.source?.type === 'platform' ? (t.source.platformType === 'youtube' ? '▶️' : '☁️') : '🔗';
+      const srcIcon = t.source?.type === 'file' ? '📁' : t.source?.type === 'gdrive' ? '📂' : t.source?.type === 'platform' ? (t.source.platformType === 'youtube' ? '▶️' : '☁️') : '🔗';
       return `<tr style="border-bottom:1px solid rgba(255,255,255,.04)">
         <td style="padding:8px">${t.cover ? `<img src="${_esc(t.cover)}" onerror="this.style.display='none'" style="width:40px;height:40px;border-radius:6px;object-fit:cover">` : `<div style="width:40px;height:40px;border-radius:6px;background:var(--bg3);display:flex;align-items:center;justify-content:center">🎵</div>`}</td>
         <td style="padding:8px;font-weight:600">${_esc(t.title)}<br><span style="color:var(--muted);font-size:11px">${(t.tags||[]).join(', ')}</span></td>
@@ -2471,11 +2476,12 @@ function ambOpenTrackModal(id) {
   ambPreviewCover();
   const sel = document.getElementById('amb-t-pack');
   sel.innerHTML = '<option value="">Sin pack (acceso por suscripción)</option>' + _ambPacks.map(p => `<option value="${p.id}"${_ambEditTrack?.packId === p.id ? ' selected' : ''}>${_esc(p.title)}</option>`).join('');
-  const src = _ambEditTrack?.source || { type: 'url' };
-  document.getElementById('amb-t-srctype').value = src.type || 'url';
-  document.getElementById('amb-t-url').value      = src.type === 'url' ? (src.url || '') : '';
-  document.getElementById('amb-t-plattype').value = src.platformType || 'soundcloud';
-  document.getElementById('amb-t-platurl').value  = src.type === 'platform' ? (src.url || '') : '';
+  const src = _ambEditTrack?.source || { type: 'gdrive' };
+  document.getElementById('amb-t-srctype').value     = src.type || 'gdrive';
+  document.getElementById('amb-t-gdrive-url').value  = src.type === 'gdrive' ? (src.fileId ? `https://drive.google.com/file/d/${src.fileId}/view` : '') : '';
+  document.getElementById('amb-t-url').value         = src.type === 'url' ? (src.url || '') : '';
+  document.getElementById('amb-t-plattype').value    = src.platformType || 'soundcloud';
+  document.getElementById('amb-t-platurl').value     = src.type === 'platform' ? (src.url || '') : '';
   ambToggleSrcType();
   document.getElementById('amb-track-modal').style.display = 'flex';
 }
@@ -2483,9 +2489,21 @@ function ambCloseTrackModal() { document.getElementById('amb-track-modal').style
 
 function ambToggleSrcType() {
   const v = document.getElementById('amb-t-srctype').value;
+  document.getElementById('amb-src-gdrive').style.display   = v === 'gdrive'   ? '' : 'none';
   document.getElementById('amb-src-url').style.display      = v === 'url'      ? '' : 'none';
   document.getElementById('amb-src-platform').style.display = v === 'platform' ? '' : 'none';
   document.getElementById('amb-src-file').style.display     = v === 'file'     ? '' : 'none';
+}
+
+function _extractGdriveId(url) {
+  if (!url) return '';
+  // formats: /file/d/ID/view, /open?id=ID, /uc?id=ID, bare ID
+  const m = url.match(/\/d\/([a-zA-Z0-9_-]{10,})/);
+  if (m) return m[1];
+  const m2 = url.match(/[?&]id=([a-zA-Z0-9_-]{10,})/);
+  if (m2) return m2[1];
+  if (/^[a-zA-Z0-9_-]{20,}$/.test(url.trim())) return url.trim();
+  return '';
 }
 
 async function ambHandleAudioFile(input) {
@@ -2526,7 +2544,11 @@ async function ambSaveTrack() {
   const id = document.getElementById('amb-t-id').value;
   const srctype = document.getElementById('amb-t-srctype').value;
   let source = {};
-  if (srctype === 'url') source = { type: 'url', url: document.getElementById('amb-t-url').value.trim() };
+  if (srctype === 'gdrive') {
+    const fileId = _extractGdriveId(document.getElementById('amb-t-gdrive-url').value.trim());
+    if (!fileId) { alert('No se pudo extraer el ID de Google Drive. Comprueba el enlace.'); return; }
+    source = { type: 'gdrive', fileId };
+  } else if (srctype === 'url') source = { type: 'url', url: document.getElementById('amb-t-url').value.trim() };
   else if (srctype === 'platform') source = { type: 'platform', platformType: document.getElementById('amb-t-plattype').value, url: document.getElementById('amb-t-platurl').value.trim() };
   else if (srctype === 'file') {
     const fn = document.getElementById('amb-t-file-url').value;

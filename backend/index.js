@@ -1271,6 +1271,11 @@ app.get('/api/ambient/stream/:id', userAuth, (req, res) => {
   const src = track.source || {};
   if (src.type === 'file') return res.json({ type: 'file', url: `/api/ambient/media/${path.basename(src.file)}` });
   if (src.type === 'url')  return res.json({ type: 'url',  url: src.url });
+  if (src.type === 'gdrive') {
+    if (!src.fileId) return res.status(400).json({ error: 'fileId de Google Drive no configurado' });
+    const url = `https://drive.google.com/uc?export=download&id=${src.fileId}&confirm=t`;
+    return res.json({ type: 'url', url });
+  }
   if (src.type === 'platform') return res.json({ type: 'platform', platformType: src.platformType, url: src.url });
   res.status(400).json({ error: 'Fuente no configurada para este track' });
 });

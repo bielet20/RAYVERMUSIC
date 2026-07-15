@@ -1542,6 +1542,8 @@
     if (t.type === 'video') {
       playYoutubeTrack(t.itemId || t.videoId, t.title || '');
     } else {
+      // Detener YouTube si estaba activo — evita reproducción simultánea YT+SC
+      if (youtubeActive) stopYoutube();
 
       // Resolver fuentes del track (SC, YouTube, Spotify)
       // Nota: tracks de playlists de usuario guardan la URL en campo 'url', no 'scUrl'

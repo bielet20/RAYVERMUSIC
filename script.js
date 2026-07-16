@@ -1378,8 +1378,8 @@ function _fmtDuration(sec) {
 }
 
 function renderAmbientPlans() {
-  const el = document.getElementById('ambient-plans-wrap');
-  if (!el || !_ambData.plans.length) return;
+  // Hidden until Stripe is active
+  return;
   el.innerHTML = _ambData.plans.map(p => {
     const featured = p.badge;
     return `<div class="ambient-plan-card${featured ? ' featured' : ''}">
@@ -1396,6 +1396,9 @@ function renderAmbientPlans() {
 }
 
 function renderAmbientPacks() {
+  // Hidden until Stripe is active — element stays display:none set in HTML
+  return;
+  // eslint-disable-next-line no-unreachable
   const el = document.getElementById('ambient-packs-wrap');
   if (!el || !_ambData.packs.length) { if (el) el.style.display = 'none'; return; }
   el.innerHTML = _ambData.packs.map(p => {

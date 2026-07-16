@@ -471,6 +471,13 @@
     btn.style.cssText = 'font-size:10px;display:inline-flex;align-items:center;gap:3px;';
     anchor.insertAdjacentElement('afterend', btn);
     btn.addEventListener('click', () => {
+      // Automix only works in custom playlists (not RAYVER Radio SC Widget mode)
+      if (activeRadioPlaylist === null) {
+        btn.title = 'Activa una lista personal para usar Automix';
+        btn.classList.add('mix-unavail');
+        setTimeout(() => { btn.classList.remove('mix-unavail'); btn.title = automixEnabled ? 'Automix ON — click para desactivar' : 'Automix OFF — mezcla automática entre tracks'; }, 2000);
+        return;
+      }
       automixEnabled = !automixEnabled;
       btn.classList.toggle('active', automixEnabled);
       btn.title = automixEnabled ? 'Automix ON — click para desactivar' : 'Automix OFF — mezcla automática entre tracks';
@@ -481,6 +488,17 @@
         stopCrossfade();
       }
     });
+  }
+
+  // Called when playlist mode changes — sync MIX button state
+  function _syncAutomixBtn() {
+    const btn = $('radio-automix');
+    if (!btn) return;
+    const inCustom = activeRadioPlaylist !== null;
+    btn.style.opacity = inCustom ? '' : '0.4';
+    btn.title = !inCustom
+      ? 'Automix — activa una lista personal para usarlo'
+      : (automixEnabled ? 'Automix ON — click para desactivar' : 'Automix OFF — mezcla automática entre tracks');
   }
 
   // ── SC WIDGET ────────────────────────────────────────────────────
@@ -904,6 +922,11 @@
         const withinBounds = shuffle ? true : next < customTrackList.length;
         if (withinBounds && customTrackList[next]) {
           if (automixEnabled) {
+            // Clear crossfade state WITHOUT restoring volume — fade-out already zeroed it.
+            // If stopCrossfade() ran here it would flash vol to max then immediately back to 0.
+            if (crossfadeOutTimer) { clearInterval(crossfadeOutTimer); crossfadeOutTimer = null; }
+            if (crossfadeInTimer)  { clearInterval(crossfadeInTimer);  crossfadeInTimer  = null; }
+            isCrossfading = false; preloadTriggered = false;
             window.playCustomTrack(next);
             startFadeIn();
           } else {
@@ -912,6 +935,9 @@
         } else if (loopPlaylist || shuffle) {
           const loopIdx = shuffle ? _nextCustomIdx() : 0;
           if (automixEnabled) {
+            if (crossfadeOutTimer) { clearInterval(crossfadeOutTimer); crossfadeOutTimer = null; }
+            if (crossfadeInTimer)  { clearInterval(crossfadeInTimer);  crossfadeInTimer  = null; }
+            isCrossfading = false; preloadTriggered = false;
             window.playCustomTrack(loopIdx);
             startFadeIn();
           } else {
@@ -1520,6 +1546,7 @@
       if (tracks.length) showCustomTrack(0);
     }
     _syncUpPlaylistBtn();
+    _syncAutomixBtn();
   };
 
   function renderCustomTracklist(tracks) {

@@ -665,11 +665,22 @@
 <script src="script.js?v=21"></script>
 <script src="radio.js?v=28"></script>
 <!-- PWA: botón flotante de instalación (oculto por defecto, se muestra solo si el navegador soporta instalar) -->
-<button id="pwa-install-btn" style="display:none;position:fixed;bottom:90px;right:20px;z-index:9999;
-  background:#a855f7;color:#fff;border:none;border-radius:999px;padding:12px 18px;
-  font-weight:600;box-shadow:0 4px 16px rgba(168,85,247,.4);cursor:pointer;">
-  <i class="fas fa-download"></i> Instalar app
-</button>
+<div id="pwa-install-wrap" style="display:none;position:fixed;bottom:90px;right:20px;z-index:9999;flex-direction:column;align-items:flex-end;gap:8px;">
+  <div style="background:rgba(15,5,30,.9);color:#d8b4fe;font-size:12px;border-radius:8px;padding:7px 12px;
+    border:1px solid rgba(168,85,247,.4);backdrop-filter:blur(8px);max-width:200px;text-align:center;line-height:1.4;">
+    <i class="fas fa-music" style="margin-right:5px;"></i>Instala la app para reproducción de fondo continua
+  </div>
+  <button id="pwa-install-btn" style="background:#a855f7;color:#fff;border:none;border-radius:999px;padding:12px 20px;
+    font-weight:600;box-shadow:0 4px 20px rgba(168,85,247,.5);cursor:pointer;animation:pwaPulse 2s ease-in-out 3;">
+    <i class="fas fa-download"></i> Instalar app
+  </button>
+</div>
+<style>
+@keyframes pwaPulse {
+  0%,100% { box-shadow: 0 4px 20px rgba(168,85,247,.5); }
+  50% { box-shadow: 0 4px 30px rgba(168,85,247,.9), 0 0 0 8px rgba(168,85,247,.15); }
+}
+</style>
 <script src="pwa-install.js"></script>
 </body>
 </html>

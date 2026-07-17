@@ -15,12 +15,16 @@
 
   // 2. Capturar el evento de instalación (Chrome/Edge/Android)
   let deferredPrompt = null;
-  const installBtn = document.getElementById('pwa-install-btn');
+  const installWrap = document.getElementById('pwa-install-wrap');
+  const installBtn  = document.getElementById('pwa-install-btn');
+
+  function showInstall() { if (installWrap) installWrap.style.display = 'flex'; }
+  function hideInstall() { if (installWrap) installWrap.style.display = 'none'; }
 
   window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
     deferredPrompt = e;
-    if (installBtn) installBtn.style.display = 'flex';
+    showInstall();
   });
 
   installBtn && installBtn.addEventListener('click', async () => {
@@ -28,11 +32,11 @@
     deferredPrompt.prompt();
     await deferredPrompt.userChoice;
     deferredPrompt = null;
-    installBtn.style.display = 'none';
+    hideInstall();
   });
 
   window.addEventListener('appinstalled', () => {
-    if (installBtn) installBtn.style.display = 'none';
+    hideInstall();
     console.log('[PWA] RAYVER Music instalada');
   });
 
@@ -40,7 +44,7 @@
   const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
   const isInStandaloneMode = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
   if (isIOS && !isInStandaloneMode && installBtn) {
-    installBtn.style.display = 'flex';
+    showInstall();
     installBtn.innerHTML = '<i class="fas fa-share-square"></i> Añadir a inicio';
     installBtn.addEventListener('click', () => {
       alert('En iPhone/iPad: pulsa el botón Compartir de Safari y luego "Añadir a pantalla de inicio".');

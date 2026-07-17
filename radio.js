@@ -54,11 +54,12 @@
   let ambProgressTimer   = null;   // intervalo para barra de progreso de Ambiente
 
   // ── BACKGROUND TAB KEEP-ALIVE ────────────────────────────────────
-  // Silently loops an empty AudioContext buffer while music plays so the browser
-  // doesn't throttle JS timers or SC Widget events when the tab is hidden.
+  // Runs a near-silent oscillator in an AudioContext so the browser never
+  // throttles JS timers or SC Widget events when the tab is in the background.
+  // Created once on first user play; never destroyed (re-creating needs user gesture).
   let _kaCtx       = null;
   let _kaSrc       = null;
-  let _kaStopTimer = null;
+  let _kaHeartbeat = null; // periodic resume if browser suspends the context
 
   // ── AUTOMIX STATE ────────────────────────────────────────────────
   let automixEnabled     = false;
@@ -325,37 +326,34 @@
 
   // ── KEEP-ALIVE: prevent background tab throttling ────────────────
   function _startKeepAlive() {
-    clearTimeout(_kaStopTimer); _kaStopTimer = null;
-    if (_kaCtx?.state === 'running') return;
+    if (_kaCtx) {
+      // Already exists — just wake it up if the browser suspended it
+      if (_kaCtx.state === 'suspended') _kaCtx.resume().catch(() => {});
+      return;
+    }
     try {
-      if (!_kaCtx) {
-        _kaCtx = new (window.AudioContext || window.webkitAudioContext)();
-        const sr  = _kaCtx.sampleRate;
-        const buf = _kaCtx.createBuffer(1, sr, sr); // 1 s mono silence
-        _kaSrc = _kaCtx.createBufferSource();
-        _kaSrc.buffer = buf;
-        _kaSrc.loop = true;
-        const g = _kaCtx.createGain();
-        g.gain.value = 0.001;
-        _kaSrc.connect(g);
-        g.connect(_kaCtx.destination);
-        _kaSrc.start();
-      } else if (_kaCtx.state === 'suspended') {
-        _kaCtx.resume().catch(() => {});
-      }
+      _kaCtx = new (window.AudioContext || window.webkitAudioContext)();
+      // 1 Hz oscillator — inaudible but counts as "active audio" so Chrome
+      // doesn't throttle JS timers or SC Widget postMessage events in background
+      const osc = _kaCtx.createOscillator();
+      osc.frequency.value = 1;
+      const g = _kaCtx.createGain();
+      g.gain.value = 0.001;
+      osc.connect(g);
+      g.connect(_kaCtx.destination);
+      osc.start();
+      _kaSrc = osc;
+      // Heartbeat: Chrome can silently suspend an AudioContext in background tabs;
+      // poll every 20 s and resume immediately if that happens
+      _kaHeartbeat = setInterval(() => {
+        if (_kaCtx?.state === 'suspended') _kaCtx.resume().catch(() => {});
+      }, 20000);
     } catch(e) {}
   }
 
   function _stopKeepAlive() {
-    clearTimeout(_kaStopTimer);
-    _kaStopTimer = setTimeout(() => {
-      if (!playing) {
-        try { _kaSrc?.stop(); } catch(e) {}
-        try { _kaCtx?.close(); } catch(e) {}
-        _kaCtx = null; _kaSrc = null;
-      }
-      _kaStopTimer = null;
-    }, 3000); // wait 3 s to avoid stop/restart during track transitions
+    // Intentional no-op: keep the AudioContext alive permanently after first play.
+    // Closing it would require a new user gesture to re-create — not possible in background.
   }
 
   // ── MEDIA SESSION API ─────────────────────────────────────────────
@@ -1065,7 +1063,10 @@
     let r = Math.floor(Math.random() * scSounds.length);
     if (r === currentIdx && scSounds.length > 1) r = (r+1) % scSounds.length;
     userPlayed = true;
-    widget.skip(r); widget.play();
+    widget.skip(r);
+    // Delay play() so the widget finishes loading the skipped track first
+    // (race condition is more likely in background where postMessage processing is slower)
+    setTimeout(() => widget.play(), 350);
   }
 
   // Calcula el siguiente índice en la playlist personalizada respetando shuffle

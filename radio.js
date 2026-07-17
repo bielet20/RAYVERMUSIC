@@ -61,6 +61,13 @@
   let _kaSrc       = null;
   let _kaHeartbeat = null; // periodic resume if browser suspends the context
 
+  // ── WATCHDOG: SC track-end safety net ────────────────────────────
+  // The SC Widget sends FINISH via postMessage to the main frame.
+  // If the browser throttles the main frame during the silence between tracks,
+  // FINISH may never arrive. The watchdog checks wall-clock time independently
+  // and forces track advance if the track should have ended but hasn't.
+  let _wdProgress = null; // { pos, dur, ts } — updated on every PLAY_PROGRESS tick
+
   // ── AUTOMIX STATE ────────────────────────────────────────────────
   let automixEnabled     = false;
   let isCrossfading      = false;
@@ -936,6 +943,7 @@
     });
 
     widget.bind(SC.Widget.Events.PLAY, () => {
+      _wdProgress = null; // new track started — reset watchdog
       window._pendingYtFallback = null;
       if (youtubeActive) stopYoutube();
       setPlaying(true);
@@ -974,6 +982,7 @@
     });
 
     widget.bind(SC.Widget.Events.FINISH, () => {
+      _wdProgress = null; // watchdog: real FINISH arrived, no need to force-advance
       iframe.style.height = '0px';
       if (fillEl) fillEl.style.width = '0%';
       if (curEl) curEl.textContent = '0:00';
@@ -1028,6 +1037,9 @@
       if (curEl)  curEl.textContent  = fmt(pos);
       if (durEl)  durEl.textContent  = fmt(dur);
       _syncUpProgress(pos, dur);
+      // Watchdog: snapshot of current position + wall-clock time so we can detect
+      // a stalled track even if FINISH never arrives (background tab throttle)
+      if (dur > 5000) _wdProgress = { pos, dur, ts: Date.now() };
 
       // AUTOMIX: solo en modo lista personalizada con SC (no YouTube)
       if (automixEnabled && activeRadioPlaylist !== null && !youtubeActive && dur > 5000) {
@@ -1896,6 +1908,37 @@
   });
 
   // ── INIT ─────────────────────────────────────────────────────────
+  // ── WATCHDOG INTERVAL ────────────────────────────────────────────
+  // Fires every 3 s. Uses wall-clock time (Date.now()) to detect if an SC
+  // track ended without the FINISH event arriving (background tab throttle).
+  // Clears itself once triggered to avoid double-advance.
+  setInterval(() => {
+    if (!playing || !_wdProgress || youtubeActive || ambientAudioActive) return;
+    const elapsed   = Date.now() - _wdProgress.ts;
+    const estimated = _wdProgress.pos + elapsed;
+    // 2 s grace period so normal FINISH can arrive first in foreground
+    if (estimated < _wdProgress.dur + 2000) return;
+    _wdProgress = null; // prevent double-advance
+    // Replicate FINISH advance logic
+    if (activeRadioPlaylist !== null) {
+      const next = _nextCustomIdx();
+      const withinBounds = shuffle ? true : next < customTrackList.length;
+      if (withinBounds && customTrackList[next]) {
+        window.playCustomTrack(next);
+      } else if (loopPlaylist || shuffle) {
+        window.playCustomTrack(shuffle ? _nextCustomIdx() : 0);
+      } else {
+        if (!_restorePrevState()) { stopCrossfade(); setPlaying(false); }
+      }
+    } else if (repeat === 'one') {
+      widget.seekTo(0); widget.play();
+    } else if (shuffle) {
+      doShuffle();
+    } else {
+      widget.next();
+    }
+  }, 3000);
+
   function init() {
     _adjustUpLayout();
     window.addEventListener('resize', _adjustUpLayout);

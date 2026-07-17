@@ -1890,10 +1890,10 @@
     btn.title = loopPlaylist ? 'Repetir lista: ON' : 'Repetir lista: OFF';
   };
 
-  // Resync audio when tab becomes visible again (browser may have suspended AudioContext)
+  // Resync when tab becomes visible: resume AudioContext, restart ambient if stalled
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) return;
-    if (_kaCtx?.state === 'suspended' && playing) _kaCtx.resume().catch(() => {});
+    _wdCheck(); // immediate watchdog check on return — catches any missed FINISH
     if (playing && ambientAudioActive && audioEl?.paused) audioEl.play().catch(() => {});
   });
 
@@ -1907,19 +1907,19 @@
     }
   });
 
-  // ── INIT ─────────────────────────────────────────────────────────
-  // ── WATCHDOG INTERVAL ────────────────────────────────────────────
-  // Fires every 3 s. Uses wall-clock time (Date.now()) to detect if an SC
-  // track ended without the FINISH event arriving (background tab throttle).
-  // Clears itself once triggered to avoid double-advance.
-  setInterval(() => {
+  // ── WATCHDOG ─────────────────────────────────────────────────────
+  // Chrome freezes setInterval/setTimeout in background tabs.
+  // Web Worker timers run in a separate thread and are NOT frozen.
+  // The Worker sends a tick every 1 s → main thread checks if the current
+  // SC track has ended without the FINISH event arriving.
+  function _wdCheck() {
+    // Resume AudioContext if browser suspended it while tab was hidden
+    if (_kaCtx?.state === 'suspended') _kaCtx.resume().catch(() => {});
     if (!playing || !_wdProgress || youtubeActive || ambientAudioActive) return;
     const elapsed   = Date.now() - _wdProgress.ts;
     const estimated = _wdProgress.pos + elapsed;
-    // 2 s grace period so normal FINISH can arrive first in foreground
-    if (estimated < _wdProgress.dur + 2000) return;
+    if (estimated < _wdProgress.dur + 2000) return; // 2 s grace, let real FINISH win
     _wdProgress = null; // prevent double-advance
-    // Replicate FINISH advance logic
     if (activeRadioPlaylist !== null) {
       const next = _nextCustomIdx();
       const withinBounds = shuffle ? true : next < customTrackList.length;
@@ -1937,7 +1937,18 @@
     } else {
       widget.next();
     }
-  }, 3000);
+  }
+
+  // Worker-based tick — fires every 1 s regardless of background tab throttling
+  try {
+    const _wBlob = new Blob(['setInterval(()=>self.postMessage(1),1000)'], { type: 'text/javascript' });
+    const _wWorker = new Worker(URL.createObjectURL(_wBlob));
+    _wWorker.onmessage = _wdCheck;
+  } catch(e) {
+    // Fallback: setInterval fires when tab is active, which at least catches
+    // the case where the user returns to the tab
+    setInterval(_wdCheck, 2000);
+  }
 
   function init() {
     _adjustUpLayout();

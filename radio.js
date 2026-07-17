@@ -53,6 +53,13 @@
   let ambientAudioActive = false;  // true cuando el track actual es de Ambiente
   let ambProgressTimer   = null;   // intervalo para barra de progreso de Ambiente
 
+  // ── BACKGROUND TAB KEEP-ALIVE ────────────────────────────────────
+  // Silently loops an empty AudioContext buffer while music plays so the browser
+  // doesn't throttle JS timers or SC Widget events when the tab is hidden.
+  let _kaCtx       = null;
+  let _kaSrc       = null;
+  let _kaStopTimer = null;
+
   // ── AUTOMIX STATE ────────────────────────────────────────────────
   let automixEnabled     = false;
   let isCrossfading      = false;
@@ -241,6 +248,7 @@
     if (sp) upTags.push(`<a href="${esc(sp)}" target="_blank" class="radio-ptag ptag-s"><i class="fab fa-spotify"></i></a>`);
     _syncUp(title, artist, cover || 'logo.jpg', upTags.join(''));
     _syncUpProgress(0, sc.duration || 0);
+    _updateMediaSession(title, artist, cover);
   }
 
   // Actualiza el header del radio con datos de la lista personalizada (no SC)
@@ -296,6 +304,7 @@
     if (spUrl2) upLinks.push(`<a href="${esc(spUrl2)}" target="_blank" class="radio-ptag ptag-s"><i class="fab fa-spotify"></i></a>`);
     _syncUp(t.title || '—', apiT?.artist || 'RAYVER', coverSrc || 'logo.jpg', upLinks.join(''));
     _syncUpProgress(0, 0);
+    _updateMediaSession(t.title || '—', apiT?.artist || 'RAYVER', coverSrc);
 
     // Sincronizar sección Videos cuando el track activo es un vídeo de YouTube
     if (isVideo) {
@@ -314,6 +323,63 @@
     }
   }
 
+  // ── KEEP-ALIVE: prevent background tab throttling ────────────────
+  function _startKeepAlive() {
+    clearTimeout(_kaStopTimer); _kaStopTimer = null;
+    if (_kaCtx?.state === 'running') return;
+    try {
+      if (!_kaCtx) {
+        _kaCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const sr  = _kaCtx.sampleRate;
+        const buf = _kaCtx.createBuffer(1, sr, sr); // 1 s mono silence
+        _kaSrc = _kaCtx.createBufferSource();
+        _kaSrc.buffer = buf;
+        _kaSrc.loop = true;
+        const g = _kaCtx.createGain();
+        g.gain.value = 0.001;
+        _kaSrc.connect(g);
+        g.connect(_kaCtx.destination);
+        _kaSrc.start();
+      } else if (_kaCtx.state === 'suspended') {
+        _kaCtx.resume().catch(() => {});
+      }
+    } catch(e) {}
+  }
+
+  function _stopKeepAlive() {
+    clearTimeout(_kaStopTimer);
+    _kaStopTimer = setTimeout(() => {
+      if (!playing) {
+        try { _kaSrc?.stop(); } catch(e) {}
+        try { _kaCtx?.close(); } catch(e) {}
+        _kaCtx = null; _kaSrc = null;
+      }
+      _kaStopTimer = null;
+    }, 3000); // wait 3 s to avoid stop/restart during track transitions
+  }
+
+  // ── MEDIA SESSION API ─────────────────────────────────────────────
+  function _updateMediaSession(title, artist, artwork) {
+    if (!('mediaSession' in navigator)) return;
+    try {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title:  title  || 'RAYVER Radio',
+        artist: artist || 'RAYVER Music',
+        album:  'RAYVER Music',
+        artwork: artwork ? [{ src: artwork, sizes: '512x512', type: 'image/jpeg' }] : []
+      });
+      navigator.mediaSession.setActionHandler('play',          () => playBtn?.click());
+      navigator.mediaSession.setActionHandler('pause',         () => playBtn?.click());
+      navigator.mediaSession.setActionHandler('previoustrack', () => prevBtn?.click());
+      navigator.mediaSession.setActionHandler('nexttrack',     () => nextBtn?.click());
+    } catch(e) {}
+  }
+
+  function _syncMediaSessionState(state) {
+    if (!('mediaSession' in navigator)) return;
+    try { navigator.mediaSession.playbackState = state; } catch(e) {}
+  }
+
   function setPlaying(p) {
     playing = p;
     if (playIco) playIco.className = p ? 'fas fa-pause' : 'fas fa-play';
@@ -321,6 +387,8 @@
     if (coverEl) coverEl.classList.toggle('spinning', p);
     if (cpulse)  cpulse.classList.toggle('active', p);
     _syncUpPlayState(p);
+    if (p) { _startKeepAlive(); _syncMediaSessionState('playing'); }
+    else   { _stopKeepAlive();  _syncMediaSessionState('paused'); }
   }
 
   // ── TRACKLIST ────────────────────────────────────────────────────
@@ -1808,6 +1876,13 @@
     if (btn) btn.classList.toggle('active', loopPlaylist);
     btn.title = loopPlaylist ? 'Repetir lista: ON' : 'Repetir lista: OFF';
   };
+
+  // Resync audio when tab becomes visible again (browser may have suspended AudioContext)
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) return;
+    if (_kaCtx?.state === 'suspended' && playing) _kaCtx.resume().catch(() => {});
+    if (playing && ambientAudioActive && audioEl?.paused) audioEl.play().catch(() => {});
+  });
 
   // Close dropdowns when clicking outside
   document.addEventListener('click', e => {

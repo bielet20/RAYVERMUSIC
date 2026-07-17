@@ -983,7 +983,11 @@
     });
 
     widget.bind(SC.Widget.Events.FINISH, () => {
-      _wdProgress = null; // watchdog: real FINISH arrived, no need to force-advance
+      _wdProgress = null;
+      // In background: switch to native SC auto_play instead of sending more
+      // postMessages that the throttled iframe won't process in time
+      if (document.hidden && !_bgContinuousMode) { _bgContinuousPlay(); return; }
+      if (_bgContinuousMode) return; // SC Widget self-managing, don't interfere
       iframe.style.height = '0px';
       if (fillEl) fillEl.style.width = '0%';
       if (curEl) curEl.textContent = '0:00';
@@ -1889,10 +1893,18 @@
     btn.title = loopPlaylist ? 'Repetir lista: ON' : 'Repetir lista: OFF';
   };
 
-  // Resync when tab becomes visible: resume AudioContext, restart ambient if stalled
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) return;
-    _wdCheck(); // immediate watchdog check on return — catches any missed FINISH
+    // Tab visible again: exit background-continuous mode
+    // SC Widget is now playing SC_PLAYLIST in auto_play mode (RAYVER Radio)
+    if (_bgContinuousMode) {
+      _bgContinuousMode = false;
+      // Sync UI with whatever track SC Widget is on
+      widget.getCurrentSoundIndex(idx => {
+        if (typeof idx === 'number') { currentIdx = idx; showTrack(idx); highlight(idx); }
+      });
+    }
+    _wdCheck();
     if (playing && ambientAudioActive && audioEl?.paused) audioEl.play().catch(() => {});
   });
 
@@ -1906,27 +1918,46 @@
     }
   });
 
-  // ── WATCHDOG ─────────────────────────────────────────────────────
-  // Chrome freezes main-thread timers in background tabs.
-  // Web Worker timers (dedicated file, no blob: URL) are NOT frozen.
-  // On each Worker tick we check wall-clock time; if the SC track should
-  // have ended but FINISH/PLAY_PROGRESS never arrived, we force advance.
+  // ── BACKGROUND CONTINUOUS PLAY ───────────────────────────────────
+  // The SC Widget iframe is throttled by Chrome when the tab is hidden and
+  // audio has stopped. Our postMessage commands (widget.next / playCustomTrack)
+  // queue up but are processed very slowly or not at all.
   //
-  // _pausedAt: we must still run the watchdog even when playing=false
-  // because the SC Widget fires PAUSE *before* our FINISH advance logic
-  // completes (PAUSE fires immediately when audio ends, FINISH setTimeout
-  // is still pending). Without this, !playing would abort the check.
+  // Solution: when a track ends in background, reload the SC Widget with
+  // SC_PLAYLIST + auto_play=true. From that point the SC Widget manages ALL
+  // track advancement INTERNALLY — its own iframe audio keeps it unthrottled.
+  // No further JS from our main thread is needed between tracks.
+  let _bgContinuousMode = false;
+
+  function _bgContinuousPlay() {
+    if (_bgContinuousMode) return;
+    _bgContinuousMode = true;
+    _wdProgress       = null;
+    activeRadioPlaylist   = null;  // switch to RAYVER Radio state
+    customPlaylistStarted = false;
+    // Load SC_PLAYLIST with auto_play — SC Widget handles all advancement
+    widget.load(SC_PLAYLIST, {
+      auto_play: true, hide_related: true, show_comments: false,
+      show_user: true, show_reposts: false, show_teaser: false
+    });
+  }
+
+  // ── WATCHDOG ─────────────────────────────────────────────────────
   let _wdPausedAt = 0;
 
   function _wdCheck() {
     if (_kaCtx?.state === 'suspended') _kaCtx.resume().catch(() => {});
     if (!_wdProgress || youtubeActive || ambientAudioActive) return;
-    // If paused intentionally by user for > 10 s, don't auto-advance
     if (!playing && Date.now() - _wdPausedAt > 10000) return;
     const elapsed   = Date.now() - _wdProgress.ts;
     const estimated = _wdProgress.pos + elapsed;
-    if (estimated < _wdProgress.dur + 1500) return; // 1.5 s grace
+    if (estimated < _wdProgress.dur + 1500) return;
     _wdProgress = null;
+
+    // Tab in background: don't try widget.next/playCustomTrack (SC iframe throttled).
+    // Instead switch to native SC auto_play — self-sustaining, no JS needed.
+    if (document.hidden) { _bgContinuousPlay(); return; }
+
     if (activeRadioPlaylist !== null) {
       const next = _nextCustomIdx();
       const withinBounds = shuffle ? true : next < customTrackList.length;
@@ -1946,8 +1977,6 @@
     }
   }
 
-  // Dedicated Worker file — avoids blob: URL / CSP issues that can silently
-  // prevent the Worker from being created, falling back to frozen setInterval
   try {
     const _wWorker = new Worker('/radio-worker.js');
     _wWorker.onmessage = _wdCheck;
@@ -1955,8 +1984,6 @@
     setInterval(_wdCheck, 1000);
   }
 
-  // Web Locks API: signals to the browser that this page is doing ongoing
-  // important work (audio playback). Prevents aggressive tab suspension.
   if (typeof navigator !== 'undefined' && navigator.locks) {
     navigator.locks.request('rayver-radio-playback', { mode: 'shared' }, () => new Promise(() => {}));
   }

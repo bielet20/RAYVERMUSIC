@@ -386,6 +386,7 @@
   }
 
   function setPlaying(p) {
+    if (!p && playing) _wdPausedAt = Date.now(); // track when we last stopped
     playing = p;
     if (playIco) playIco.className = p ? 'fas fa-pause' : 'fas fa-play';
     if (onair)   onair.classList.toggle('pulsing', p);
@@ -1005,7 +1006,8 @@
             window.playCustomTrack(next);
             startFadeIn();
           } else {
-            setTimeout(() => window.playCustomTrack(next), 400);
+            // Immediate advance — no setTimeout delay so Chrome can't throttle the gap
+            window.playCustomTrack(next);
           }
         } else if (loopPlaylist || shuffle) {
           const loopIdx = shuffle ? _nextCustomIdx() : 0;
@@ -1016,7 +1018,7 @@
             window.playCustomTrack(loopIdx);
             startFadeIn();
           } else {
-            setTimeout(() => window.playCustomTrack(loopIdx), 400);
+            window.playCustomTrack(loopIdx); // immediate
           }
         } else {
           // Fin de lista — intentar restaurar estado previo (tras "Escuchar")
@@ -1075,10 +1077,7 @@
     let r = Math.floor(Math.random() * scSounds.length);
     if (r === currentIdx && scSounds.length > 1) r = (r+1) % scSounds.length;
     userPlayed = true;
-    widget.skip(r);
-    // Delay play() so the widget finishes loading the skipped track first
-    // (race condition is more likely in background where postMessage processing is slower)
-    setTimeout(() => widget.play(), 350);
+    widget.skip(r); // SC Widget API: skip() selects AND plays — no separate play() needed
   }
 
   // Calcula el siguiente índice en la playlist personalizada respetando shuffle
@@ -1908,18 +1907,26 @@
   });
 
   // ── WATCHDOG ─────────────────────────────────────────────────────
-  // Chrome freezes setInterval/setTimeout in background tabs.
-  // Web Worker timers run in a separate thread and are NOT frozen.
-  // The Worker sends a tick every 1 s → main thread checks if the current
-  // SC track has ended without the FINISH event arriving.
+  // Chrome freezes main-thread timers in background tabs.
+  // Web Worker timers (dedicated file, no blob: URL) are NOT frozen.
+  // On each Worker tick we check wall-clock time; if the SC track should
+  // have ended but FINISH/PLAY_PROGRESS never arrived, we force advance.
+  //
+  // _pausedAt: we must still run the watchdog even when playing=false
+  // because the SC Widget fires PAUSE *before* our FINISH advance logic
+  // completes (PAUSE fires immediately when audio ends, FINISH setTimeout
+  // is still pending). Without this, !playing would abort the check.
+  let _wdPausedAt = 0;
+
   function _wdCheck() {
-    // Resume AudioContext if browser suspended it while tab was hidden
     if (_kaCtx?.state === 'suspended') _kaCtx.resume().catch(() => {});
-    if (!playing || !_wdProgress || youtubeActive || ambientAudioActive) return;
+    if (!_wdProgress || youtubeActive || ambientAudioActive) return;
+    // If paused intentionally by user for > 10 s, don't auto-advance
+    if (!playing && Date.now() - _wdPausedAt > 10000) return;
     const elapsed   = Date.now() - _wdProgress.ts;
     const estimated = _wdProgress.pos + elapsed;
-    if (estimated < _wdProgress.dur + 2000) return; // 2 s grace, let real FINISH win
-    _wdProgress = null; // prevent double-advance
+    if (estimated < _wdProgress.dur + 1500) return; // 1.5 s grace
+    _wdProgress = null;
     if (activeRadioPlaylist !== null) {
       const next = _nextCustomIdx();
       const withinBounds = shuffle ? true : next < customTrackList.length;
@@ -1939,15 +1946,19 @@
     }
   }
 
-  // Worker-based tick — fires every 1 s regardless of background tab throttling
+  // Dedicated Worker file — avoids blob: URL / CSP issues that can silently
+  // prevent the Worker from being created, falling back to frozen setInterval
   try {
-    const _wBlob = new Blob(['setInterval(()=>self.postMessage(1),1000)'], { type: 'text/javascript' });
-    const _wWorker = new Worker(URL.createObjectURL(_wBlob));
+    const _wWorker = new Worker('/radio-worker.js');
     _wWorker.onmessage = _wdCheck;
   } catch(e) {
-    // Fallback: setInterval fires when tab is active, which at least catches
-    // the case where the user returns to the tab
-    setInterval(_wdCheck, 2000);
+    setInterval(_wdCheck, 1000);
+  }
+
+  // Web Locks API: signals to the browser that this page is doing ongoing
+  // important work (audio playback). Prevents aggressive tab suspension.
+  if (typeof navigator !== 'undefined' && navigator.locks) {
+    navigator.locks.request('rayver-radio-playback', { mode: 'shared' }, () => new Promise(() => {}));
   }
 
   function init() {

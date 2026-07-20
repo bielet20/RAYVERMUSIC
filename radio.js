@@ -844,9 +844,9 @@
         const next = _nextCustomIdx();
         const within = shuffle ? true : next < customTrackList.length;
         if (within && customTrackList[next]) {
-          setTimeout(() => window.playCustomTrack(next), 400);
+          window.playCustomTrack(next);
         } else if (loopPlaylist || shuffle) {
-          setTimeout(() => window.playCustomTrack(shuffle ? _nextCustomIdx() : 0), 400);
+          window.playCustomTrack(shuffle ? _nextCustomIdx() : 0);
         } else {
           if (!_restorePrevState()) { stopCrossfade(); setPlaying(false); }
         }
@@ -984,6 +984,9 @@
 
     widget.bind(SC.Widget.Events.FINISH, () => {
       _wdProgress = null;
+      // Ignore SC Widget FINISH if ambient audio is active — the widget was running
+      // in the hidden iframe from the previous track and its FINISH must not skip the playlist.
+      if (ambientAudioActive) return;
       // In background: switch to native SC auto_play instead of sending more
       // postMessages that the throttled iframe won't process in time
       if (document.hidden && !_bgContinuousMode) { _bgContinuousPlay(); return; }
@@ -1723,6 +1726,7 @@
   window.playCustomTrack = function(idx) {
     const t = customTrackList[idx];
     if (!t) return;
+    _wdProgress = null;  // reset watchdog immediately so previous SC position can't trigger skip
     customCurrentIdx = idx;
     // Cancelar cualquier fade en curso si el usuario cambió manualmente
     if (!isCrossfading) { preloadTriggered = false; }
@@ -1743,6 +1747,9 @@
       iframe.style.height = '0px';
       stopYoutube();
       stopCrossfade();
+      // Explicitly pause the SC Widget — otherwise its FINISH event can fire for the
+      // previous track while ambient is loading and skip to the next list item.
+      if (widgetRdy) widget.pause();
 
       const token = window.getToken?.();
       if (!token) {
@@ -1750,6 +1757,9 @@
         return;
       }
 
+      // Mark ambient as active immediately so the watchdog and FINISH handler
+      // ignore SC Widget events during the async fetch+play window.
+      ambientAudioActive = true;
       if (artistEl) artistEl.textContent = 'Cargando…';
 
       fetch(`/api/ambient/stream/${encodeURIComponent(t.itemId || t.id)}`, {
@@ -1757,6 +1767,7 @@
       })
         .then(r => r.json())
         .then(data => {
+          if (!ambientAudioActive) return; // track changed while fetching
           if (data.type === 'audio' && data.streamUrl) {
             // Native audio — full player control
             if (!audioEl) return;
@@ -1764,7 +1775,6 @@
             audioEl.volume = muted ? 0 : vol() / 100;
             audioEl.play()
               .then(() => {
-                ambientAudioActive   = true;
                 customPlaylistStarted = true;
                 userPlayed           = true;
                 setPlaying(true);
@@ -1772,12 +1782,14 @@
                 if (artistEl) artistEl.textContent = 'Ambiente';
               })
               .catch(err => {
+                ambientAudioActive = false;
                 console.warn('[Ambient] play error:', err);
                 if (artistEl) artistEl.textContent = 'Error al reproducir';
                 setPlaying(false);
               });
           } else if (data.type === 'gdrive' && data.fileId) {
             // Fallback when no GOOGLE_API_KEY: Google Drive iframe in ambient area
+            ambientAudioActive = false; // gdrive is uncontrolled, don't block normal flow
             const ambArea  = document.getElementById('radio-ambient-area');
             const ambFrame = document.getElementById('radio-ambient-iframe');
             if (ambArea && ambFrame) {
@@ -1788,10 +1800,12 @@
             userPlayed = true;
             if (artistEl) artistEl.textContent = 'Ambiente';
           } else if (data.error) {
+            ambientAudioActive = false;
             if (artistEl) artistEl.textContent = data.error;
           }
         })
         .catch(() => {
+          ambientAudioActive = false;
           if (artistEl) artistEl.textContent = 'Error de conexión';
         });
       return;
@@ -1899,10 +1913,13 @@
     // SC Widget is now playing SC_PLAYLIST in auto_play mode (RAYVER Radio)
     if (_bgContinuousMode) {
       _bgContinuousMode = false;
-      // Sync UI with whatever track SC Widget is on
-      widget.getCurrentSoundIndex(idx => {
-        if (typeof idx === 'number') { currentIdx = idx; showTrack(idx); highlight(idx); }
-      });
+      // Only sync SC Widget UI if ambient is not active — otherwise we'd overwrite
+      // the ambient track info in the header with whatever SC Widget track is loaded.
+      if (!ambientAudioActive) {
+        widget.getCurrentSoundIndex(idx => {
+          if (typeof idx === 'number') { currentIdx = idx; showTrack(idx); highlight(idx); }
+        });
+      }
     }
     _wdCheck();
     if (playing && ambientAudioActive && audioEl?.paused) audioEl.play().catch(() => {});

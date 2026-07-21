@@ -1632,6 +1632,18 @@ app.post('/api/admin/ambient/upload/cover', authMiddleware, uploadCover.single('
 // ── ADMIN: Tracks CRUD ──────────────────────────────────────────
 app.get('/api/admin/ambient/tracks', authMiddleware, (req, res) => res.json({ tracks: db.ambientTracks || [] }));
 
+app.post('/api/admin/ambient/tracks/bulk-update', authMiddleware, (req, res) => {
+  const { ids, packId } = req.body || {};
+  if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids requerido' });
+  let updated = 0;
+  for (const id of ids) {
+    const idx = (db.ambientTracks || []).findIndex(t => t.id === id);
+    if (idx >= 0) { db.ambientTracks[idx].packId = packId || null; updated++; }
+  }
+  if (updated) saveDB(db);
+  res.json({ ok: true, updated });
+});
+
 app.post('/api/admin/ambient/tracks', authMiddleware, (req, res) => {
   const { title, description, cover, tags, duration, packId, previewUrl, source, order } = req.body || {};
   if (!title) return res.status(400).json({ error: 'Título requerido' });

@@ -496,9 +496,27 @@ body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--text);min-
           </div>
 
           <div class="gc" style="margin-bottom:16px">
-            <div class="ch">
+            <div class="ch" style="flex-wrap:wrap;gap:8px">
               <span class="ct">Tracks Ambiente</span>
-              <button class="btn btn-p btn-sm" onclick="ambOpenTrackModal()"><i class="fas fa-plus"></i> Nuevo track manual</button>
+              <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+                <select id="amb-filter-cat" onchange="ambRenderTracks()" style="background:rgba(255,255,255,.06);border:1px solid var(--gb);border-radius:8px;padding:4px 10px;color:var(--text);font-size:12px;height:32px">
+                  <option value="">Todas las categorías</option>
+                  <option value="__none__">Sin categoría</option>
+                </select>
+                <button id="amb-view-table-btn" class="btn btn-p btn-sm" onclick="ambSetViewMode('table')" title="Vista tabla"><i class="fas fa-list"></i></button>
+                <button id="amb-view-cat-btn" class="btn btn-g btn-sm" onclick="ambSetViewMode('grouped')" title="Vista por categoría"><i class="fas fa-layer-group"></i></button>
+                <button class="btn btn-p btn-sm" onclick="ambOpenTrackModal()"><i class="fas fa-plus"></i> Nuevo</button>
+              </div>
+            </div>
+            <!-- Barra de acción masiva (visible cuando hay tracks seleccionados) -->
+            <div id="amb-bulk-bar" style="display:none;padding:10px 16px;background:rgba(168,85,247,.08);border-bottom:1px solid rgba(168,85,247,.25);align-items:center;gap:10px;flex-wrap:wrap">
+              <span id="amb-bulk-count" style="font-size:13px;font-weight:600;color:#c084fc"></span>
+              <span style="font-size:12px;color:var(--muted)">→ Asignar a categoría:</span>
+              <select id="amb-bulk-pack" style="background:rgba(255,255,255,.06);border:1px solid var(--gb);border-radius:8px;padding:4px 10px;color:var(--text);font-size:12px;height:32px">
+                <option value="">Sin categoría</option>
+              </select>
+              <button class="btn btn-p btn-sm" onclick="ambBulkAssign()"><i class="fas fa-check"></i> Aplicar</button>
+              <button class="btn btn-g btn-sm" onclick="ambClearSelection()"><i class="fas fa-times"></i> Cancelar</button>
             </div>
             <div id="amb-tracks-list" style="padding:16px">
               <div class="re-empty"><i class="fas fa-circle-notch spin"></i><p>Cargando…</p></div>
@@ -2454,6 +2472,8 @@ function attachRadioEditorDnD() {
 // MÓDULO AMBIENTE
 // ══════════════════════════════════════════════
 let _ambTracks = [], _ambPacks = [], _ambPlans = [], _ambAccess = [];
+let _ambViewMode = 'table';    // 'table' | 'grouped'
+let _ambSelected = new Set();  // ids of checked tracks
 let _ambEditTrack = null, _ambEditPack = null;
 
 // Helper: wraps apiFetch(method, path, body) para ambient
@@ -2477,9 +2497,9 @@ window.showPage = function(p) {
   if (p === 'ambiente') ambLoad();
 };
 
-function ambLoad() {
-  ambLoadTracks();
-  ambLoadPacks();
+async function ambLoad() {
+  await ambLoadPacks();  // packs first — needed for grouped track view
+  await ambLoadTracks();
   ambLoadPlans();
   ambLoadAccess();
 }
@@ -2532,34 +2552,145 @@ async function ambScanFolder() {
 async function ambLoadTracks() {
   const data = await _ambApi('GET', '/admin/ambient/tracks');
   _ambTracks = data.tracks || [];
+  _ambSelected.clear();
+  ambRenderTracks();
+}
+
+function ambSetViewMode(mode) {
+  _ambViewMode = mode;
+  document.getElementById('amb-view-table-btn').className = mode === 'table'   ? 'btn btn-p btn-sm' : 'btn btn-g btn-sm';
+  document.getElementById('amb-view-cat-btn').className   = mode === 'grouped' ? 'btn btn-p btn-sm' : 'btn btn-g btn-sm';
+  _ambSelected.clear();
+  ambUpdateBulkBar();
+  ambRenderTracks();
+}
+
+function ambRenderTracks() {
+  const filterVal = document.getElementById('amb-filter-cat')?.value || '';
   const el = document.getElementById('amb-tracks-list');
-  if (!_ambTracks.length) { el.innerHTML = '<div class="re-empty"><i class="fas fa-music"></i><p>No hay tracks. Crea el primero.</p></div>'; return; }
+  if (!_ambTracks.length) { el.innerHTML = '<div class="re-empty"><i class="fas fa-music"></i><p>No hay tracks. Importa o crea el primero.</p></div>'; return; }
+
+  let tracks = _ambTracks;
+  if (filterVal === '__none__')    tracks = tracks.filter(t => !t.packId);
+  else if (filterVal)              tracks = tracks.filter(t => t.packId === filterVal);
+
+  if (_ambViewMode === 'grouped') ambRenderTracksGrouped(el, tracks);
+  else                            ambRenderTracksTable(el, tracks);
+}
+
+function _ambTrackRow(t, showCheckbox) {
+  const pack    = _ambPacks.find(p => p.id === t.packId);
+  const srcIcon = t.source?.type === 'file' ? '📁' : t.source?.type === 'gdrive' ? '📂' : t.source?.type === 'platform' ? (t.source.platformType === 'youtube' ? '▶️' : '☁️') : '🔗';
+  const checked = _ambSelected.has(t.id) ? ' checked' : '';
+  return `<tr style="border-bottom:1px solid rgba(255,255,255,.04)">
+    ${showCheckbox ? `<td style="padding:8px 4px 8px 12px"><input type="checkbox" data-tid="${t.id}"${checked} onchange="ambToggleTrack('${t.id}',this.checked)" style="width:16px;height:16px;accent-color:#a855f7;cursor:pointer"></td>` : ''}
+    <td style="padding:8px">${t.cover ? `<img src="${_esc(t.cover)}" onerror="this.style.display='none'" style="width:36px;height:36px;border-radius:6px;object-fit:cover">` : `<div style="width:36px;height:36px;border-radius:6px;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:16px">🎵</div>`}</td>
+    <td style="padding:8px;font-weight:600;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_esc(t.title)}<br><span style="color:var(--muted);font-size:11px;font-weight:400">${(t.tags||[]).join(', ')}</span></td>
+    <td style="padding:8px;color:var(--muted);font-size:12px">${pack ? `<span style="background:rgba(168,85,247,.15);color:#c084fc;padding:2px 8px;border-radius:999px">${_esc(pack.title)}</span>` : '<span style="color:var(--muted)">—</span>'}</td>
+    <td style="padding:8px;font-size:12px">${srcIcon} <span style="color:var(--muted)">${t.source?.type || '—'}</span></td>
+    <td style="padding:8px"><span style="padding:2px 8px;border-radius:999px;font-size:11px;background:${t.active !== false ? 'rgba(52,211,153,.15)' : 'rgba(239,68,68,.15)'};color:${t.active !== false ? '#34d399' : '#f87171'}">${t.active !== false ? 'Activo' : 'Oculto'}</span></td>
+    <td style="padding:8px;text-align:right;white-space:nowrap">
+      <button style="background:rgba(52,211,153,.15);color:#34d399;border:none;border-radius:6px;padding:5px 10px;cursor:pointer;margin-right:4px" onclick="ambPlayTrack('${t.id}')" title="Preview"><i class="fas fa-play"></i></button>
+      <button class="btn btn-sm btn-g" onclick="ambOpenTrackModal('${t.id}')" style="margin-right:4px"><i class="fas fa-edit"></i></button>
+      <button style="background:rgba(239,68,68,.15);color:#f87171;border:none;border-radius:6px;padding:5px 10px;cursor:pointer" onclick="ambDeleteTrack('${t.id}')"><i class="fas fa-trash"></i></button>
+    </td>
+  </tr>`;
+}
+
+function ambRenderTracksTable(el, tracks) {
+  const allChecked = tracks.length > 0 && tracks.every(t => _ambSelected.has(t.id));
   el.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:13px">
     <thead><tr style="color:var(--muted);border-bottom:1px solid var(--gb)">
-      <th style="padding:8px;text-align:left">Cover</th>
+      <th style="padding:8px 4px 8px 12px"><input type="checkbox" ${allChecked ? 'checked' : ''} onchange="ambSelectAll(this.checked,${JSON.stringify(tracks.map(t=>t.id))})" style="width:16px;height:16px;accent-color:#a855f7;cursor:pointer" title="Seleccionar todo"></th>
+      <th style="padding:8px">Cover</th>
       <th style="padding:8px;text-align:left">Título</th>
-      <th style="padding:8px;text-align:left">Pack</th>
+      <th style="padding:8px;text-align:left">Categoría</th>
       <th style="padding:8px;text-align:left">Fuente</th>
       <th style="padding:8px;text-align:left">Estado</th>
       <th style="padding:8px;text-align:right">Acciones</th>
     </tr></thead>
-    <tbody>${_ambTracks.map(t => {
-      const pack = _ambPacks.find(p => p.id === t.packId);
-      const srcIcon = t.source?.type === 'file' ? '📁' : t.source?.type === 'gdrive' ? '📂' : t.source?.type === 'platform' ? (t.source.platformType === 'youtube' ? '▶️' : '☁️') : '🔗';
-      return `<tr style="border-bottom:1px solid rgba(255,255,255,.04)">
-        <td style="padding:8px">${t.cover ? `<img src="${_esc(t.cover)}" onerror="this.style.display='none'" style="width:40px;height:40px;border-radius:6px;object-fit:cover">` : `<div style="width:40px;height:40px;border-radius:6px;background:var(--bg3);display:flex;align-items:center;justify-content:center">🎵</div>`}</td>
-        <td style="padding:8px;font-weight:600">${_esc(t.title)}<br><span style="color:var(--muted);font-size:11px">${(t.tags||[]).join(', ')}</span></td>
-        <td style="padding:8px;color:var(--muted)">${pack ? _esc(pack.title) : '— Suscripción'}</td>
-        <td style="padding:8px">${srcIcon} ${t.source?.type || '—'}</td>
-        <td style="padding:8px"><span style="padding:2px 8px;border-radius:999px;font-size:11px;background:${t.active !== false ? 'rgba(52,211,153,.15)' : 'rgba(239,68,68,.15)'};color:${t.active !== false ? '#34d399' : '#f87171'}">${t.active !== false ? 'Activo' : 'Oculto'}</span></td>
-        <td style="padding:8px;text-align:right;white-space:nowrap">
-          <button class="btn btn-sm" style="background:rgba(52,211,153,.15);color:#34d399;border:none;border-radius:6px;padding:5px 10px;cursor:pointer;margin-right:4px" onclick="ambPlayTrack('${t.id}')" title="Reproducir preview"><i class="fas fa-play"></i></button>
-          <button class="btn btn-sm btn-g" onclick="ambOpenTrackModal('${t.id}')" style="margin-right:4px"><i class="fas fa-edit"></i></button>
-          <button class="btn btn-sm" style="background:rgba(239,68,68,.15);color:#f87171;border:none;border-radius:6px;padding:5px 10px;cursor:pointer" onclick="ambDeleteTrack('${t.id}')"><i class="fas fa-trash"></i></button>
-        </td>
-      </tr>`;
-    }).join('')}</tbody>
+    <tbody>${tracks.map(t => _ambTrackRow(t, true)).join('')}</tbody>
   </table>`;
+}
+
+function ambRenderTracksGrouped(el, tracks) {
+  // Group by pack; include a "Sin categoría" bucket
+  const groups = [];
+  _ambPacks.forEach(p => {
+    const pts = tracks.filter(t => t.packId === p.id);
+    if (pts.length) groups.push({ id: p.id, name: p.title, free: p.free, tracks: pts });
+  });
+  const uncategorized = tracks.filter(t => !t.packId);
+  if (uncategorized.length) groups.push({ id: '__none__', name: 'Sin categoría', free: true, tracks: uncategorized });
+  if (!groups.length) { el.innerHTML = '<div class="re-empty"><i class="fas fa-layer-group"></i><p>No hay tracks.</p></div>'; return; }
+
+  el.innerHTML = groups.map(g => `
+    <div style="margin-bottom:12px;border:1px solid var(--gb);border-radius:10px;overflow:hidden">
+      <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;background:rgba(255,255,255,.03);cursor:pointer" onclick="ambToggleGroup('${g.id}')">
+        <i class="fas fa-layer-group" style="color:${g.id==='__none__' ? 'var(--muted)' : '#c084fc'}"></i>
+        <span style="font-weight:700;flex:1">${_esc(g.name)}</span>
+        <span style="background:rgba(168,85,247,.15);color:#c084fc;padding:2px 10px;border-radius:999px;font-size:12px">${g.tracks.length} track${g.tracks.length!==1?'s':''}</span>
+        ${g.id !== '__none__' ? `<span style="font-size:11px;padding:2px 8px;border-radius:999px;background:${g.free?'rgba(52,211,153,.15)':'rgba(251,191,36,.15)'};color:${g.free?'#34d399':'#fbbf24'}">${g.free?'Libre':'Pago'}</span>` : ''}
+        <i class="fas fa-chevron-down" id="amb-grp-chev-${g.id}" style="color:var(--muted);font-size:11px;transition:.2s"></i>
+      </div>
+      <div id="amb-grp-${g.id}" style="overflow:hidden">
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <tbody>${g.tracks.map(t => _ambTrackRow(t, true)).join('')}</tbody>
+        </table>
+      </div>
+    </div>`).join('');
+}
+
+function ambToggleGroup(id) {
+  const el   = document.getElementById('amb-grp-' + id);
+  const chev = document.getElementById('amb-grp-chev-' + id);
+  if (!el) return;
+  const open = el.style.display !== 'none';
+  el.style.display = open ? 'none' : '';
+  if (chev) chev.style.transform = open ? 'rotate(-90deg)' : '';
+}
+
+function ambToggleTrack(id, checked) {
+  if (checked) _ambSelected.add(id); else _ambSelected.delete(id);
+  ambUpdateBulkBar();
+}
+
+function ambSelectAll(checked, ids) {
+  ids.forEach(id => checked ? _ambSelected.add(id) : _ambSelected.delete(id));
+  ambUpdateBulkBar();
+  ambRenderTracks();
+}
+
+function ambUpdateBulkBar() {
+  const bar   = document.getElementById('amb-bulk-bar');
+  const count = document.getElementById('amb-bulk-count');
+  if (!bar) return;
+  const n = _ambSelected.size;
+  if (n > 0) {
+    bar.style.display = 'flex';
+    count.textContent = n + ' track' + (n !== 1 ? 's' : '') + ' seleccionado' + (n !== 1 ? 's' : '');
+  } else {
+    bar.style.display = 'none';
+  }
+}
+
+function ambClearSelection() {
+  _ambSelected.clear();
+  ambUpdateBulkBar();
+  ambRenderTracks();
+}
+
+async function ambBulkAssign() {
+  const packId = document.getElementById('amb-bulk-pack').value || null;
+  const ids    = [..._ambSelected];
+  if (!ids.length) return;
+  try {
+    await _ambApi('POST', '/admin/ambient/tracks/bulk-update', { ids, packId });
+    const catName = packId ? (_ambPacks.find(p => p.id === packId)?.title || packId) : 'Sin categoría';
+    toast(`${ids.length} tracks asignados a "${catName}"`, 'ok');
+    _ambSelected.clear();
+    await ambLoadTracks();
+  } catch(e) { toast(e.message, 'err'); }
 }
 
 function ambOpenTrackModal(id) {
@@ -2726,18 +2857,21 @@ async function ambImportGdriveFolder() {
 async function ambLoadPacks() {
   const data = await _ambApi('GET', '/admin/ambient/packs');
   _ambPacks = data.packs || [];
-  // Update scanner pack select
+  const packOptions = _ambPacks.map(p => `<option value="${p.id}">${_esc(p.title)}${p.free ? ' (libre)' : ''}</option>`).join('');
+  // Scanner pack select
   const scanPackSel = document.getElementById('amb-scan-pack');
-  if (scanPackSel) {
-    scanPackSel.innerHTML = '<option value="">Sin pack (acceso por suscripción)</option>' +
-      _ambPacks.map(p => `<option value="${p.id}">${_esc(p.title)}</option>`).join('');
-  }
-  // Update gdrive folder pack select
+  if (scanPackSel) scanPackSel.innerHTML = '<option value="">Sin categoría</option>' + packOptions;
+  // GDrive folder pack select
   const gdrivePackSel = document.getElementById('amb-gdrive-folder-pack');
-  if (gdrivePackSel) {
-    gdrivePackSel.innerHTML = '<option value="">Sin pack</option>' +
-      _ambPacks.map(p => `<option value="${p.id}">${_esc(p.title)}</option>`).join('');
+  if (gdrivePackSel) gdrivePackSel.innerHTML = '<option value="">Sin categoría</option>' + packOptions;
+  // Category filter dropdown
+  const filterSel = document.getElementById('amb-filter-cat');
+  if (filterSel) {
+    filterSel.innerHTML = '<option value="">Todas las categorías</option><option value="__none__">Sin categoría</option>' + packOptions;
   }
+  // Bulk-assign pack select
+  const bulkSel = document.getElementById('amb-bulk-pack');
+  if (bulkSel) bulkSel.innerHTML = '<option value="">Sin categoría</option>' + packOptions;
   const el = document.getElementById('amb-packs-list');
   if (!_ambPacks.length) { el.innerHTML = '<div class="re-empty"><i class="fas fa-box-open"></i><p>No hay packs. Crea el primero.</p></div>'; return; }
   el.innerHTML = _ambPacks.map(p => {

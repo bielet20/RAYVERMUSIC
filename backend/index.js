@@ -939,6 +939,36 @@ app.put('/api/user/playlists/:id/reorder', userAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+// ───────────────────────── ZONAS AMBIENTE ──────────────────
+app.get('/api/public/ambient/zones', (req, res) => {
+  res.json({ zones: (db.ambientZones || []).slice().sort((a, b) => (a.order ?? 0) - (b.order ?? 0)) });
+});
+app.get('/api/admin/ambient/zones', authMiddleware, (req, res) => {
+  res.json({ zones: db.ambientZones || [] });
+});
+app.post('/api/admin/ambient/zones', authMiddleware, (req, res) => {
+  const { name, icon, color, description } = req.body || {};
+  if (!name?.trim()) return res.status(400).json({ error: 'Nombre requerido' });
+  const zone = { id: uid(), name: name.trim(), icon: icon || 'fa-music', color: color || '#a855f7', description: description || '', order: (db.ambientZones || []).length };
+  db.ambientZones = [...(db.ambientZones || []), zone];
+  saveDB(db);
+  res.json({ zone });
+});
+app.put('/api/admin/ambient/zones/:id', authMiddleware, (req, res) => {
+  const idx = (db.ambientZones || []).findIndex(z => z.id === req.params.id);
+  if (idx < 0) return res.status(404).json({ error: 'No encontrada' });
+  db.ambientZones[idx] = { ...db.ambientZones[idx], ...req.body, id: req.params.id };
+  saveDB(db);
+  res.json({ zone: db.ambientZones[idx] });
+});
+app.delete('/api/admin/ambient/zones/:id', authMiddleware, (req, res) => {
+  db.ambientZones = (db.ambientZones || []).filter(z => z.id !== req.params.id);
+  // Remove zone from all tracks
+  (db.ambientTracks || []).forEach(t => { if (t.zones) t.zones = t.zones.filter(z => z !== req.params.id); });
+  saveDB(db);
+  res.json({ ok: true });
+});
+
 // ───────────────────────── COMPARTIR LISTAS ────────────────
 app.post('/api/user/playlists/:id/share', userAuth, (req, res) => {
   const pl = (db.playlists || []).find(p => p.id === req.params.id && p.userId === req.user.userId);
@@ -1227,6 +1257,19 @@ const AMBIENT_COVERS_DIR = path.join(AMBIENT_DIR, 'covers');
 if (!db.ambientTracks) { db.ambientTracks = []; saveDB(db); }
 if (!db.ambientPacks)  { db.ambientPacks  = []; saveDB(db); }
 if (!db.ambientAccess) { db.ambientAccess = []; saveDB(db); }
+if (!db.ambientZones) {
+  db.ambientZones = [
+    { id: 'hotel',      name: 'Hotel',          icon: 'fa-hotel',        color: '#6366f1', description: 'Lobby, recepción, pasillos, habitaciones', order: 0 },
+    { id: 'restaurant', name: 'Restaurante',     icon: 'fa-utensils',     color: '#f59e0b', description: 'Sala de comedor, terraza', order: 1 },
+    { id: 'club',       name: 'Discoteca',       icon: 'fa-compact-disc', color: '#ec4899', description: 'Pista de baile, ambiente nocturno', order: 2 },
+    { id: 'spa',        name: 'Spa / Bienestar', icon: 'fa-spa',          color: '#10b981', description: 'Zonas de relax, meditación', order: 3 },
+    { id: 'office',     name: 'Oficina',         icon: 'fa-briefcase',    color: '#0ea5e9', description: 'Coworking, ambiente de trabajo', order: 4 },
+    { id: 'retail',     name: 'Tienda',          icon: 'fa-shopping-bag', color: '#a855f7', description: 'Comercio, punto de venta', order: 5 },
+    { id: 'cafe',       name: 'Cafetería',       icon: 'fa-coffee',       color: '#92400e', description: 'Cafetería, brunch, zona casual', order: 6 },
+    { id: 'gym',        name: 'Gimnasio',        icon: 'fa-dumbbell',     color: '#ef4444', description: 'Zona de entrenamiento, deportiva', order: 7 },
+  ];
+  saveDB(db);
+}
 if (!db.ambientPlans) {
   db.ambientPlans = [
     { id: 'plan_monthly', title: 'Mensual',   description: 'Acceso completo a toda la biblioteca',    price: 4.99,  currency: 'EUR', durationDays: 30,  badge: null,             active: true, order: 0 },
@@ -1633,26 +1676,41 @@ app.post('/api/admin/ambient/upload/cover', authMiddleware, uploadCover.single('
 app.get('/api/admin/ambient/tracks', authMiddleware, (req, res) => res.json({ tracks: db.ambientTracks || [] }));
 
 app.post('/api/admin/ambient/tracks/bulk-update', authMiddleware, (req, res) => {
-  const { ids, packId } = req.body || {};
+  const { ids, packId, zones, zonesMode } = req.body || {};
   if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids requerido' });
   let updated = 0;
   for (const id of ids) {
     const idx = (db.ambientTracks || []).findIndex(t => t.id === id);
-    if (idx >= 0) { db.ambientTracks[idx].packId = packId || null; updated++; }
+    if (idx < 0) continue;
+    if (packId !== undefined) db.ambientTracks[idx].packId = packId || null;
+    if (Array.isArray(zones)) {
+      if (zonesMode === 'add') {
+        const cur = new Set(db.ambientTracks[idx].zones || []);
+        zones.forEach(z => cur.add(z));
+        db.ambientTracks[idx].zones = [...cur];
+      } else if (zonesMode === 'remove') {
+        const cur = new Set(db.ambientTracks[idx].zones || []);
+        zones.forEach(z => cur.delete(z));
+        db.ambientTracks[idx].zones = [...cur];
+      } else {
+        db.ambientTracks[idx].zones = zones;
+      }
+    }
+    updated++;
   }
   if (updated) saveDB(db);
   res.json({ ok: true, updated });
 });
 
 app.post('/api/admin/ambient/tracks', authMiddleware, (req, res) => {
-  const { title, description, cover, tags, duration, packId, previewUrl, source, order } = req.body || {};
+  const { title, description, cover, tags, duration, packId, previewUrl, source, order, zones } = req.body || {};
   if (!title) return res.status(400).json({ error: 'Título requerido' });
   const track = {
     id: uid(), title, description: description || '', cover: cover || null,
     tags: tags || [], duration: duration || 0, packId: packId || null,
     previewUrl: previewUrl || null, source: source || { type: 'url', url: '' },
     order: order ?? (db.ambientTracks || []).length,
-    active: true, createdAt: new Date().toISOString(),
+    active: true, zones: zones || [], createdAt: new Date().toISOString(),
   };
   db.ambientTracks = [...(db.ambientTracks || []), track];
   saveDB(db);

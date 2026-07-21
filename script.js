@@ -1382,7 +1382,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // ══════════════════════════════════════════════════════════════
 // MÓDULO MÚSICA AMBIENTE (frontend público)
 // ══════════════════════════════════════════════════════════════
-let _ambData = { packs: [], plans: [], tracks: [], access: null };
+let _ambData = { packs: [], plans: [], tracks: [], zones: [], access: null };
 
 async function _ambFetch(path) {
   const tok = AUTH.token || getToken();
@@ -1393,14 +1393,16 @@ async function _ambFetch(path) {
 
 async function loadAmbient() {
   try {
-    const [p, pk, tr] = await Promise.all([
+    const [p, pk, tr, zn] = await Promise.all([
       _ambFetch('/public/ambient/plans'),
       _ambFetch('/public/ambient/packs'),
       _ambFetch('/public/ambient/tracks'),
+      _ambFetch('/public/ambient/zones'),
     ]);
     _ambData.plans  = p.plans  || [];
     _ambData.packs  = pk.packs || [];
     _ambData.tracks = tr.tracks || [];
+    _ambData.zones  = (zn.zones || []).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   } catch(e) { console.warn('[Ambient] load error', e); }
 
   // Check access if logged in
@@ -1414,6 +1416,7 @@ async function loadAmbient() {
 
   renderAmbientPlans();
   renderAmbientPacks();
+  renderAmbientZoneTabs();
   renderAmbientTracks();
   renderAmbientAccessBanner();
 }
@@ -1470,6 +1473,7 @@ function renderAmbientPacks() {
 }
 
 let _ambActivePackFilter  = null;
+let _ambActiveZoneFilter  = null;
 let _ambActiveTab         = 'all'; // 'all' | 'favs' | playlistId
 let _ambFavs              = new Set();
 let _ambFavPlId           = null;
@@ -1479,6 +1483,30 @@ let _ambPendingAddTrackId = null;
 function ambFilterByPack(packId) {
   _ambActivePackFilter = _ambActivePackFilter === packId ? null : packId;
   renderAmbientTracks();
+}
+
+function ambFilterByZone(zoneId) {
+  _ambActiveZoneFilter = _ambActiveZoneFilter === zoneId ? null : zoneId;
+  document.querySelectorAll('.amb-zone-filter-btn').forEach(b => {
+    const active = b.dataset.zid === _ambActiveZoneFilter;
+    b.style.opacity = active ? '1' : '0.6';
+    b.style.transform = active ? 'scale(1.05)' : 'scale(1)';
+    b.style.borderWidth = active ? '2px' : '1px';
+  });
+  renderAmbientTracks();
+}
+
+function renderAmbientZoneTabs() {
+  const el = document.getElementById('ambient-zone-filter');
+  if (!el) return;
+  if (!_ambData.zones.length) { el.style.display = 'none'; return; }
+  el.style.display = 'flex';
+  el.innerHTML = _ambData.zones.map(z =>
+    `<button class="amb-zone-filter-btn" data-zid="${z.id}" onclick="ambFilterByZone('${z.id}')"
+      style="display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:999px;border:1px solid ${z.color}66;background:${z.color}11;color:${z.color};font-size:12px;font-weight:600;cursor:pointer;transition:.15s;opacity:0.6">
+      <i class="fas ${z.icon}" style="font-size:11px"></i>${z.name}
+    </button>`
+  ).join('');
 }
 
 // ── AMBIENT PLAYLISTS & FAVORITES ─────────────────────────────────
@@ -1625,6 +1653,9 @@ function renderAmbientTracks() {
   let tracks = _ambActivePackFilter
     ? _ambData.tracks.filter(t => t.packId === _ambActivePackFilter)
     : _ambData.tracks;
+
+  if (_ambActiveZoneFilter)
+    tracks = tracks.filter(t => (t.zones || []).includes(_ambActiveZoneFilter));
 
   if (_ambActiveTab === 'favs') {
     tracks = tracks.filter(t => _ambFavs.has(t.id));

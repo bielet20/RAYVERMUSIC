@@ -436,6 +436,9 @@
     <button class="amb-tab amb-tab-new" onclick="ambNewPlaylistModal()"><i class="fas fa-plus"></i> Nueva lista</button>
   </div>
 
+  <!-- Zone filter pills (visible to all) -->
+  <div id="ambient-zone-filter" style="display:none;flex-wrap:wrap;gap:8px;margin-bottom:16px"></div>
+
   <!-- Track list -->
   <div class="ambient-track-list" id="ambient-track-list">
     <div style="text-align:center;padding:40px;color:var(--muted)"><i class="fas fa-circle-notch fa-spin" style="font-size:24px"></i></div>
@@ -662,7 +665,7 @@
 </footer>
 
 <script src="tracker.js?v=1" defer></script>
-<script src="script.js?v=22"></script>
+<script src="script.js?v=23"></script>
 <script src="radio.js?v=30"></script>
 <!-- PWA: botón flotante de instalación (oculto por defecto, se muestra solo si el navegador soporta instalar) -->
 <div id="pwa-install-wrap" style="display:none;position:fixed;bottom:90px;right:20px;z-index:9999;flex-direction:column;align-items:flex-end;gap:8px;">

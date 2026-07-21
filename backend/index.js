@@ -939,6 +939,36 @@ app.put('/api/user/playlists/:id/reorder', userAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+// ───────────────────────── COMPARTIR LISTAS ────────────────
+app.post('/api/user/playlists/:id/share', userAuth, (req, res) => {
+  const pl = (db.playlists || []).find(p => p.id === req.params.id && p.userId === req.user.userId);
+  if (!pl) return res.status(404).json({ error: 'No encontrada' });
+  if (!pl.shareToken) {
+    pl.shareToken = uid();
+    pl.sharedAt   = new Date().toISOString();
+    saveDB(db);
+  }
+  res.json({ shareToken: pl.shareToken });
+});
+
+app.delete('/api/user/playlists/:id/share', userAuth, (req, res) => {
+  const pl = (db.playlists || []).find(p => p.id === req.params.id && p.userId === req.user.userId);
+  if (!pl) return res.status(404).json({ error: 'No encontrada' });
+  delete pl.shareToken;
+  delete pl.sharedAt;
+  saveDB(db);
+  res.json({ ok: true });
+});
+
+app.get('/api/public/shared/:token', (req, res) => {
+  const pl = (db.playlists || []).find(p => p.shareToken === req.params.token);
+  if (!pl) return res.status(404).json({ error: 'Lista no encontrada o enlace caducado' });
+  res.json({
+    name:   pl.name,
+    tracks: pl.tracks.map(({ type, itemId, title, cover, url }) => ({ type, itemId, title, cover, url })),
+  });
+});
+
 // ───────────────────────── GÉNEROS ─────────────────────────
 app.get('/api/public/genres', (req, res) => {
   res.json((db.genres || []).slice().sort((a, b) => (a.order || 0) - (b.order || 0)));

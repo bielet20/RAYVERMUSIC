@@ -941,6 +941,12 @@
       if (activeRadioPlaylist === null) iframe.style.height = '116px';
       widget.setVolume(muted ? 0 : vol());
       loadSounds();
+      // Load a shared playlist passed via ?playlist=TOKEN URL param
+      if (window._pendingSharedPlaylist) {
+        const { name, tracks } = window._pendingSharedPlaylist;
+        window._pendingSharedPlaylist = null;
+        window.loadSharedPlaylist(name, tracks);
+      }
     });
 
     widget.bind(SC.Widget.Events.PLAY, () => {
@@ -1424,6 +1430,44 @@
     }
   };
 
+  // ── SHARED PLAYLIST LOADER ───────────────────────────────────────
+  // Loads a playlist received via ?playlist=TOKEN URL param (no auth required).
+  window.loadSharedPlaylist = function(name, tracks) {
+    if (!tracks?.length) return;
+    if (youtubeActive) stopYoutube();
+    else if (widgetRdy) { widget.pause(); iframe.style.height = '0px'; }
+    if (ambientAudioActive) _stopAmbientAudio();
+    stopCrossfade();
+    pendingPlay = false;
+    _wdProgress = null;
+
+    activeRadioPlaylist   = '__shared__';
+    customCurrentIdx      = 0;
+    customPlaylistStarted = false;
+    loopPlaylist          = true;
+    customTrackList = tracks.map(t => ({
+      id: t.itemId || t.title,
+      itemId: t.itemId || '',
+      title:  t.title,
+      cover:  t.cover  || null,
+      scUrl:  t.url    || null,
+      url:    t.url    || null,
+      videoId: t.type === 'video' ? t.itemId : null,
+      spotifyUrl: null,
+      type:   t.type   || 'track',
+    }));
+
+    const nameEl  = document.getElementById('radio-pl-name');
+    const loopBtn = document.getElementById('radio-loop-btn');
+    if (nameEl)  nameEl.textContent = name || 'Lista compartida';
+    if (loopBtn) { loopBtn.style.display = ''; loopBtn.classList.add('active'); }
+    renderCustomTracklist(customTrackList);
+    showCustomTrack(0);
+    _syncUpPlaylistBtn();
+    _syncAutomixBtn();
+    document.getElementById('radio')?.scrollIntoView({ behavior: 'smooth' });
+  };
+
   // ── PLAYLIST SELECTOR ────────────────────────────────────────────
   let activeRadioPlaylist = null; // null o '__default__' = RAYVER Radio; id = lista de usuario
   let customTrackList = [];
@@ -1453,10 +1497,12 @@
   function _syncUpPlaylistBtn() {
     const btn = $('up-playlist-btn');
     if (!btn) return;
-    const isUserPl = activeRadioPlaylist && activeRadioPlaylist !== '__default__' && activeRadioPlaylist !== '__videos__' && activeRadioPlaylist !== '__oneshot__';
-    btn.classList.toggle('up-pl-active', !!isUserPl);
+    const isUserPl = activeRadioPlaylist && activeRadioPlaylist !== '__default__' && activeRadioPlaylist !== '__videos__' && activeRadioPlaylist !== '__oneshot__' && activeRadioPlaylist !== '__shared__';
+    btn.classList.toggle('up-pl-active', !!isUserPl || activeRadioPlaylist === '__shared__');
     if (activeRadioPlaylist === '__videos__') {
       btn.title = 'Videos';
+    } else if (activeRadioPlaylist === '__shared__') {
+      btn.title = document.getElementById('radio-pl-name')?.textContent || 'Lista compartida';
     } else if (isUserPl) {
       const pl = (window.userPlaylists || []).find(p => p.id === activeRadioPlaylist);
       btn.title = pl?.name || 'Lista personalizada';

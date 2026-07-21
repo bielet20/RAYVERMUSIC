@@ -237,6 +237,7 @@ function renderPlaylistsModal() {
         <i class="fas fa-chevron-down pl-chevron"></i>
         <div class="playlist-item-btns" onclick="event.stopPropagation()">
           <button onclick="playPlaylist('${esc(pl.id)}')" class="pl-play-btn" title="Reproducir"><i class="fas fa-play"></i></button>
+          <button onclick="sharePlaylist('${esc(pl.id)}')" class="pl-share-btn" title="Compartir lista"><i class="fas fa-share-alt"></i></button>
           <button onclick="renamePlaylist('${esc(pl.id)}')" class="pl-rename-btn" title="Renombrar"><i class="fas fa-edit"></i></button>
           <button onclick="mergePlaylistModal('${esc(pl.id)}')" class="pl-merge-btn" title="Fusionar"><i class="fas fa-layer-group"></i></button>
           <button onclick="confirmDeletePlaylist('${esc(pl.id)}')" class="pl-delete-btn" title="Eliminar"><i class="fas fa-trash"></i></button>
@@ -311,6 +312,32 @@ window.createPlaylistDirect = async function() {
 };
 
 window.createPlaylistModal = function() { openPlaylists(); };
+
+window.sharePlaylist = async function(id) {
+  const pl = userPlaylists.find(p => p.id === id);
+  if (!pl) return;
+  const r = await apiUser('/playlists/' + id + '/share', { method: 'POST' });
+  if (!r.ok) { showToastGlobal('Error al generar enlace'); return; }
+  const shareUrl = location.origin + '/?playlist=' + r.data.shareToken;
+
+  // Update the button icon briefly to give feedback
+  const btn = document.querySelector(`.playlist-item[data-plid="${esc(id)}"] .pl-share-btn`);
+  if (btn) { btn.innerHTML = '<i class="fas fa-check"></i>'; setTimeout(() => { btn.innerHTML = '<i class="fas fa-share-alt"></i>'; }, 2000); }
+
+  // Use Web Share API on mobile when available
+  if (navigator.share) {
+    navigator.share({ title: pl.name + ' — RAYVER Music', url: shareUrl }).catch(() => {});
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(shareUrl);
+    showToastGlobal('Enlace copiado — compártelo con quien quieras');
+  } catch (_) {
+    // Clipboard denied: fall back to a prompt so user can copy manually
+    prompt('Copia este enlace para compartir tu lista:', shareUrl);
+  }
+};
 
 window.deletePlaylist = async function(id) {
   const r = await apiUser('/playlists/' + id, { method: 'DELETE' });
@@ -1329,6 +1356,27 @@ document.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') loadTracks();
   });
+
+  // ── SHARED PLAYLIST via ?playlist=TOKEN ──────────────────────────
+  const _sharedToken = new URLSearchParams(location.search).get('playlist');
+  if (_sharedToken) {
+    fetch('/api/public/shared/' + encodeURIComponent(_sharedToken))
+      .then(r => r.json())
+      .then(data => {
+        if (data.name && data.tracks?.length) {
+          showToastGlobal('Cargando lista: ' + data.name);
+          if (typeof window.loadSharedPlaylist === 'function') {
+            window.loadSharedPlaylist(data.name, data.tracks);
+          } else {
+            // radio.js not ready yet — store for READY handler
+            window._pendingSharedPlaylist = data;
+          }
+        } else {
+          showToastGlobal(data.error || 'Lista no encontrada');
+        }
+      })
+      .catch(() => showToastGlobal('Error al cargar la lista compartida'));
+  }
 });
 
 // ══════════════════════════════════════════════════════════════

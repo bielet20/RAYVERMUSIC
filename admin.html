@@ -284,6 +284,28 @@ body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--text);min-
   outline: none;
 }
 .vorder-input:focus { border-color: var(--purple); }
+
+/* GENERACIÓN IA */
+.gen-type-btn{display:flex;flex-direction:column;align-items:center;gap:10px;padding:22px 36px;
+  border-radius:14px;border:2px solid var(--gb);background:var(--glass);color:var(--muted);
+  cursor:pointer;font-family:inherit;transition:all .2s;min-width:200px}
+.gen-type-btn i{font-size:28px}
+.gen-type-btn .gt-name{font-size:15px;font-weight:700;color:var(--text)}
+.gen-type-btn small{font-size:11px;text-align:center;line-height:1.5}
+.gen-type-btn.active{border-color:var(--pd);background:rgba(124,58,237,.18);color:var(--purple)}
+.gen-type-btn.active .gt-name{color:var(--purple)}
+.gen-clip-card{display:flex;gap:16px;padding:18px;border:1px solid var(--gb);border-radius:14px;
+  margin-bottom:14px;background:rgba(52,211,153,.04);transition:border-color .2s}
+.gen-clip-card:hover{border-color:rgba(168,85,247,.3)}
+.gen-clip-cover{width:88px;height:88px;border-radius:12px;object-fit:cover;flex-shrink:0}
+.gen-clip-cover-ph{width:88px;height:88px;border-radius:12px;background:var(--bg3);
+  display:flex;align-items:center;justify-content:center;font-size:32px;flex-shrink:0}
+.gen-prog-bar{height:4px;background:var(--gb);border-radius:4px;overflow:hidden;margin-top:10px}
+.gen-prog-fill{height:100%;background:linear-gradient(90deg,var(--pd),#db2777);border-radius:4px;
+  animation:genProgAnim 2s ease-in-out infinite}
+@keyframes genProgAnim{0%{width:5%}50%{width:75%}100%{width:5%}}
+.gen-hist-item{padding:16px 20px;border-bottom:1px solid rgba(255,255,255,.06)}
+.gen-hist-item:last-child{border-bottom:none}
 </style>
 </head>
 <body>
@@ -310,6 +332,7 @@ body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--text);min-
         <button class="ni" onclick="showPage('videos')"><i class="fab fa-youtube"></i> Videos</button>
         <button class="ni" onclick="showPage('radio')"><i class="fas fa-broadcast-tower"></i> Radio</button>
         <button class="ni" onclick="showPage('ambiente')"><i class="fas fa-leaf"></i> Ambiente</button>
+        <button class="ni" onclick="showPage('crear')"><i class="fas fa-magic"></i> Crear con IA</button>
         <button class="ni" onclick="showPage('analytics')"><i class="fas fa-chart-bar"></i> Analytics</button>
         <button class="ni" onclick="showPage('settings')"><i class="fas fa-cog"></i> Ajustes</button>
         <a href="/" class="ni"><i class="fas fa-globe"></i> Ver web</a>
@@ -749,6 +772,112 @@ body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--text);min-
           <div class="field"><label>Nota interna (pago, referencia…)</label><input type="text" id="amb-acc-note" placeholder="Ej. Pago PayPal #TX123"></div>
           <div id="amb-acc-error" style="color:#f87171;font-size:13px;margin-bottom:8px;display:none"></div>
           <button class="btn btn-p" onclick="ambGrantAccess()" style="width:100%"><i class="fas fa-key"></i> Conceder acceso</button>
+        </div>
+      </div>
+
+      <!-- CREAR CON IA -->
+      <div id="page-crear" class="page">
+        <div class="ph">
+          <div>
+            <div class="ptitle"><i class="fas fa-magic" style="color:#a855f7"></i> Crear Música con IA</div>
+            <div class="psub">Genera canciones con voz o piezas instrumentales usando Suno AI (vía goapi.ai)</div>
+          </div>
+        </div>
+
+        <!-- Selector de tipo -->
+        <div class="gc" style="margin-bottom:24px">
+          <div class="ch"><span class="ct">Tipo de generación</span></div>
+          <div style="display:flex;gap:14px;padding:24px;flex-wrap:wrap">
+            <button id="gen-type-song" class="gen-type-btn active" onclick="genSetType('song')">
+              <i class="fas fa-microphone" style="color:#a855f7"></i>
+              <span class="gt-name">Canción con voz</span>
+              <small>Escribe la letra + estilo → canción completa cantada</small>
+            </button>
+            <button id="gen-type-instr" class="gen-type-btn" onclick="genSetType('instrumental')">
+              <i class="fas fa-music" style="color:#a855f7"></i>
+              <span class="gt-name">Instrumental</span>
+              <small>Describe el ambiente → música sin letra, solo instrumentos</small>
+            </button>
+          </div>
+        </div>
+
+        <!-- Formulario -->
+        <div class="gc" style="margin-bottom:24px">
+          <div class="ch"><span class="ct">Parámetros de generación</span></div>
+          <div style="padding:24px;display:flex;flex-direction:column;gap:16px">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+              <div class="field">
+                <label>Título de la canción *</label>
+                <input type="text" id="gen-title" placeholder="Ej: Lluvia de Otoño">
+              </div>
+              <div class="field">
+                <label>Estilo / Tags musicales *</label>
+                <input type="text" id="gen-style" placeholder="lofi, piano, chill, relaxing, 80bpm, female vocals">
+                <p style="font-size:11px;color:var(--muted);margin-top:4px">Géneros, instrumentos, mood, BPM — separados por comas. Cuantos más detalles, mejor resultado.</p>
+              </div>
+            </div>
+
+            <!-- Letra (solo para canción) -->
+            <div id="gen-lyrics-wrap" class="field">
+              <label>
+                Letra <span style="font-size:12px;color:var(--muted);font-weight:400">— usa [Verse], [Chorus], [Bridge], [Outro]…</span>
+              </label>
+              <textarea id="gen-lyrics" rows="9" style="width:100%;background:rgba(255,255,255,.06);border:1px solid var(--gb);border-radius:8px;padding:12px 14px;color:var(--text);font-family:monospace;font-size:13px;resize:vertical;line-height:1.7"
+                placeholder="[Verse 1]
+Aquí va la primera estrofa
+Puedes escribir en español o inglés
+
+[Chorus]
+El coro que se repite
+Con más energía y emoción
+
+[Verse 2]
+La segunda estrofa continúa
+Desarrollando la historia
+
+[Outro]
+El final de la canción"></textarea>
+              <p style="font-size:11px;color:var(--muted);margin-top:4px">💡 Suno genera 2 versiones distintas de la misma canción para que puedas elegir la mejor.</p>
+            </div>
+
+            <!-- Descripción (solo para instrumental) -->
+            <div id="gen-desc-wrap" class="field" style="display:none">
+              <label>Descripción del ambiente musical *</label>
+              <textarea id="gen-desc" rows="4" style="width:100%;background:rgba(255,255,255,.06);border:1px solid var(--gb);border-radius:8px;padding:12px 14px;color:var(--text);font-family:inherit;font-size:14px;resize:vertical;line-height:1.6"
+                placeholder="Ej: Música tranquila de piano con suave lluvia de fondo, perfecta para un hotel de lujo. Tempo lento, atmósfera meditativa y elegante, con ligeros acordes de cuerdas y guitarra clásica."></textarea>
+              <p style="font-size:11px;color:var(--muted);margin-top:4px">💡 Describe el ambiente, espacio y emoción que quieres transmitir.</p>
+            </div>
+
+            <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+              <button class="btn btn-p" onclick="generateMusic()" id="gen-btn" style="font-size:15px;padding:13px 28px">
+                <i class="fas fa-magic"></i> Generar música
+              </button>
+              <div id="gen-status-wrap" style="display:none">
+                <div style="font-size:13px;color:var(--muted);margin-bottom:6px" id="gen-status-text">Generando…</div>
+                <div class="gen-prog-bar" style="width:220px"><div class="gen-prog-fill"></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Resultado -->
+        <div id="gen-result" class="gc" style="display:none;margin-bottom:24px">
+          <div class="ch">
+            <span class="ct"><i class="fas fa-check-circle" style="color:#34d399"></i> &nbsp;Resultado</span>
+            <span id="gen-result-meta" style="font-size:12px;color:var(--muted)"></span>
+          </div>
+          <div id="gen-result-body" style="padding:20px"></div>
+        </div>
+
+        <!-- Historial -->
+        <div class="gc">
+          <div class="ch">
+            <span class="ct">Historial de generaciones</span>
+            <button class="btn btn-g btn-sm" onclick="genLoad()"><i class="fas fa-sync"></i> Actualizar</button>
+          </div>
+          <div id="gen-history">
+            <div class="re-empty"><i class="fas fa-magic"></i><p>No hay generaciones aún. ¡Genera tu primera canción!</p></div>
+          </div>
         </div>
       </div>
 
@@ -3414,5 +3543,186 @@ window.showPage = function(p) {
     clearInterval(_anRefresh);
     _anRefresh = null;
   }
+  if (p === 'crear') genLoad();
 };
+
+// ── GENERACIÓN DE MÚSICA CON IA ───────────────────────────────────
+let _genType        = 'song';
+let _genPolling     = null;
+let _genResultClips = [];
+let _genHistory     = [];
+
+function genSetType(type) {
+  _genType = type;
+  document.getElementById('gen-type-song').className  = type === 'song'         ? 'gen-type-btn active' : 'gen-type-btn';
+  document.getElementById('gen-type-instr').className = type === 'instrumental' ? 'gen-type-btn active' : 'gen-type-btn';
+  document.getElementById('gen-lyrics-wrap').style.display = type === 'song'         ? '' : 'none';
+  document.getElementById('gen-desc-wrap').style.display   = type === 'instrumental' ? '' : 'none';
+}
+
+async function generateMusic() {
+  const title  = document.getElementById('gen-title').value.trim();
+  const style  = document.getElementById('gen-style').value.trim();
+  const lyrics = _genType === 'song' ? document.getElementById('gen-lyrics').value.trim() : '';
+  const desc   = _genType === 'instrumental' ? document.getElementById('gen-desc').value.trim() : '';
+
+  if (!title) { alert('El título es obligatorio'); return; }
+  if (_genType === 'song'         && !lyrics) { alert('La letra es obligatoria para una canción'); return; }
+  if (_genType === 'instrumental' && !style && !desc) { alert('Describe el estilo o ambiente'); return; }
+
+  const btn    = document.getElementById('gen-btn');
+  const swrap  = document.getElementById('gen-status-wrap');
+  const stxt   = document.getElementById('gen-status-text');
+  btn.disabled = true;
+  swrap.style.display = '';
+  stxt.textContent = 'Enviando a Suno AI…';
+  document.getElementById('gen-result').style.display = 'none';
+
+  try {
+    const r = await apiFetch('POST', '/admin/generate/music', {
+      title, style: style || 'ambient',
+      prompt: _genType === 'song' ? lyrics : (desc || style),
+      makeInstrumental: _genType === 'instrumental',
+    });
+    if (!r.ok) throw new Error(r.data?.error || 'Error al enviar');
+    stxt.textContent = 'Generando… (puede tardar 1-3 minutos)';
+    _pollGeneration(r.data.taskId, 0);
+  } catch(e) {
+    btn.disabled = false;
+    swrap.style.display = 'none';
+    toast('❌ ' + e.message, 'err');
+  }
+}
+
+const _genStatusMsgs = [
+  'Componiendo melodía…', 'Añadiendo armonías…', 'Grabando instrumentos…',
+  'Aplicando voces…', 'Mezclando pistas…', 'Masterizando audio…', 'Casi listo…'
+];
+
+function _pollGeneration(taskId, attempt) {
+  if (_genPolling) clearTimeout(_genPolling);
+  if (attempt > 48) { // ~4 minutos máximo
+    document.getElementById('gen-btn').disabled = false;
+    document.getElementById('gen-status-wrap').style.display = 'none';
+    toast('⏱ La generación tardó demasiado. Revisa el historial más tarde.', 'err');
+    return;
+  }
+  _genPolling = setTimeout(async () => {
+    try {
+      const r = await apiFetch('GET', `/admin/generate/music/${taskId}`);
+      if (!r.ok) throw new Error(r.data?.error || 'Error');
+      const { status, clips } = r.data;
+      const stxt = document.getElementById('gen-status-text');
+
+      if (status === 'complete' || status === 'completed') {
+        document.getElementById('gen-btn').disabled = false;
+        document.getElementById('gen-status-wrap').style.display = 'none';
+        genRenderResult(clips || [], taskId);
+        genLoad();
+        toast('✅ ¡Música generada con éxito!', 'ok');
+      } else if (status === 'error' || status === 'failed') {
+        document.getElementById('gen-btn').disabled = false;
+        document.getElementById('gen-status-wrap').style.display = 'none';
+        toast('❌ La generación falló — intenta de nuevo', 'err');
+      } else {
+        if (stxt) stxt.textContent = _genStatusMsgs[attempt % _genStatusMsgs.length];
+        _pollGeneration(taskId, attempt + 1);
+      }
+    } catch { _pollGeneration(taskId, attempt + 1); }
+  }, 5000);
+}
+
+function genRenderResult(clips, taskId) {
+  _genResultClips = clips;
+  const el   = document.getElementById('gen-result');
+  const body = document.getElementById('gen-result-body');
+  const meta = document.getElementById('gen-result-meta');
+  if (!clips.length) { el.style.display = 'none'; return; }
+  el.style.display = '';
+  if (meta) meta.textContent = clips.length + ' versión' + (clips.length > 1 ? 'es generadas' : ' generada');
+  body.innerHTML = clips.map((c, i) => `
+    <div class="gen-clip-card">
+      ${c.image_url
+        ? `<img class="gen-clip-cover" src="${_esc(c.image_url)}" alt="${_esc(c.title||'')}">`
+        : `<div class="gen-clip-cover-ph">🎵</div>`}
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:700;font-size:16px;margin-bottom:2px">${_esc(c.title || 'Versión ' + (i+1))}</div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:10px">${_esc(c.metadata?.tags || '')}</div>
+        <audio controls src="${_esc(c.audio_url)}" style="width:100%;max-width:480px;accent-color:#a855f7;margin-bottom:12px;display:block"></audio>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-p btn-sm" onclick="genSaveResultClip(${i})">
+            <i class="fas fa-leaf"></i> Guardar en Ambiente
+          </button>
+          <a href="${_esc(c.audio_url)}" target="_blank" class="btn btn-g btn-sm">
+            <i class="fas fa-download"></i> Descargar
+          </a>
+        </div>
+      </div>
+    </div>`).join('');
+}
+
+async function genSaveResultClip(idx) {
+  const clip = _genResultClips[idx];
+  if (!clip) return;
+  await _genDoSave(clip);
+}
+
+async function genSaveHistoryClip(histIdx, clipIdx) {
+  const clip = _genHistory[histIdx]?.clips?.[clipIdx];
+  if (!clip) return;
+  await _genDoSave(clip);
+}
+
+async function _genDoSave(clip) {
+  try {
+    const r = await apiFetch('POST', '/admin/generate/save-to-ambient', { clip });
+    if (!r.ok) throw new Error(r.data?.error || 'Error');
+    toast(`"${_esc(clip.title)}" guardado en Ambiente`, 'ok');
+  } catch(e) { toast(e.message, 'err'); }
+}
+
+async function genLoad() {
+  const el = document.getElementById('gen-history');
+  if (!el) return;
+  try {
+    const r = await apiFetch('GET', '/admin/generate/history');
+    if (!r.ok) throw new Error();
+    _genHistory = r.data.history || [];
+    if (!_genHistory.length) {
+      el.innerHTML = '<div class="re-empty"><i class="fas fa-magic"></i><p>No hay generaciones aún. ¡Genera tu primera canción!</p></div>';
+      return;
+    }
+    el.innerHTML = _genHistory.map((h, hi) => {
+      const clips = h.clips || [];
+      const icon  = h.type === 'instrumental' ? 'fa-music' : 'fa-microphone';
+      const clipsHtml = clips.map((c, ci) => `
+        <div style="display:flex;gap:12px;align-items:center;padding:10px 12px;border-radius:10px;background:rgba(255,255,255,.03);margin-bottom:6px">
+          ${c.image_url
+            ? `<img src="${_esc(c.image_url)}" style="width:48px;height:48px;border-radius:8px;object-fit:cover;flex-shrink:0">`
+            : `<div style="width:48px;height:48px;border-radius:8px;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">🎵</div>`}
+          <audio controls src="${_esc(c.audio_url)}" style="flex:1;accent-color:#a855f7;height:36px"></audio>
+          <button class="btn btn-p btn-sm" onclick="genSaveHistoryClip(${hi},${ci})" title="Guardar en Ambiente">
+            <i class="fas fa-leaf"></i>
+          </button>
+        </div>`).join('');
+      return `<div class="gen-hist-item">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:${clips.length ? '12px' : '0'}">
+          <div style="width:32px;height:32px;border-radius:8px;background:rgba(168,85,247,.15);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+            <i class="fas ${icon}" style="color:#a855f7;font-size:13px"></i>
+          </div>
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_esc(h.title)}</div>
+            <div style="font-size:11px;color:var(--muted)">${_esc(h.style || '')} · ${new Date(h.createdAt).toLocaleString('es')}</div>
+          </div>
+          <span style="font-size:11px;padding:2px 8px;border-radius:999px;background:rgba(52,211,153,.12);color:#34d399;flex-shrink:0">
+            ${clips.length} versión${clips.length !== 1 ? 'es' : ''}
+          </span>
+        </div>
+        ${clipsHtml}
+      </div>`;
+    }).join('');
+  } catch {
+    el.innerHTML = '<div class="re-empty"><i class="fas fa-exclamation-circle"></i><p>Error cargando historial</p></div>';
+  }
+}
 </script>

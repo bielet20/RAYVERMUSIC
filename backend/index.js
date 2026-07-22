@@ -236,7 +236,8 @@ const CONFIG = {
   scClientSecret: process.env.SC_CLIENT_SECRET || '',
   scPublicClientId: process.env.SC_CLIENT_ID_PUBLIC || '',
   scUser: process.env.SC_USER || process.env.SC_USER_PERMALINK || 'biel-rivero-sampol',
-  scPlaylistUrl: process.env.SC_PLAYLIST_URL || ''
+  scPlaylistUrl: process.env.SC_PLAYLIST_URL || '',
+  goApiKey: process.env.GOAPI_KEY || '',
 };
 
 // ───────────────────────── SPOTIFY SYNC ─────────────────────────
@@ -937,6 +938,100 @@ app.put('/api/user/playlists/:id/reorder', userAuth, (req, res) => {
   pl.updatedAt = new Date().toISOString();
   saveDB(db);
   res.json({ ok: true });
+});
+
+// ───────────────────────── GENERACIÓN IA ───────────────────
+async function _goApiPost(path, body) {
+  if (!CONFIG.goApiKey) throw new Error('GOAPI_KEY no configurada en Coolify');
+  const payload = JSON.stringify(body);
+  const r = await httpRequest('https://api.goapi.ai' + path, {
+    method: 'POST',
+    headers: { 'X-API-Key': CONFIG.goApiKey, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
+    body: payload,
+  });
+  let json; try { json = JSON.parse(r.body); } catch { json = {}; }
+  if (r.status >= 400) throw new Error(json?.message || json?.error || `goapi error ${r.status}`);
+  return json;
+}
+async function _goApiGet(path) {
+  if (!CONFIG.goApiKey) throw new Error('GOAPI_KEY no configurada en Coolify');
+  const r = await httpRequest('https://api.goapi.ai' + path, {
+    headers: { 'X-API-Key': CONFIG.goApiKey },
+  });
+  let json; try { json = JSON.parse(r.body); } catch { json = {}; }
+  if (r.status >= 400) throw new Error(json?.message || json?.error || `goapi error ${r.status}`);
+  return json;
+}
+
+app.post('/api/admin/generate/music', authMiddleware, async (req, res) => {
+  const { title, style, prompt, makeInstrumental } = req.body || {};
+  if (!title?.trim()) return res.status(400).json({ error: 'Título requerido' });
+  try {
+    const data = await _goApiPost('/api/suno/v1/music', {
+      title: title.trim(),
+      tags: (style || 'ambient').trim(),
+      prompt: (prompt || '').trim(),
+      mv: 'chirp-v3-5',
+      make_instrumental: !!makeInstrumental,
+    });
+    const taskId = data?.data?.task_id;
+    if (!taskId) throw new Error('Sin task_id en respuesta de goapi.ai');
+    if (!db.generationTasks) db.generationTasks = {};
+    db.generationTasks[taskId] = {
+      id: taskId, title: title.trim(), style: style || '', prompt: prompt || '',
+      type: makeInstrumental ? 'instrumental' : 'song',
+      status: 'processing', clips: [], createdAt: new Date().toISOString(),
+    };
+    saveDB(db);
+    res.json({ taskId });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/admin/generate/music/:taskId', authMiddleware, async (req, res) => {
+  try {
+    const data = await _goApiGet(`/api/suno/v1/music/${req.params.taskId}`);
+    const status = data?.data?.status || 'processing';
+    const clips  = data?.data?.clips  || [];
+    const task   = (db.generationTasks || {})[req.params.taskId];
+    if (task) {
+      task.status = status;
+      if (clips.length) task.clips = clips;
+      if ((status === 'complete' || status === 'completed') && clips.length) {
+        if (!db.generationHistory) db.generationHistory = [];
+        if (!db.generationHistory.find(h => h.id === req.params.taskId)) {
+          db.generationHistory.unshift({ ...task, clips, completedAt: new Date().toISOString() });
+          if (db.generationHistory.length > 100) db.generationHistory.length = 100;
+        }
+      }
+      saveDB(db);
+    }
+    res.json({ status, clips });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/admin/generate/history', authMiddleware, (req, res) => {
+  res.json({ history: (db.generationHistory || []).slice(0, 50) });
+});
+
+app.post('/api/admin/generate/save-to-ambient', authMiddleware, (req, res) => {
+  const { clip, packId, zones } = req.body || {};
+  if (!clip?.audio_url || !clip?.title) return res.status(400).json({ error: 'clip inválido' });
+  const track = {
+    id: uid(), title: clip.title,
+    description: clip.metadata?.prompt || clip.metadata?.gpt_description_prompt || '',
+    cover: clip.image_url || null,
+    tags: (clip.metadata?.tags || clip.tags || '').split(',').map(s => s.trim()).filter(Boolean),
+    duration: Math.round(clip.metadata?.duration || clip.duration || 0),
+    packId: packId || null,
+    previewUrl: null,
+    source: { type: 'url', url: clip.audio_url },
+    order: (db.ambientTracks || []).length,
+    active: true, zones: zones || [], createdAt: new Date().toISOString(),
+    generatedBy: 'suno-ai',
+  };
+  db.ambientTracks = [...(db.ambientTracks || []), track];
+  saveDB(db);
+  res.json({ track });
 });
 
 // ───────────────────────── ZONAS AMBIENTE ──────────────────

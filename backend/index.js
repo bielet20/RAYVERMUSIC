@@ -238,6 +238,7 @@ const CONFIG = {
   scUser: process.env.SC_USER || process.env.SC_USER_PERMALINK || 'biel-rivero-sampol',
   scPlaylistUrl: process.env.SC_PLAYLIST_URL || '',
   goApiKey: process.env.GOAPI_KEY || '',
+  anthropicKey: process.env.ANTHROPIC_API_KEY || '',
 };
 
 // ───────────────────────── SPOTIFY SYNC ─────────────────────────
@@ -962,6 +963,66 @@ async function _goApiGet(path) {
   if (r.status >= 400) throw new Error(json?.message || json?.error || `goapi error ${r.status}`);
   return json;
 }
+
+async function callClaude(userPrompt, systemPrompt, maxTokens = 1024) {
+  if (!CONFIG.anthropicKey) throw new Error('ANTHROPIC_API_KEY no configurada en Coolify');
+  const payload = JSON.stringify({
+    model: 'claude-sonnet-4-6',
+    max_tokens: maxTokens,
+    system: systemPrompt,
+    messages: [{ role: 'user', content: userPrompt }],
+  });
+  const r = await httpRequest('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': CONFIG.anthropicKey,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+      'Content-Length': String(Buffer.byteLength(payload)),
+    },
+    body: payload,
+  });
+  let json; try { json = JSON.parse(r.body); } catch { json = {}; }
+  if (r.status >= 400) throw new Error(json?.error?.message || `Anthropic error ${r.status}`);
+  return json.content?.[0]?.text || '';
+}
+
+app.post('/api/admin/generate/lyrics', authMiddleware, async (req, res) => {
+  const { topic, language, mood, genre, hasChorus, hasBridge, numVerses } = req.body || {};
+  if (!topic?.trim()) return res.status(400).json({ error: 'El tema es obligatorio' });
+
+  const lang    = language === 'en' ? 'English' : 'español';
+  const verses  = Math.min(Math.max(parseInt(numVerses) || 2, 1), 4);
+  const sections = [];
+  for (let i = 1; i <= verses; i++) {
+    sections.push(`[Verse ${i}]`);
+    if (hasChorus !== false && hasChorus !== 'false') sections.push('[Chorus]');
+    if (i === Math.floor(verses / 2) && (hasBridge === true || hasBridge === 'true')) sections.push('[Bridge]');
+  }
+  if (hasChorus !== false && hasChorus !== 'false') sections.push('[Outro]');
+
+  const systemPrompt = `Eres un letrista profesional con décadas de experiencia escribiendo canciones en múltiples géneros. Escribes letras que son poéticas, emocionalmente auténticas, fáciles de cantar y que conectan profundamente con el oyente. Siempre estructuras las letras con marcadores de sección claros.`;
+
+  const userPrompt = `Escribe la letra completa de una canción en ${lang} sobre este tema: "${topic.trim()}"
+
+Detalles:
+- Género musical: ${genre || 'pop'}
+- Ambiente/mood: ${mood || 'neutro, emotivo'}
+- Estructura requerida: ${sections.join(' → ')}
+
+Reglas importantes:
+- Usa exactamente estos marcadores de sección: [Verse 1], [Chorus], [Verse 2], [Bridge], [Outro], etc.
+- Escribe en ${lang} únicamente
+- Las líneas deben tener una longitud cómoda para cantar
+- Usa rima cuando sea natural, sin forzarla
+- Haz la letra emocionalmente resonante con el tema
+- NO incluyas explicaciones ni comentarios, solo la letra directamente`;
+
+  try {
+    const lyrics = await callClaude(userPrompt, systemPrompt, 1200);
+    res.json({ lyrics: lyrics.trim() });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
 
 app.post('/api/admin/generate/music', authMiddleware, async (req, res) => {
   const { title, style, prompt, makeInstrumental } = req.body || {};

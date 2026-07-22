@@ -818,12 +818,86 @@ body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--text);min-
             </div>
 
             <!-- Letra (solo para canción) -->
-            <div id="gen-lyrics-wrap" class="field">
-              <label>
-                Letra <span style="font-size:12px;color:var(--muted);font-weight:400">— usa [Verse], [Chorus], [Bridge], [Outro]…</span>
-              </label>
-              <textarea id="gen-lyrics" rows="9" style="width:100%;background:rgba(255,255,255,.06);border:1px solid var(--gb);border-radius:8px;padding:12px 14px;color:var(--text);font-family:monospace;font-size:13px;resize:vertical;line-height:1.7"
-                placeholder="[Verse 1]
+            <div id="gen-lyrics-wrap">
+              <!-- Asistente de letra IA -->
+              <div style="background:linear-gradient(135deg,rgba(124,58,237,.1),rgba(219,39,119,.08));border:1px solid rgba(124,58,237,.3);border-radius:12px;padding:16px 20px;margin-bottom:14px">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+                  <i class="fas fa-wand-magic-sparkles" style="color:#a855f7"></i>
+                  <span style="font-weight:700;font-size:14px">Asistente de letra con IA</span>
+                  <span style="font-size:11px;color:var(--muted);margin-left:auto">Powered by Claude</span>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+                  <div class="field" style="margin:0">
+                    <label>¿De qué trata la canción? *</label>
+                    <input type="text" id="lyr-topic" placeholder="Ej: un verano de juventud, amor perdido, superar el miedo…" style="width:100%">
+                  </div>
+                  <div class="field" style="margin:0">
+                    <label>Idioma</label>
+                    <select id="lyr-language" style="width:100%;background:rgba(255,255,255,.06);border:1px solid var(--gb);border-radius:8px;padding:10px;color:var(--text);font-family:inherit">
+                      <option value="es">Español</option>
+                      <option value="en">English</option>
+                    </select>
+                  </div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:14px">
+                  <div class="field" style="margin:0">
+                    <label>Género</label>
+                    <select id="lyr-genre" style="width:100%;background:rgba(255,255,255,.06);border:1px solid var(--gb);border-radius:8px;padding:10px;color:var(--text);font-family:inherit">
+                      <option value="pop">Pop</option>
+                      <option value="rock">Rock</option>
+                      <option value="latin pop">Latin Pop</option>
+                      <option value="reggaeton">Reggaeton</option>
+                      <option value="balada">Balada</option>
+                      <option value="flamenco pop">Flamenco Pop</option>
+                      <option value="folk">Folk / Indie</option>
+                      <option value="r&b">R&amp;B / Soul</option>
+                      <option value="rap">Rap / Hip-hop</option>
+                      <option value="electronic">Electrónica</option>
+                    </select>
+                  </div>
+                  <div class="field" style="margin:0">
+                    <label>Ambiente / Mood</label>
+                    <select id="lyr-mood" style="width:100%;background:rgba(255,255,255,.06);border:1px solid var(--gb);border-radius:8px;padding:10px;color:var(--text);font-family:inherit">
+                      <option value="emotivo y nostálgico">Emotivo / Nostálgico</option>
+                      <option value="alegre y festivo">Alegre / Festivo</option>
+                      <option value="romántico y apasionado">Romántico</option>
+                      <option value="melancólico y profundo">Melancólico</option>
+                      <option value="motivador y enérgico">Motivador / Energético</option>
+                      <option value="tranquilo y meditativo">Tranquilo / Meditativo</option>
+                      <option value="misterioso y oscuro">Misterioso</option>
+                      <option value="divertido y desenfadado">Divertido / Humor</option>
+                    </select>
+                  </div>
+                  <div class="field" style="margin:0">
+                    <label>Estrofas</label>
+                    <select id="lyr-verses" style="width:100%;background:rgba(255,255,255,.06);border:1px solid var(--gb);border-radius:8px;padding:10px;color:var(--text);font-family:inherit">
+                      <option value="2">2 estrofas</option>
+                      <option value="3">3 estrofas</option>
+                    </select>
+                  </div>
+                </div>
+                <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--muted)">
+                    <input type="checkbox" id="lyr-chorus" checked style="accent-color:#a855f7"> Coro
+                  </label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--muted)">
+                    <input type="checkbox" id="lyr-bridge" style="accent-color:#a855f7"> Bridge
+                  </label>
+                  <button class="btn btn-p btn-sm" onclick="generateLyrics()" id="lyr-btn" style="margin-left:auto">
+                    <i class="fas fa-wand-magic-sparkles"></i> Generar letra
+                  </button>
+                  <span id="lyr-status" style="font-size:12px;color:var(--muted);display:none">
+                    <i class="fas fa-circle-notch fa-spin"></i> Escribiendo…
+                  </span>
+                </div>
+              </div>
+
+              <div class="field" style="margin:0">
+                <label>
+                  Letra <span style="font-size:12px;color:var(--muted);font-weight:400">— editable · usa [Verse], [Chorus], [Bridge], [Outro]…</span>
+                </label>
+                <textarea id="gen-lyrics" rows="9" style="width:100%;background:rgba(255,255,255,.06);border:1px solid var(--gb);border-radius:8px;padding:12px 14px;color:var(--text);font-family:monospace;font-size:13px;resize:vertical;line-height:1.7"
+                  placeholder="[Verse 1]
 Aquí va la primera estrofa
 Puedes escribir en español o inglés
 
@@ -837,7 +911,8 @@ Desarrollando la historia
 
 [Outro]
 El final de la canción"></textarea>
-              <p style="font-size:11px;color:var(--muted);margin-top:4px">💡 Suno genera 2 versiones distintas de la misma canción para que puedas elegir la mejor.</p>
+                <p style="font-size:11px;color:var(--muted);margin-top:4px">💡 Suno genera 2 versiones distintas. Puedes editar la letra antes de enviar.</p>
+              </div>
             </div>
 
             <!-- Descripción (solo para instrumental) -->
@@ -3679,6 +3754,35 @@ async function _genDoSave(clip) {
     if (!r.ok) throw new Error(r.data?.error || 'Error');
     toast(`"${_esc(clip.title)}" guardado en Ambiente`, 'ok');
   } catch(e) { toast(e.message, 'err'); }
+}
+
+async function generateLyrics() {
+  const topic    = document.getElementById('lyr-topic').value.trim();
+  const language = document.getElementById('lyr-language').value;
+  const genre    = document.getElementById('lyr-genre').value;
+  const mood     = document.getElementById('lyr-mood').value;
+  const verses   = document.getElementById('lyr-verses').value;
+  const hasChorus = document.getElementById('lyr-chorus').checked;
+  const hasBridge = document.getElementById('lyr-bridge').checked;
+
+  if (!topic) { alert('Escribe de qué trata la canción'); document.getElementById('lyr-topic').focus(); return; }
+
+  const btn    = document.getElementById('lyr-btn');
+  const status = document.getElementById('lyr-status');
+  btn.disabled = true;
+  status.style.display = '';
+
+  try {
+    const r = await apiFetch('POST', '/admin/generate/lyrics', { topic, language, genre, mood, numVerses: verses, hasChorus, hasBridge });
+    if (!r.ok) throw new Error(r.data?.error || 'Error generando letra');
+    document.getElementById('gen-lyrics').value = r.data.lyrics;
+    toast('✅ Letra generada — revísala y edítala antes de enviar a Suno', 'ok');
+  } catch(e) {
+    toast('❌ ' + e.message, 'err');
+  } finally {
+    btn.disabled = false;
+    status.style.display = 'none';
+  }
 }
 
 async function genLoad() {

@@ -1,0 +1,76 @@
+version: "3.9"
+
+# Servidor GPU para generación de música con IA
+# Requisito: nvidia-docker2 instalado + NVIDIA GPU con ≥16GB VRAM
+#
+# Arranque:
+#   docker compose up -d
+#
+# Puertos expuestos (solo en red local, cierra con firewall hacia internet):
+#   7860 → ACE-Step API
+#   7861 → YuE API
+
+services:
+
+  ace-step:
+    build:
+      context: ./ace-step
+      dockerfile: Dockerfile
+    image: rayver-ace-step:latest
+    container_name: rayver-ace-step
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=0
+      - CUDA_VISIBLE_DEVICES=0
+      - OUTPUT_DIR=/outputs
+      # El modelo se descarga automáticamente de HuggingFace la primera vez
+      - CHECKPOINT_DIR=ACE-Step/ACE-Step-v1-3.5B
+      - HF_HOME=/models/huggingface
+    volumes:
+      - ace_outputs:/outputs          # Archivos WAV generados
+      - hf_cache:/models/huggingface  # Cache de modelos HuggingFace (~8GB)
+    ports:
+      - "7860:7860"
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["0"]
+              capabilities: [gpu]
+
+  yue:
+    build:
+      context: ./yue
+      dockerfile: Dockerfile
+    image: rayver-yue:latest
+    container_name: rayver-yue
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=0
+      - CUDA_VISIBLE_DEVICES=0
+      - OUTPUT_DIR=/outputs
+      - YUE_DIR=/yue
+      - YUE_S1_MODEL=m-a-p/YuE-s1-7B-anneal-en-cot
+      - YUE_S2_MODEL=m-a-p/YuE-s2-1B-general
+      - CUDA_IDX=0
+      - HF_HOME=/models/huggingface
+    volumes:
+      - yue_outputs:/outputs
+      - hf_cache:/models/huggingface  # Comparte cache con ace-step
+    ports:
+      - "7861:7861"
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["0"]
+              capabilities: [gpu]
+
+volumes:
+  ace_outputs:
+  yue_outputs:
+  hf_cache:

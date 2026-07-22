@@ -239,6 +239,8 @@ const CONFIG = {
   scPlaylistUrl: process.env.SC_PLAYLIST_URL || '',
   goApiKey: process.env.GOAPI_KEY || '',
   anthropicKey: process.env.ANTHROPIC_API_KEY || '',
+  aceStepUrl: (process.env.ACE_STEP_URL || '').replace(/\/$/, ''),
+  yueUrl: (process.env.YUE_URL || '').replace(/\/$/, ''),
 };
 
 // ───────────────────────── SPOTIFY SYNC ─────────────────────────
@@ -1093,6 +1095,114 @@ app.post('/api/admin/generate/save-to-ambient', authMiddleware, (req, res) => {
   db.ambientTracks = [...(db.ambientTracks || []), track];
   saveDB(db);
   res.json({ track });
+});
+
+// ───────────────────────── GENERACIÓN PROPIA (GPU server) ──
+function _gpuUrl(model) {
+  return model === 'yue' ? CONFIG.yueUrl : CONFIG.aceStepUrl;
+}
+
+app.get('/api/admin/generate/gpu-status', authMiddleware, async (req, res) => {
+  const results = {};
+  for (const [name, url] of [['ace-step', CONFIG.aceStepUrl], ['yue', CONFIG.yueUrl]]) {
+    if (!url) { results[name] = { available: false, reason: 'URL no configurada' }; continue; }
+    try {
+      const r = await httpJSON(url + '/health');
+      results[name] = { available: r.status === 200, ...(r.json || {}) };
+    } catch(e) { results[name] = { available: false, reason: e.message }; }
+  }
+  res.json(results);
+});
+
+app.post('/api/admin/generate/own-music', authMiddleware, async (req, res) => {
+  const { model, prompt, lyrics, genre, language, duration, segments } = req.body || {};
+  const baseUrl = _gpuUrl(model);
+  if (!baseUrl) return res.status(503).json({ error: `${model === 'yue' ? 'YUE_URL' : 'ACE_STEP_URL'} no configurada en Coolify` });
+
+  try {
+    let payload, endpoint;
+    if (model === 'yue') {
+      endpoint = '/generate';
+      payload = JSON.stringify({ genre: genre || prompt, lyrics, language: language || 'en', segments: segments || 2 });
+    } else {
+      endpoint = '/generate';
+      payload = JSON.stringify({ prompt: prompt || genre, lyrics, duration: duration || 60.0 });
+    }
+
+    const r = await httpRequest(baseUrl + endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': String(Buffer.byteLength(payload)) },
+      body: payload,
+    });
+    let json; try { json = JSON.parse(r.body); } catch { json = {}; }
+    if (r.status >= 400) throw new Error(json.error || `GPU server error ${r.status}`);
+
+    const jobId = json.job_id;
+    if (!db.ownGenerationJobs) db.ownGenerationJobs = {};
+    db.ownGenerationJobs[jobId] = {
+      id: jobId, model, prompt: prompt || genre, lyrics, genre, language,
+      duration: duration || 60, status: 'queued', createdAt: new Date().toISOString(),
+    };
+    saveDB(db);
+    res.json({ jobId, status: 'queued' });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/admin/generate/own-music/:jobId', authMiddleware, async (req, res) => {
+  const job = (db.ownGenerationJobs || {})[req.params.jobId];
+  if (!job) return res.status(404).json({ error: 'Trabajo no encontrado' });
+  const baseUrl = _gpuUrl(job.model);
+  if (!baseUrl) return res.status(503).json({ error: 'GPU server no configurado' });
+
+  try {
+    const r = await httpJSON(baseUrl + '/status/' + req.params.jobId);
+    if (r.status >= 400) throw new Error('Error consultando estado');
+    const data = r.json || {};
+
+    job.status = data.status;
+    if (data.status === 'complete' && data.audio_url) {
+      // Convertir URL interna del GPU server a URL proxy del backend
+      job.audioUrl = `/api/admin/generate/own-audio/${job.model}/${req.params.jobId}.wav`;
+      job.completedAt = job.completedAt || new Date().toISOString();
+      // Añadir al historial
+      if (!db.ownGenerationHistory) db.ownGenerationHistory = [];
+      if (!db.ownGenerationHistory.find(h => h.id === req.params.jobId)) {
+        db.ownGenerationHistory.unshift({ ...job });
+        if (db.ownGenerationHistory.length > 100) db.ownGenerationHistory.length = 100;
+      }
+    }
+    if (data.error) job.error = data.error;
+    saveDB(db);
+    res.json({ status: data.status, audioUrl: job.audioUrl, error: data.error });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// Proxy del audio desde el GPU server al navegador (streaming)
+app.get('/api/admin/generate/own-audio/:model/:filename', authMiddleware, (req, res) => {
+  const baseUrl = _gpuUrl(req.params.model);
+  if (!baseUrl) return res.status(404).send('GPU server no configurado');
+  const audioUrl = baseUrl + '/audio/' + req.params.filename;
+
+  const u = new URL(audioUrl);
+  const options = {
+    hostname: u.hostname,
+    port: u.port || (u.protocol === 'https:' ? 443 : 80),
+    path: u.pathname,
+    method: 'GET',
+  };
+  const proto = u.protocol === 'https:' ? require('https') : require('http');
+  const proxyReq = proto.request(options, (proxyRes) => {
+    res.setHeader('Content-Type', proxyRes.headers['content-type'] || 'audio/wav');
+    if (proxyRes.headers['content-length']) res.setHeader('Content-Length', proxyRes.headers['content-length']);
+    res.setHeader('Accept-Ranges', 'bytes');
+    proxyRes.pipe(res);
+  });
+  proxyReq.on('error', e => res.status(502).send('Error obteniendo audio: ' + e.message));
+  proxyReq.end();
+});
+
+app.get('/api/admin/generate/own-history', authMiddleware, (req, res) => {
+  res.json({ history: (db.ownGenerationHistory || []).slice(0, 50) });
 });
 
 // ───────────────────────── ZONAS AMBIENTE ──────────────────

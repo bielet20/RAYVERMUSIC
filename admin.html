@@ -780,9 +780,22 @@ body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--text);min-
         <div class="ph">
           <div>
             <div class="ptitle"><i class="fas fa-magic" style="color:#a855f7"></i> Crear Música con IA</div>
-            <div class="psub">Genera canciones con voz o piezas instrumentales usando Suno AI (vía goapi.ai)</div>
+            <div class="psub">Genera música con tus propios derechos — elige entre Suno AI o modelos open-source</div>
           </div>
         </div>
+
+        <!-- Sub-pestañas Motor -->
+        <div style="display:flex;gap:10px;margin-bottom:24px;border-bottom:1px solid var(--gb);padding-bottom:0">
+          <button id="crear-tab-suno" class="crear-engine-tab active" onclick="crearSetEngine('suno')" style="padding:10px 20px;border:none;background:none;color:var(--purple);font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;border-bottom:2px solid var(--purple);margin-bottom:-1px">
+            <i class="fas fa-cloud"></i> Suno AI <span style="font-size:11px;color:var(--muted);font-weight:400">(goapi.ai)</span>
+          </button>
+          <button id="crear-tab-propio" class="crear-engine-tab" onclick="crearSetEngine('propio')" style="padding:10px 20px;border:none;background:none;color:var(--muted);font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px">
+            <i class="fas fa-server"></i> Modelos Propios <span style="font-size:11px;font-weight:400">(ACE-Step · YuE)</span>
+          </button>
+        </div>
+
+        <!-- PANEL SUNO -->
+        <div id="crear-panel-suno">
 
         <!-- Selector de tipo -->
         <div class="gc" style="margin-bottom:24px">
@@ -944,17 +957,174 @@ El final de la canción"></textarea>
           <div id="gen-result-body" style="padding:20px"></div>
         </div>
 
-        <!-- Historial -->
+        <!-- Historial Suno -->
         <div class="gc">
           <div class="ch">
-            <span class="ct">Historial de generaciones</span>
+            <span class="ct">Historial Suno</span>
             <button class="btn btn-g btn-sm" onclick="genLoad()"><i class="fas fa-sync"></i> Actualizar</button>
           </div>
           <div id="gen-history">
             <div class="re-empty"><i class="fas fa-magic"></i><p>No hay generaciones aún. ¡Genera tu primera canción!</p></div>
           </div>
         </div>
-      </div>
+        </div><!-- /crear-panel-suno -->
+
+        <!-- PANEL MODELOS PROPIOS -->
+        <div id="crear-panel-propio" style="display:none">
+
+          <!-- Estado del servidor GPU -->
+          <div class="gc" style="margin-bottom:24px">
+            <div class="ch">
+              <span class="ct"><i class="fas fa-server"></i> &nbsp;Estado del servidor GPU</span>
+              <button class="btn btn-g btn-sm" onclick="gpuCheckStatus()"><i class="fas fa-sync"></i> Comprobar</button>
+            </div>
+            <div id="gpu-status-body" style="padding:16px 20px;display:flex;gap:16px;flex-wrap:wrap">
+              <div style="font-size:13px;color:var(--muted)">Pulsa "Comprobar" para ver el estado de los servidores GPU.</div>
+            </div>
+          </div>
+
+          <!-- Selector de modelo -->
+          <div class="gc" style="margin-bottom:24px">
+            <div class="ch"><span class="ct">Motor de generación</span></div>
+            <div style="display:flex;gap:14px;padding:20px;flex-wrap:wrap">
+              <button id="own-model-ace" class="gen-type-btn active" onclick="ownSetModel('ace-step')">
+                <i class="fas fa-bolt" style="color:#f59e0b"></i>
+                <span class="gt-name">ACE-Step</span>
+                <small>Rápido (~30s) · Múltiples estilos<br>Modelos en memoria · Puerto 7860</small>
+              </button>
+              <button id="own-model-yue" class="gen-type-btn" onclick="ownSetModel('yue')">
+                <i class="fas fa-star" style="color:#a855f7"></i>
+                <span class="gt-name">YuE</span>
+                <small>Alta calidad vocal · Letras elaboradas<br>~2-5 min por canción · Puerto 7861</small>
+              </button>
+            </div>
+          </div>
+
+          <!-- Formulario modelos propios -->
+          <div class="gc" style="margin-bottom:24px">
+            <div class="ch"><span class="ct">Parámetros</span></div>
+            <div style="padding:24px;display:flex;flex-direction:column;gap:16px">
+              <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px">
+                <div class="field">
+                  <label>Estilo / Género *</label>
+                  <input type="text" id="own-prompt" placeholder="pop, piano, female vocals, uplifting, 120bpm">
+                  <p style="font-size:11px;color:var(--muted);margin-top:4px">Describe el género, instrumentos, mood y BPM.</p>
+                </div>
+                <div class="field">
+                  <label>Idioma de la letra</label>
+                  <select id="own-language" style="width:100%;background:rgba(255,255,255,.06);border:1px solid var(--gb);border-radius:8px;padding:10px;color:var(--text);font-family:inherit">
+                    <option value="en">English</option>
+                    <option value="es">Español</option>
+                    <option value="zh">中文 (solo YuE)</option>
+                  </select>
+                </div>
+                <div class="field" id="own-duration-wrap">
+                  <label>Duración (ACE-Step)</label>
+                  <select id="own-duration" style="width:100%;background:rgba(255,255,255,.06);border:1px solid var(--gb);border-radius:8px;padding:10px;color:var(--text);font-family:inherit">
+                    <option value="30">30 segundos</option>
+                    <option value="60" selected>60 segundos</option>
+                    <option value="120">2 minutos</option>
+                    <option value="180">3 minutos</option>
+                    <option value="240">4 minutos</option>
+                  </select>
+                </div>
+                <div class="field" id="own-segments-wrap" style="display:none">
+                  <label>Duración (YuE)</label>
+                  <select id="own-segments" style="width:100%;background:rgba(255,255,255,.06);border:1px solid var(--gb);border-radius:8px;padding:10px;color:var(--text);font-family:inherit">
+                    <option value="1">~30 segundos (1 segmento)</option>
+                    <option value="2" selected>~60 segundos (2 segmentos)</option>
+                    <option value="3">~90 segundos (3 segmentos)</option>
+                    <option value="4">~120 segundos (4 segmentos)</option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- Asistente de letra reutilizado -->
+              <div style="background:linear-gradient(135deg,rgba(124,58,237,.1),rgba(219,39,119,.08));border:1px solid rgba(124,58,237,.3);border-radius:12px;padding:16px 20px;margin-bottom:4px">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+                  <i class="fas fa-wand-magic-sparkles" style="color:#a855f7"></i>
+                  <span style="font-weight:700;font-size:14px">Asistente de letra con IA</span>
+                  <span style="font-size:11px;color:var(--muted);margin-left:auto">Powered by Claude</span>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+                  <div class="field" style="margin:0">
+                    <label>¿De qué trata la canción? *</label>
+                    <input type="text" id="own-lyr-topic" placeholder="Ej: libertad, una ciudad al amanecer…" style="width:100%">
+                  </div>
+                  <div class="field" style="margin:0">
+                    <label>Mood</label>
+                    <select id="own-lyr-mood" style="width:100%;background:rgba(255,255,255,.06);border:1px solid var(--gb);border-radius:8px;padding:10px;color:var(--text);font-family:inherit">
+                      <option value="emotivo y nostálgico">Emotivo / Nostálgico</option>
+                      <option value="alegre y festivo">Alegre / Festivo</option>
+                      <option value="romántico y apasionado">Romántico</option>
+                      <option value="melancólico y profundo">Melancólico</option>
+                      <option value="motivador y enérgico">Motivador / Energético</option>
+                      <option value="tranquilo y meditativo">Tranquilo / Meditativo</option>
+                    </select>
+                  </div>
+                </div>
+                <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--muted)">
+                    <input type="checkbox" id="own-lyr-chorus" checked style="accent-color:#a855f7"> Coro
+                  </label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--muted)">
+                    <input type="checkbox" id="own-lyr-bridge" style="accent-color:#a855f7"> Bridge
+                  </label>
+                  <button class="btn btn-p btn-sm" onclick="generateOwnLyrics()" id="own-lyr-btn" style="margin-left:auto">
+                    <i class="fas fa-wand-magic-sparkles"></i> Generar letra
+                  </button>
+                  <span id="own-lyr-status" style="font-size:12px;color:var(--muted);display:none"><i class="fas fa-circle-notch fa-spin"></i> Escribiendo…</span>
+                </div>
+              </div>
+
+              <div class="field" style="margin:0">
+                <label>Letra <span style="font-size:12px;color:var(--muted);font-weight:400">— editable · usa [verse], [chorus], [bridge]…</span></label>
+                <textarea id="own-lyrics" rows="9" style="width:100%;background:rgba(255,255,255,.06);border:1px solid var(--gb);border-radius:8px;padding:12px 14px;color:var(--text);font-family:monospace;font-size:13px;resize:vertical;line-height:1.7"
+                  placeholder="[verse]
+Tu primera estrofa aquí
+
+[chorus]
+El coro que se repite
+
+[verse 2]
+Segunda estrofa
+
+[outro]
+El final de la canción"></textarea>
+              </div>
+
+              <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+                <button class="btn btn-p" onclick="generateOwnMusic()" id="own-gen-btn" style="font-size:15px;padding:13px 28px">
+                  <i class="fas fa-bolt"></i> Generar con modelo propio
+                </button>
+                <div id="own-status-wrap" style="display:none">
+                  <div style="font-size:13px;color:var(--muted);margin-bottom:6px" id="own-status-text">Generando…</div>
+                  <div class="gen-prog-bar" style="width:220px"><div class="gen-prog-fill"></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Resultado -->
+          <div id="own-result" class="gc" style="display:none;margin-bottom:24px">
+            <div class="ch">
+              <span class="ct"><i class="fas fa-check-circle" style="color:#34d399"></i> &nbsp;Resultado</span>
+            </div>
+            <div id="own-result-body" style="padding:20px"></div>
+          </div>
+
+          <!-- Historial modelos propios -->
+          <div class="gc">
+            <div class="ch">
+              <span class="ct">Historial — Modelos Propios</span>
+              <button class="btn btn-g btn-sm" onclick="ownGenLoad()"><i class="fas fa-sync"></i> Actualizar</button>
+            </div>
+            <div id="own-gen-history">
+              <div class="re-empty"><i class="fas fa-server"></i><p>No hay generaciones aún.</p></div>
+            </div>
+          </div>
+        </div><!-- /crear-panel-propio -->
+      </div><!-- /page-crear -->
 
       <!-- ANALYTICS -->
       <div id="page-analytics" class="page">
@@ -3621,6 +3791,20 @@ window.showPage = function(p) {
   if (p === 'crear') genLoad();
 };
 
+// ── NAVEGACIÓN CREAR (Suno vs Modelos Propios) ──────────────────
+function crearSetEngine(engine) {
+  ['suno','propio'].forEach(e => {
+    document.getElementById('crear-panel-' + e).style.display = e === engine ? '' : 'none';
+    const tab = document.getElementById('crear-tab-' + e);
+    if (tab) {
+      tab.style.color         = e === engine ? 'var(--purple)'  : 'var(--muted)';
+      tab.style.borderColor   = e === engine ? 'var(--purple)'  : 'transparent';
+      tab.style.fontWeight    = e === engine ? '700' : '600';
+    }
+  });
+  if (engine === 'propio') { gpuCheckStatus(); ownGenLoad(); }
+}
+
 // ── GENERACIÓN DE MÚSICA CON IA ───────────────────────────────────
 let _genType        = 'song';
 let _genPolling     = null;
@@ -3825,6 +4009,189 @@ async function genLoad() {
         ${clipsHtml}
       </div>`;
     }).join('');
+  } catch {
+    el.innerHTML = '<div class="re-empty"><i class="fas fa-exclamation-circle"></i><p>Error cargando historial</p></div>';
+  }
+}
+
+// ── MODELOS PROPIOS (ACE-Step / YuE) ──────────────────────────
+let _ownModel   = 'ace-step';
+let _ownPolling = null;
+let _ownResultAudioUrl = null;
+
+function ownSetModel(model) {
+  _ownModel = model;
+  document.getElementById('own-model-ace').className = model === 'ace-step' ? 'gen-type-btn active' : 'gen-type-btn';
+  document.getElementById('own-model-yue').className = model === 'yue'      ? 'gen-type-btn active' : 'gen-type-btn';
+  document.getElementById('own-duration-wrap').style.display  = model === 'ace-step' ? '' : 'none';
+  document.getElementById('own-segments-wrap').style.display  = model === 'yue'      ? '' : 'none';
+}
+
+async function gpuCheckStatus() {
+  const el = document.getElementById('gpu-status-body');
+  el.innerHTML = '<span style="font-size:13px;color:var(--muted)"><i class="fas fa-circle-notch fa-spin"></i> Comprobando…</span>';
+  try {
+    const r = await apiFetch('GET', '/admin/generate/gpu-status');
+    if (!r.ok) throw new Error('Error');
+    const s = r.data;
+    el.innerHTML = ['ace-step','yue'].map(m => {
+      const d = s[m] || {};
+      const ok = d.available;
+      return `<div style="display:flex;align-items:center;gap:10px;padding:10px 16px;border-radius:10px;border:1px solid ${ok ? 'rgba(52,211,153,.3)' : 'rgba(239,68,68,.3)'};background:${ok ? 'rgba(52,211,153,.05)' : 'rgba(239,68,68,.05)'}">
+        <i class="fas fa-circle" style="font-size:8px;color:${ok ? '#34d399' : '#f87171'}"></i>
+        <div>
+          <div style="font-weight:700;font-size:13px">${m === 'ace-step' ? 'ACE-Step' : 'YuE'} <span style="font-size:11px;color:var(--muted)">:${m === 'ace-step' ? '7860' : '7861'}</span></div>
+          <div style="font-size:11px;color:var(--muted)">${ok ? `✓ Online · GPU: ${d.gpu || '?'} · Jobs activos: ${d.active_jobs ?? 0}` : (d.reason || 'Sin respuesta — ¿está el servidor arrancado?')}</div>
+        </div>
+      </div>`;
+    }).join('');
+  } catch { el.innerHTML = '<span style="color:#f87171;font-size:13px">Error al conectar con los servidores GPU.</span>'; }
+}
+
+async function generateOwnLyrics() {
+  const topic   = document.getElementById('own-lyr-topic').value.trim();
+  const mood    = document.getElementById('own-lyr-mood').value;
+  const lang    = document.getElementById('own-language').value;
+  const hasChorus = document.getElementById('own-lyr-chorus').checked;
+  const hasBridge = document.getElementById('own-lyr-bridge').checked;
+  const prompt  = document.getElementById('own-prompt').value.trim();
+  const genre   = prompt.split(',')[0]?.trim() || 'pop';
+  if (!topic) { alert('Escribe de qué trata la canción'); document.getElementById('own-lyr-topic').focus(); return; }
+  const btn = document.getElementById('own-lyr-btn');
+  const st  = document.getElementById('own-lyr-status');
+  btn.disabled = true; st.style.display = '';
+  try {
+    const r = await apiFetch('POST', '/admin/generate/lyrics', { topic, language: lang, genre, mood, numVerses: 2, hasChorus, hasBridge });
+    if (!r.ok) throw new Error(r.data?.error || 'Error');
+    document.getElementById('own-lyrics').value = r.data.lyrics;
+    toast('✅ Letra generada', 'ok');
+  } catch(e) { toast('❌ ' + e.message, 'err'); }
+  finally { btn.disabled = false; st.style.display = 'none'; }
+}
+
+async function generateOwnMusic() {
+  const prompt   = document.getElementById('own-prompt').value.trim();
+  const lyrics   = document.getElementById('own-lyrics').value.trim();
+  const language = document.getElementById('own-language').value;
+  const duration = parseInt(document.getElementById('own-duration').value) || 60;
+  const segments = parseInt(document.getElementById('own-segments').value) || 2;
+  if (!prompt) { alert('Rellena el campo de estilo/género'); return; }
+  if (!lyrics)  { alert('Añade la letra de la canción'); return; }
+  const btn   = document.getElementById('own-gen-btn');
+  const swrap = document.getElementById('own-status-wrap');
+  const stxt  = document.getElementById('own-status-text');
+  btn.disabled = true; swrap.style.display = '';
+  stxt.textContent = `Enviando a ${_ownModel === 'yue' ? 'YuE' : 'ACE-Step'}…`;
+  document.getElementById('own-result').style.display = 'none';
+  try {
+    const r = await apiFetch('POST', '/admin/generate/own-music', {
+      model: _ownModel, prompt, lyrics, genre: prompt, language, duration, segments,
+    });
+    if (!r.ok) throw new Error(r.data?.error || 'Error');
+    const jobId = r.data.jobId;
+    const label = _ownModel === 'yue' ? 'YuE (~2-5 min)' : 'ACE-Step (~30-60s)';
+    stxt.textContent = `Generando con ${label}…`;
+    _pollOwnGeneration(jobId, 0);
+  } catch(e) {
+    btn.disabled = false; swrap.style.display = 'none';
+    toast('❌ ' + e.message, 'err');
+  }
+}
+
+const _ownMsgs = ['Procesando datos…','Componiendo melodía…','Generando audio…','Aplicando voces…','Masterizando…','Casi listo…'];
+
+function _pollOwnGeneration(jobId, attempt) {
+  if (_ownPolling) clearTimeout(_ownPolling);
+  const maxAttempts = _ownModel === 'yue' ? 120 : 40; // 10min YuE / ~3min ACE
+  if (attempt > maxAttempts) {
+    document.getElementById('own-gen-btn').disabled = false;
+    document.getElementById('own-status-wrap').style.display = 'none';
+    toast('⏱ Timeout. Revisa el historial más tarde.', 'err');
+    return;
+  }
+  _ownPolling = setTimeout(async () => {
+    try {
+      const r = await apiFetch('GET', `/admin/generate/own-music/${jobId}`);
+      if (!r.ok) throw new Error();
+      const { status, audioUrl, error } = r.data;
+      const stxt = document.getElementById('own-status-text');
+      if (status === 'complete' && audioUrl) {
+        document.getElementById('own-gen-btn').disabled = false;
+        document.getElementById('own-status-wrap').style.display = 'none';
+        _ownResultAudioUrl = audioUrl;
+        document.getElementById('own-result').style.display = '';
+        document.getElementById('own-result-body').innerHTML = `
+          <div class="gen-clip-card">
+            <div class="gen-clip-cover-ph">🎵</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:700;font-size:15px;margin-bottom:4px">Generación completada — ${_ownModel === 'yue' ? 'YuE' : 'ACE-Step'}</div>
+              <div style="font-size:12px;color:var(--muted);margin-bottom:10px">${_esc(document.getElementById('own-prompt').value)}</div>
+              <audio controls src="${_esc(audioUrl)}" style="width:100%;max-width:480px;accent-color:#a855f7;margin-bottom:12px;display:block"></audio>
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button class="btn btn-p btn-sm" onclick="ownSaveToAmbient()"><i class="fas fa-leaf"></i> Guardar en Ambiente</button>
+                <a href="${_esc(audioUrl)}" target="_blank" class="btn btn-g btn-sm"><i class="fas fa-download"></i> Descargar</a>
+              </div>
+            </div>
+          </div>`;
+        ownGenLoad();
+        toast('✅ ¡Música generada con éxito!', 'ok');
+      } else if (status === 'error') {
+        document.getElementById('own-gen-btn').disabled = false;
+        document.getElementById('own-status-wrap').style.display = 'none';
+        toast('❌ Error en la generación: ' + (error || 'desconocido'), 'err');
+      } else {
+        if (stxt) stxt.textContent = _ownMsgs[attempt % _ownMsgs.length];
+        _pollOwnGeneration(jobId, attempt + 1);
+      }
+    } catch { _pollOwnGeneration(jobId, attempt + 1); }
+  }, 5000);
+}
+
+async function ownSaveToAmbient() {
+  const audioUrl = _ownResultAudioUrl;
+  if (!audioUrl) return;
+  const title = document.getElementById('own-prompt').value.trim() || 'Track generado';
+  const tags  = title.split(',').map(s => s.trim()).filter(Boolean);
+  try {
+    const r = await apiFetch('POST', '/admin/generate/save-to-ambient', {
+      clip: { audio_url: audioUrl, title, image_url: null, metadata: { tags: title } }
+    });
+    if (!r.ok) throw new Error(r.data?.error || 'Error');
+    toast(`"${title}" guardado en Ambiente`, 'ok');
+  } catch(e) { toast(e.message, 'err'); }
+}
+
+async function ownGenLoad() {
+  const el = document.getElementById('own-gen-history');
+  if (!el) return;
+  try {
+    const r = await apiFetch('GET', '/admin/generate/own-history');
+    if (!r.ok) throw new Error();
+    const history = r.data.history || [];
+    if (!history.length) {
+      el.innerHTML = '<div class="re-empty"><i class="fas fa-server"></i><p>No hay generaciones aún.</p></div>';
+      return;
+    }
+    el.innerHTML = history.map(h => `
+      <div class="gen-hist-item">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+          <div style="width:32px;height:32px;border-radius:8px;background:rgba(${h.model==='yue'?'168,85,247':'245,158,11'},.15);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+            <i class="fas fa-${h.model==='yue'?'star':'bolt'}" style="color:${h.model==='yue'?'#a855f7':'#f59e0b'};font-size:13px"></i>
+          </div>
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_esc(h.prompt || h.genre || '—')}</div>
+            <div style="font-size:11px;color:var(--muted)">${h.model === 'yue' ? 'YuE' : 'ACE-Step'} · ${new Date(h.createdAt).toLocaleString('es')}</div>
+          </div>
+          <span style="font-size:11px;padding:2px 8px;border-radius:999px;background:${h.status==='complete'?'rgba(52,211,153,.12)':'rgba(239,68,68,.12)'};color:${h.status==='complete'?'#34d399':'#f87171'}">
+            ${h.status === 'complete' ? 'Completado' : h.status}
+          </span>
+        </div>
+        ${h.audioUrl ? `
+        <div style="display:flex;gap:12px;align-items:center;padding:10px;border-radius:8px;background:rgba(255,255,255,.03)">
+          <audio controls src="${_esc(h.audioUrl)}" style="flex:1;accent-color:#a855f7;height:36px"></audio>
+          <a href="${_esc(h.audioUrl)}" target="_blank" class="btn btn-g btn-sm"><i class="fas fa-download"></i></a>
+        </div>` : ''}
+      </div>`).join('');
   } catch {
     el.innerHTML = '<div class="re-empty"><i class="fas fa-exclamation-circle"></i><p>Error cargando historial</p></div>';
   }

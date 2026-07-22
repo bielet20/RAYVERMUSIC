@@ -1,0 +1,8 @@
+fastapi>=0.111.0
+uvicorn[standard]>=0.30.0
+pydantic>=2.0.0
+soundfile>=0.12.1
+numpy>=1.24.0
+# ACE-Step se instala desde su repo oficial:
+# pip install git+https://github.com/ace-step/ACE-Step.git
+# O si ya tienes el repo clonado: pip install -e /ace-step

@@ -1,0 +1,6 @@
+gradio>=4.44.0
+requests>=2.31.0
+soundfile>=0.12.1
+numpy>=1.24.0
+# PyTorch con CUDA se instala en install.sh / install.bat
+# torch>=2.1.0

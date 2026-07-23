@@ -121,9 +121,24 @@ if (process.env.ADMIN_PASSWORD) {
 
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
 
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.createHash('sha256').update(salt + password).digest('hex');
+  return { salt, hash };
+}
+function verifyPassword(password, salt, storedHash) {
+  if (salt) {
+    return crypto.createHash('sha256').update(salt + password).digest('hex') === storedHash;
+  }
+  // Legacy: sha256(password) without salt
+  return crypto.createHash('sha256').update(password).digest('hex') === storedHash;
+}
+
 // Migrate: seed missing collections
-if (!db.users)    { db.users    = []; saveDB(db); }
-if (!db.playlists){ db.playlists= []; saveDB(db); }
+if (!db.users)     { db.users     = []; saveDB(db); }
+if (!db.playlists) { db.playlists = []; saveDB(db); }
+if (!db.likes)     { db.likes     = []; saveDB(db); }
+if (!db.userPlays) { db.userPlays = []; saveDB(db); }
 if (!db.genres) {
   db.genres = [
     { id:'g1', name:'Trance',       slug:'trance',      color:'#8a2be2', order:0 },
@@ -839,8 +854,8 @@ app.post('/api/user/register', (req, res) => {
   const emailNorm = email.toLowerCase().trim();
   if ((db.users || []).find(u => u.email === emailNorm))
     return res.status(409).json({ error: 'Este email ya está registrado' });
-  const passwordHash = crypto.createHash('sha256').update(password).digest('hex');
-  const user = { id: uid(), email: emailNorm, name: name.trim(), passwordHash, createdAt: new Date().toISOString() };
+  const { salt, hash: passwordHash } = hashPassword(password);
+  const user = { id: uid(), email: emailNorm, name: name.trim(), passwordHash, salt, createdAt: new Date().toISOString() };
   db.users.push(user);
   saveDB(db);
   const token = createUserToken(user.id);
@@ -852,8 +867,7 @@ app.post('/api/user/login', (req, res) => {
   if (!email || !password) return res.status(400).json({ error: 'Faltan campos' });
   const emailNorm = email.toLowerCase().trim();
   const user = (db.users || []).find(u => u.email === emailNorm);
-  const hash = crypto.createHash('sha256').update(password).digest('hex');
-  if (!user || hash !== user.passwordHash)
+  if (!user || !verifyPassword(password, user.salt, user.passwordHash))
     return res.status(401).json({ error: 'Email o contraseña incorrectos' });
   const token = createUserToken(user.id);
   res.json({ token, user: { id: user.id, email: user.email, name: user.name } });
@@ -866,6 +880,95 @@ app.post('/api/user/logout', (req, res) => {
 });
 
 app.get('/api/user/me', userAuth, (req, res) => res.json(req.user));
+
+// ── Likes ────────────────────────────────────────────────────────────────────
+// Toggle like (add if not liked, remove if already liked)
+app.post('/api/user/likes', userAuth, (req, res) => {
+  const { trackId, title, genre, cover, scUrl } = req.body || {};
+  if (!trackId) return res.status(400).json({ error: 'trackId requerido' });
+  if (!db.likes) db.likes = [];
+  const existing = db.likes.find(l => l.userId === req.user.userId && l.trackId === String(trackId));
+  if (existing) {
+    db.likes = db.likes.filter(l => l !== existing);
+    saveDB(db);
+    return res.json({ liked: false, trackId });
+  }
+  db.likes.push({
+    id:       uid(),
+    userId:   req.user.userId,
+    trackId:  String(trackId),
+    title:    title   || '',
+    genre:    genre   || '',
+    cover:    cover   || '',
+    scUrl:    scUrl   || '',
+    addedAt:  new Date().toISOString(),
+  });
+  saveDB(db);
+  res.json({ liked: true, trackId });
+});
+
+app.get('/api/user/likes', userAuth, (req, res) => {
+  const likes = (db.likes || [])
+    .filter(l => l.userId === req.user.userId)
+    .sort((a, b) => b.addedAt.localeCompare(a.addedAt));
+  res.json(likes);
+});
+
+// Returns array of liked trackIds (for bulk UI state init)
+app.get('/api/user/likes/ids', userAuth, (req, res) => {
+  const ids = (db.likes || [])
+    .filter(l => l.userId === req.user.userId)
+    .map(l => l.trackId);
+  res.json(ids);
+});
+
+// ── User plays ───────────────────────────────────────────────────────────────
+app.post('/api/user/plays', userAuth, (req, res) => {
+  const { trackId, title, genre } = req.body || {};
+  if (!title) return res.status(400).json({ error: 'title requerido' });
+  if (!db.userPlays) db.userPlays = [];
+  db.userPlays.push({
+    id:      uid(),
+    userId:  req.user.userId,
+    trackId: String(trackId || ''),
+    title:   String(title  || '').slice(0, 200),
+    genre:   String(genre  || '').slice(0, 80),
+    ts:      new Date().toISOString(),
+  });
+  // Keep most recent 20 000 entries across all users
+  if (db.userPlays.length > 20000) db.userPlays = db.userPlays.slice(-20000);
+  saveDB(db);
+  res.json({ ok: true });
+});
+
+// ── User stats ───────────────────────────────────────────────────────────────
+app.get('/api/user/stats', userAuth, (req, res) => {
+  const plays = (db.userPlays || []).filter(p => p.userId === req.user.userId);
+  const likes = (db.likes    || []).filter(l => l.userId === req.user.userId);
+
+  const genreCounts = {};
+  const trackCounts = {};
+  for (const p of plays) {
+    if (p.genre) genreCounts[p.genre] = (genreCounts[p.genre] || 0) + 1;
+    if (p.title) trackCounts[p.title] = (trackCounts[p.title] || 0) + 1;
+  }
+  const topGenres = Object.entries(genreCounts)
+    .sort((a, b) => b[1] - a[1]).slice(0, 5)
+    .map(([genre, count]) => ({ genre, count }));
+  const topTracks = Object.entries(trackCounts)
+    .sort((a, b) => b[1] - a[1]).slice(0, 10)
+    .map(([title, count]) => ({ title, count }));
+
+  const user = (db.users || []).find(u => u.id === req.user.userId);
+  res.json({
+    totalPlays:  plays.length,
+    totalLikes:  likes.length,
+    topGenres,
+    topTracks,
+    recent:      [...plays].reverse().slice(0, 20),
+    memberSince: user?.createdAt || null,
+  });
+});
 
 app.get('/api/user/playlists', userAuth, (req, res) => {
   res.json((db.playlists || []).filter(p => p.userId === req.user.userId));
@@ -1359,13 +1462,16 @@ app.get('/api/admin/diag', authMiddleware, (req, res) => {
   res.json(info);
 });
 
-// Lista usuarios (sin passwords) con conteo de listas
+// Lista usuarios (sin passwords) con conteo de listas, plays y likes
 app.get('/api/admin/users', authMiddleware, (req, res) => {
   const users = (db.users || []).map(u => ({
     id:            u.id,
     email:         u.email,
+    name:          u.name || '',
     createdAt:     u.createdAt,
     playlistCount: (db.playlists || []).filter(p => p.userId === u.id).length,
+    playCount:     (db.userPlays || []).filter(p => p.userId === u.id).length,
+    likeCount:     (db.likes     || []).filter(l => l.userId === u.id).length,
   }));
   res.json(users);
 });
@@ -2226,16 +2332,24 @@ app.post('/api/analytics/batch', (req, res) => {
 
   const ua = req.headers['user-agent'] || '';
 
-  const stored = events.slice(0, 200).map(ev => ({ // max 200 eventos por lote
-    id:        uid(),
-    type:      String(ev.type || 'unknown').slice(0, 60),
-    sessionId: String(ev.sessionId || sid).slice(0, 64),
-    data:      ev.data && typeof ev.data === 'object' ? ev.data : {},
-    device:    String(ev.device || '').slice(0, 20),
-    ua:        ua.slice(0, 200),
-    ip:        anonIp,
-    ts:        typeof ev.ts === 'string' ? ev.ts : new Date().toISOString(),
-  }));
+  const stored = events.slice(0, 200).map(ev => { // max 200 eventos por lote
+    const entry = {
+      id:        uid(),
+      type:      String(ev.type || 'unknown').slice(0, 60),
+      sessionId: String(ev.sessionId || sid).slice(0, 64),
+      data:      ev.data && typeof ev.data === 'object' ? ev.data : {},
+      device:    String(ev.device || '').slice(0, 20),
+      ua:        ua.slice(0, 200),
+      ip:        anonIp,
+      ts:        typeof ev.ts === 'string' ? ev.ts : new Date().toISOString(),
+    };
+    // Preserve userId if the client included it (logged-in users only)
+    if (ev.userId && typeof ev.userId === 'string') {
+      const valid = (db.users || []).find(u => u.id === ev.userId);
+      if (valid) entry.userId = ev.userId;
+    }
+    return entry;
+  });
 
   db.analyticsEvents = [...(db.analyticsEvents || []), ...stored];
   _saveAnalytics();

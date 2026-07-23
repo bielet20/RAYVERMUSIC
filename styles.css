@@ -551,6 +551,28 @@ body {
 
 .radio-meta { flex: 1; min-width: 0; }
 
+.radio-title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.radio-title-row .radio-track-title { margin-bottom: 0; }
+
+.radio-like-btn {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  padding: 2px 0 0;
+  color: var(--subtle);
+  transition: color var(--transition), transform .15s;
+}
+.radio-like-btn:hover { color: #e05; transform: scale(1.15); }
+.radio-like-btn.liked  { color: #e05; }
+
 .radio-track-title {
   font-size: 17px;
   font-weight: 700;

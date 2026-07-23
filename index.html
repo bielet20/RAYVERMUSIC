@@ -20,7 +20,7 @@
 <meta name="twitter:image" content="https://rayvermusic.com/hero_bg.png">
 <link rel="preload" href="hero_bg.png" as="image">
 <script>(function(){var h=new Date().getHours();var t=localStorage.getItem('rm-theme')||(h>=6&&h<20?'light':'dark');if(t==='light')document.documentElement.setAttribute('data-theme','light');}());</script>
-<link rel="stylesheet" href="styles.css?v=8">
+<link rel="stylesheet" href="styles.css?v=9">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Orbitron:wght@400;600;700;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <script async src="https://plausible.io/js/pa-ax8pbKKZr_jYIfg8t1P28.js"></script>
@@ -264,7 +264,10 @@
           <div class="radio-cover-pulse" id="radio-cover-pulse"></div>
         </div>
         <div class="radio-meta">
-          <div id="radio-title" class="radio-track-title">Cargando playlist…</div>
+          <div class="radio-title-row">
+            <div id="radio-title" class="radio-track-title">Cargando playlist…</div>
+            <button id="radio-like-btn" class="radio-like-btn" aria-label="Me gusta" title="Me gusta" style="display:none">♡</button>
+          </div>
           <div id="radio-artist" class="radio-track-artist">RAYVER</div>
           <div id="radio-genre" class="radio-track-genre"></div>
           <div class="radio-platform-tags" id="radio-platform-tags"></div>
@@ -666,9 +669,9 @@
   <p class="footer-credit">Electronic Music Producer · Palma de Mallorca</p>
 </footer>
 
-<script src="tracker.js?v=1" defer></script>
-<script src="script.js?v=23"></script>
-<script src="radio.js?v=30"></script>
+<script src="tracker.js?v=2" defer></script>
+<script src="script.js?v=24"></script>
+<script src="radio.js?v=31"></script>
 <!-- PWA: botón flotante de instalación (oculto por defecto, se muestra solo si el navegador soporta instalar) -->
 <div id="pwa-install-wrap" style="display:none;position:fixed;bottom:90px;right:20px;z-index:9999;flex-direction:column;align-items:flex-end;gap:8px;">
   <div style="background:rgba(15,5,30,.9);color:#d8b4fe;font-size:12px;border-radius:8px;padding:7px 12px;

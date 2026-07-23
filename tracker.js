@@ -44,8 +44,15 @@
   let _sessionStart = Date.now();
   let _lastSection  = null;
 
+  function _getTrackerUserId() {
+    try { return JSON.parse(localStorage.getItem('rv_user') || '{}').id || null; } catch { return null; }
+  }
+
   function track(type, data) {
-    queue.push({ type, sessionId: sid, data: data || {}, device, ts: new Date().toISOString() });
+    const entry = { type, sessionId: sid, data: data || {}, device, ts: new Date().toISOString() };
+    const uid = _getTrackerUserId();
+    if (uid) entry.userId = uid;
+    queue.push(entry);
   }
 
   function flush(beacon) {
@@ -182,7 +189,7 @@
   win.TRACKER = {
     track,
     // Hooks para el reproductor de radio
-    onTrackPlay  (title, source) { track('track_play',   { title, source }); },
+    onTrackPlay  (title, source, genre) { track('track_play',   { title, source, genre: genre || '' }); },
     onTrackPause (title, pct)    { track('track_pause',  { title, pct: pct | 0 }); },
     onTrackFinish(title)         { track('track_finish', { title }); },
     onVideoPlay  (title, vidId)  { track('video_play',   { title, vidId }); },

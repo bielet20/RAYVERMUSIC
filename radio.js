@@ -118,7 +118,76 @@
   const upDurEl    = $('up-dur');
   const upVolIcon  = $('up-vol-icon');
   const upVolEl    = $('up-vol');
-  const upProgress = $('up-progress');
+  const upProgress  = $('up-progress');
+  const likeBtnEl   = $('radio-like-btn');
+
+  // ── LIKES ─────────────────────────────────────────────────────────
+  let _likedIds      = new Set();
+  let _currentLikeId = null; // trackId currently shown
+
+  function _updateLikeBtn(trackId) {
+    _currentLikeId = trackId || null;
+    if (!likeBtnEl) return;
+    const tok = window.getToken?.();
+    if (!tok || !trackId) { likeBtnEl.style.display = 'none'; return; }
+    likeBtnEl.style.display = '';
+    const liked = _likedIds.has(String(trackId));
+    likeBtnEl.textContent = liked ? '♥' : '♡';
+    likeBtnEl.classList.toggle('liked', liked);
+    likeBtnEl.setAttribute('aria-label', liked ? 'Quitar de favoritos' : 'Añadir a favoritos');
+  }
+
+  function _loadLikedIds() {
+    const tok = window.getToken?.();
+    if (!tok) { _likedIds = new Set(); _updateLikeBtn(_currentLikeId); return; }
+    fetch('/api/user/likes/ids', { headers: { 'Authorization': 'Bearer ' + tok } })
+      .then(r => r.ok ? r.json() : [])
+      .then(ids => { _likedIds = new Set(ids.map(String)); _updateLikeBtn(_currentLikeId); })
+      .catch(() => {});
+  }
+
+  if (likeBtnEl) {
+    likeBtnEl.addEventListener('click', () => {
+      const tok = window.getToken?.();
+      if (!tok || !_currentLikeId) return;
+      // Optimistic update
+      const alreadyLiked = _likedIds.has(String(_currentLikeId));
+      if (alreadyLiked) _likedIds.delete(String(_currentLikeId));
+      else _likedIds.add(String(_currentLikeId));
+      _updateLikeBtn(_currentLikeId);
+
+      // Get track info for the API call
+      let title = '', genre = '', cover = '', scUrl = '';
+      if (activeRadioPlaylist !== null && customTrackList[customCurrentIdx]) {
+        const ct = customTrackList[customCurrentIdx];
+        title = ct.title || ''; genre = ct.genre || ''; cover = ct.cover || ''; scUrl = ct.scUrl || ct.url || '';
+      } else if (scSounds[currentIdx]) {
+        const sc = scSounds[currentIdx]; const en = enriched[currentIdx];
+        title = sc.title || ''; genre = en?.genre || '';
+        cover = en?.cover || sc.artwork_url || '';
+        scUrl = sc.permalink_url || '';
+      }
+
+      fetch('/api/user/likes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok },
+        body: JSON.stringify({ trackId: _currentLikeId, title, genre, cover, scUrl }),
+      }).then(r => r.json())
+        .then(d => { // Sync to server response (in case of race)
+          if (d.liked) _likedIds.add(String(_currentLikeId));
+          else _likedIds.delete(String(_currentLikeId));
+          _updateLikeBtn(_currentLikeId);
+        })
+        .catch(() => { // Rollback on error
+          if (alreadyLiked) _likedIds.add(String(_currentLikeId));
+          else _likedIds.delete(String(_currentLikeId));
+          _updateLikeBtn(_currentLikeId);
+        });
+    });
+  }
+
+  // Expose so script.js can refresh after login/logout
+  window.RADIO_LIKES_REFRESH = _loadLikedIds;
 
   function _adjustUpLayout() {
     const up = $('up-player');
@@ -251,6 +320,8 @@
     if (durEl)  durEl.textContent  = fmt(sc.duration || 0);
     if (counter) counter.textContent = `${idx + 1} / ${scSounds.length}`;
 
+    _updateLikeBtn(enriched[idx]?.id || String(idx));
+
     const upTags = [];
     if (sc.permalink_url) upTags.push(`<a href="${esc(sc.permalink_url)}" target="_blank" class="radio-ptag ptag-soundcloud"><i class="fab fa-soundcloud"></i></a>`);
     const sp = (en && (en.spotifyUrl || en.platforms?.spotify)) || '';
@@ -303,6 +374,8 @@
     if (curEl)   curEl.textContent  = '0:00';
     if (durEl)   durEl.textContent  = '—';
     if (counter) counter.textContent = `${idx + 1} / ${customTrackList.length}`;
+
+    _updateLikeBtn(t.itemId || t.id || null);
 
     const upLinks = [];
     const scUrl2 = t.scUrl || t.url || null;
@@ -971,7 +1044,23 @@
         const playTitle = activeRadioPlaylist !== null
           ? (customTrackList[customCurrentIdx]?.title || '')
           : (scSounds[idx]?.title || '');
-        if (playTitle) window.TRACKER?.onTrackPlay(playTitle, activeRadioPlaylist ? 'custom' : 'radio');
+        const playGenre = activeRadioPlaylist !== null
+          ? (customTrackList[customCurrentIdx]?.genre || '')
+          : (enriched[idx]?.genre || '');
+        const playTrackId = activeRadioPlaylist !== null
+          ? (customTrackList[customCurrentIdx]?.itemId || customTrackList[customCurrentIdx]?.id || '')
+          : (enriched[idx]?.id || String(idx));
+        if (playTitle) {
+          window.TRACKER?.onTrackPlay(playTitle, activeRadioPlaylist ? 'custom' : 'radio', playGenre);
+          const tok = window.getToken?.();
+          if (tok) {
+            fetch('/api/user/plays', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok },
+              body: JSON.stringify({ trackId: playTrackId, title: playTitle, genre: playGenre }),
+            }).catch(() => {});
+          }
+        }
         // Si hay lista personalizada activa, no sobrescribir el header con datos de SC
         if (activeRadioPlaylist !== null) return;
         if (!scSounds[idx]?.title) {
@@ -2165,4 +2254,5 @@
   }
 
   init();
+  _loadLikedIds();
 })();

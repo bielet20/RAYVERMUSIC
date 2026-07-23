@@ -102,6 +102,7 @@ window.submitLogin = async function(e) {
   closeAuthModal();
   updateAuthUI();
   await loadUserPlaylists();
+  window.RADIO_LIKES_REFRESH?.();
   showToastGlobal('¡Bienvenido, ' + r.data.user.name + '!');
   if (window._pendingTSTrack) { window.openTrackSheet(window._pendingTSTrack); window._pendingTSTrack = null; }
 };
@@ -123,6 +124,7 @@ window.submitRegister = async function(e) {
   closeAuthModal();
   updateAuthUI();
   await loadUserPlaylists();
+  window.RADIO_LIKES_REFRESH?.();
   showToastGlobal('¡Cuenta creada! Bienvenido, ' + r.data.user.name + ' 🎵');
   if (window._pendingTSTrack) { window.openTrackSheet(window._pendingTSTrack); window._pendingTSTrack = null; }
 };
@@ -133,6 +135,7 @@ window.logoutUser = async function() {
   userPlaylists = [];
   updateAuthUI();
   closeDropdownUser();
+  window.RADIO_LIKES_REFRESH?.();
   showToastGlobal('Sesión cerrada');
 };
 

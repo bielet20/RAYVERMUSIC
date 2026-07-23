@@ -48,6 +48,7 @@
   let videoExpanded = false;   // true cuando el video está expandido en el top bar
   let ytProgressTimer = null;  // intervalo para barra de progreso YouTube
   let _prevPlaylistState = null; // estado guardado antes de un "Escuchar" del catálogo
+  let _scLoadTimeout     = null; // timeout de seguridad si SC widget no arranca
 
   // ── AMBIENT AUDIO STATE ──────────────────────────────────────────
   let ambientAudioActive = false;  // true cuando el track actual es de Ambiente
@@ -869,9 +870,12 @@
   function playYoutubeTrack(videoId, title) {
     _autoSkipCount = 0;
     window._pendingYtFallback = null;
-    youtubeActive = true;
-    widget.pause();
+    if (_scLoadTimeout) { clearTimeout(_scLoadTimeout); _scLoadTimeout = null; }
+    // Detener SC y ambiente ANTES de activar YouTube
+    if (ambientAudioActive) _stopAmbientAudio();
+    if (widgetRdy) { try { widget.pause(); } catch(_) {} }
     iframe.style.height = '0px';
+    youtubeActive = true;
     customPlaylistStarted = true;
     userPlayed = true;
     setPlaying(true);
@@ -909,6 +913,7 @@
     if (ytPlayer?.pauseVideo) try { ytPlayer.pauseVideo(); } catch(_) {}
     if (ytPlayerDiv && !ytUsingFeatured) ytPlayerDiv.style.height = '0px';
     _setVideoMode(false);
+    setPlaying(false);
   }
 
   function bindWidget() {
@@ -952,6 +957,7 @@
     widget.bind(SC.Widget.Events.PLAY, () => {
       _wdProgress = null; // new track started — reset watchdog
       window._pendingYtFallback = null;
+      if (_scLoadTimeout) { clearTimeout(_scLoadTimeout); _scLoadTimeout = null; }
       if (youtubeActive) stopYoutube();
       setPlaying(true);
       // Ignorar PLAY automático del widget (antes de que el usuario pulse play)
@@ -1119,21 +1125,22 @@
     });
   }
 
-  // ── CONTROLS ─────────────────────────────────────────────────────
-  playBtn && playBtn.addEventListener('click', () => {
-    if (!widgetRdy) { pendingPlay = true; return; }
+  // ── CONTROLS — funciones reutilizadas por radio section Y top player ──
+  function _doTogglePlay() {
     userPlayed = true;
-
     if (activeRadioPlaylist !== null && customTrackList.length > 0) {
       if (!customPlaylistStarted) {
         window.playCustomTrack(customCurrentIdx);
-      } else if (playing) {
+        return;
+      }
+      if (playing) {
         if (youtubeActive) {
           try { ytPlayer?.pauseVideo(); } catch(_) {}
+          setPlaying(false);
         } else if (ambientAudioActive) {
           audioEl?.pause();
         } else {
-          widget.pause();
+          if (widgetRdy) { widget.pause(); }
           iframe.style.height = '0px';
           setPlaying(false);
         }
@@ -1142,17 +1149,17 @@
           if (!ytUsingFeatured && ytPlayerDiv) ytPlayerDiv.style.height = '116px';
           if (ytUsingFeatured) _showFeaturedPlayer();
           try { ytPlayer?.playVideo(); } catch(_) {}
+          setPlaying(true);
         } else if (ambientAudioActive) {
           audioEl?.play().catch(() => {});
         } else {
-          widget.play();
-          // SC widget permanece oculto en modo lista personalizada
+          if (widgetRdy) widget.play();
         }
       }
       return;
     }
-
-    // Modo RAYVER Radio normal
+    // Modo RAYVER Radio (SC Widget directo)
+    if (!widgetRdy) { pendingPlay = true; return; }
     if (playing) {
       widget.pause();
       iframe.style.height = '0px';
@@ -1160,10 +1167,9 @@
       widget.play();
       iframe.style.height = '116px';
     }
-  });
+  }
 
-  prevBtn && prevBtn.addEventListener('click', () => {
-    if (!widgetRdy) return;
+  function _doPlayPrev() {
     userPlayed = true;
     if (activeRadioPlaylist !== null && customTrackList.length > 0) {
       const prev = customCurrentIdx - 1;
@@ -1171,23 +1177,25 @@
       else if (loopPlaylist) window.playCustomTrack(customTrackList.length - 1);
       return;
     }
-    if (shuffle) doShuffle(); else widget.prev();
-  });
-
-  nextBtn && nextBtn.addEventListener('click', () => {
     if (!widgetRdy) return;
+    if (shuffle) doShuffle(); else widget.prev();
+  }
+
+  function _doPlayNext() {
     userPlayed = true;
     if (activeRadioPlaylist !== null && customTrackList.length > 0) {
       const next = _nextCustomIdx();
-      if (shuffle || next < customTrackList.length) {
-        window.playCustomTrack(customTrackList[next] ? next : 0);
-      } else if (loopPlaylist) {
-        window.playCustomTrack(0);
-      }
+      if (customTrackList[next]) window.playCustomTrack(next);
+      else if (loopPlaylist) window.playCustomTrack(0);
       return;
     }
+    if (!widgetRdy) return;
     if (shuffle) doShuffle(); else widget.next();
-  });
+  }
+
+  playBtn && playBtn.addEventListener('click', _doTogglePlay);
+  prevBtn && prevBtn.addEventListener('click', _doPlayPrev);
+  nextBtn && nextBtn.addEventListener('click', _doPlayNext);
 
   shufBtn && shufBtn.addEventListener('click', () => {
     shuffle = !shuffle;
@@ -1235,27 +1243,37 @@
     const upMinBtn = $('up-min-btn');
     const upMinIco = $('up-min-icon');
 
-    upPlay && upPlay.addEventListener('click', () => playBtn?.click());
-    upPrev && upPrev.addEventListener('click', () => prevBtn?.click());
-    upNext && upNext.addEventListener('click', () => nextBtn?.click());
+    upPlay && upPlay.addEventListener('click', _doTogglePlay);
+    upPrev && upPrev.addEventListener('click', _doPlayPrev);
+    upNext && upNext.addEventListener('click', _doPlayNext);
 
     upShuf && upShuf.addEventListener('click', () => {
-      shufBtn?.click();
+      shuffle = !shuffle;
+      shufBtn?.classList.toggle('active', shuffle);
       upShuf.classList.toggle('up-active', shuffle);
     });
 
     upRep && upRep.addEventListener('click', () => {
-      const repeatBtn = $('radio-repeat');
-      repeatBtn?.click();
       const m = ['none','one','all'];
-      const next = m[(m.indexOf(repeat) + 1) % m.length];
-      upRep.querySelector('i').className = next === 'one' ? 'fas fa-redo-alt' : 'fas fa-redo';
-      upRep.classList.toggle('up-active', next !== 'none');
+      repeat = m[(m.indexOf(repeat) + 1) % m.length];
+      const repeatBtn = $('radio-repeat');
+      if (repeatBtn) {
+        repeatBtn.querySelector('i').className = repeat === 'one' ? 'fas fa-redo-alt' : 'fas fa-redo';
+        repeatBtn.classList.toggle('active', repeat !== 'none');
+      }
+      upRep.querySelector('i').className = repeat === 'one' ? 'fas fa-redo-alt' : 'fas fa-redo';
+      upRep.classList.toggle('up-active', repeat !== 'none');
     });
 
     upMute && upMute.addEventListener('click', () => {
-      muteBtn?.click();
-      if (upVolIcon) upVolIcon.className = muted ? 'fas fa-volume-mute' : vol() < 50 ? 'fas fa-volume-down' : 'fas fa-volume-up';
+      muted = !muted;
+      if (widgetRdy) widget.setVolume(muted ? 0 : vol());
+      if (youtubeActive && ytPlayer?.setVolume) try { ytPlayer.setVolume(muted ? 0 : vol()); } catch(_) {}
+      if (audioEl) audioEl.volume = muted ? 0 : vol() / 100;
+      const ico = muted ? 'fa-volume-mute' : vol() < 50 ? 'fa-volume-down' : 'fa-volume-up';
+      if (volIco)    volIco.className    = 'fas ' + ico;
+      if (upVolIcon) upVolIcon.className = 'fas ' + ico;
+      if (muteBtn)   muteBtn.classList.toggle('active', muted);
     });
 
     upVolEl && upVolEl.addEventListener('input', () => {
@@ -1302,7 +1320,7 @@
       widget.play();
     },
     play: () => {
-      playBtn?.click();
+      _doTogglePlay();
     },
     pause: () => {
       if (youtubeActive) {
@@ -1889,11 +1907,21 @@
         widgetCustomMode = true;
         userPlayed = true;
         window._pendingYtFallback = ytFallback || null;
+        if (_scLoadTimeout) { clearTimeout(_scLoadTimeout); _scLoadTimeout = null; }
         // SC widget permanece oculto — nuestros controles manejan todo
         widget.load(url, {
           auto_play: true, hide_related: true, show_comments: false,
           show_user: true, show_reposts: false, show_teaser: false,
         });
+        // Si SC no arranca en 6s (track privado/no disponible), fallback a YouTube
+        if (ytFallback) {
+          _scLoadTimeout = setTimeout(() => {
+            _scLoadTimeout = null;
+            if (youtubeActive || !customPlaylistStarted || playing) return;
+            console.warn('[Radio] SC timeout, fallback YT:', ytFallback);
+            playYoutubeTrack(ytFallback, customTrackList[customCurrentIdx]?.title || '');
+          }, 6000);
+        }
       };
 
       if (trackScUrl) {

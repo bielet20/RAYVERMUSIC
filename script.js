@@ -1858,12 +1858,103 @@ function ambClosePlayer() {
   });
 }
 
-function ambRequestSubscription(planId, planTitle) {
-  if (!AUTH.user) { openAuthModal(); return; }
-  showToastGlobal(`Para suscribirte al plan "${planTitle}", contacta con el administrador o usa el método de pago habitual.`);
+async function ambRequestSubscription(planId, planTitle) {
+  if (!AUTH.user) { openAuthModal('login'); return; }
+  showToastGlobal('Preparando el pago…');
+  const r = await apiUser('/checkout', { method: 'POST', body: JSON.stringify({ type: 'plan', id: planId }) });
+  if (r.ok && r.data?.url) { window.location.href = r.data.url; }
+  else showToastGlobal(r.data?.error || 'Error al iniciar el pago. Inténtalo de nuevo.', 'error');
 }
 
-function ambRequestPack(packId, packTitle, price, currency) {
-  if (!AUTH.user) { openAuthModal(); return; }
-  showToastGlobal(`Para comprar "${packTitle}" (${price} ${currency}), contacta con el administrador.`);
+async function ambRequestPack(packId, packTitle, price, currency) {
+  if (!AUTH.user) { openAuthModal('login'); return; }
+  showToastGlobal('Preparando el pago…');
+  const r = await apiUser('/checkout', { method: 'POST', body: JSON.stringify({ type: 'pack', id: packId }) });
+  if (r.ok && r.data?.url) { window.location.href = r.data.url; }
+  else showToastGlobal(r.data?.error || 'Error al iniciar el pago. Inténtalo de nuevo.', 'error');
+}
+
+async function buyProduct(productId) {
+  if (!AUTH.user) { openAuthModal('login'); return; }
+  showToastGlobal('Preparando el pago…');
+  const r = await apiUser('/checkout', { method: 'POST', body: JSON.stringify({ type: 'product', id: productId }) });
+  if (r.ok && r.data?.url) { window.location.href = r.data.url; }
+  else showToastGlobal(r.data?.error || 'Error al iniciar el pago. Inténtalo de nuevo.', 'error');
+}
+
+// ── Checkout success/cancel handler ──────────────────────────────
+(function handleCheckoutReturn() {
+  const params = new URLSearchParams(window.location.search);
+  const result = params.get('checkout');
+  if (!result) return;
+
+  // Limpiar la URL sin recargar
+  const cleanUrl = window.location.pathname;
+  window.history.replaceState({}, '', cleanUrl);
+
+  if (result === 'cancel') {
+    showToastGlobal('Pago cancelado. Puedes intentarlo de nuevo cuando quieras.');
+    return;
+  }
+
+  if (result === 'success') {
+    const sessionId = params.get('session_id');
+    document.addEventListener('DOMContentLoaded', () => _showCheckoutSuccess(sessionId));
+    if (document.readyState !== 'loading') _showCheckoutSuccess(sessionId);
+  }
+})();
+
+async function _showCheckoutSuccess(sessionId) {
+  // Recargar acceso ambient por si acaso
+  if (typeof _ambData !== 'undefined') _ambData.access = null;
+  if (window.RADIO_LIKES_REFRESH) window.RADIO_LIKES_REFRESH();
+
+  // Buscar orden en el historial
+  let order = null;
+  if (AUTH.token || getToken()) {
+    AUTH.token = AUTH.token || getToken();
+    const r = await apiUser('/orders');
+    if (r.ok && Array.isArray(r.data)) {
+      order = r.data.find(o => o.stripeSessionId === sessionId) || r.data[0] || null;
+    }
+  }
+
+  // Construir el modal de confirmación (ticket)
+  const itemName = order?.itemName || 'tu compra';
+  const amount   = order ? ((order.amount || 0) / 100).toFixed(2) + ' ' + (order.currency || 'EUR').toUpperCase() : '';
+  const date     = order ? new Date(order.createdAt).toLocaleDateString('es-ES', { day:'2-digit', month:'long', year:'numeric' }) : new Date().toLocaleDateString('es-ES');
+  const orderId  = order?.id || '—';
+
+  let extraHtml = '';
+  if (order?.type === 'pack' || order?.type === 'plan') {
+    extraHtml = `<p class="checkout-access-note"><i class="fas fa-check-circle" style="color:#10b981"></i> Tu acceso está activo ahora mismo.</p>`;
+  }
+  if (order?.downloadToken) {
+    extraHtml = `<a href="/api/download/${order.downloadToken}" class="btn btn-primary checkout-download-btn" download><i class="fas fa-download"></i> Descargar ahora</a>
+                 <p class="checkout-access-note" style="font-size:12px;color:var(--muted)">El enlace es válido 7 días y admite hasta 5 descargas.</p>`;
+  }
+
+  const existing = document.getElementById('checkout-success-modal');
+  if (existing) existing.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'checkout-success-modal';
+  modal.className = 'modal-overlay';
+  modal.style.cssText = 'display:flex;z-index:9999';
+  modal.innerHTML = `
+    <div class="modal-box glass" style="max-width:420px;text-align:center">
+      <div style="font-size:48px;margin-bottom:12px">🎉</div>
+      <h2 style="margin:0 0 8px;font-size:22px">¡Pago completado!</h2>
+      <p style="color:var(--muted);margin-bottom:20px">Gracias por tu compra.</p>
+      <div class="checkout-ticket">
+        <div class="ticket-row"><span>Producto</span><strong>${itemName}</strong></div>
+        ${amount ? `<div class="ticket-row"><span>Importe</span><strong>${amount}</strong></div>` : ''}
+        <div class="ticket-row"><span>Fecha</span><strong>${date}</strong></div>
+        <div class="ticket-row"><span>Nº pedido</span><strong style="font-size:11px">${orderId}</strong></div>
+      </div>
+      ${extraHtml}
+      <button class="btn btn-primary" style="margin-top:16px;width:100%" onclick="document.getElementById('checkout-success-modal').remove()">Cerrar</button>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
 }

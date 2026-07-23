@@ -3270,3 +3270,41 @@ body {
   align-items: center;
   gap: 8px;
 }
+
+/* ══ CHECKOUT TICKET / SUCCESS MODAL ════════════════════════════════ */
+.checkout-ticket {
+  background: var(--surface-hover);
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  padding: 14px 18px;
+  margin: 0 0 16px;
+  text-align: left;
+}
+.ticket-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0;
+  font-size: 14px;
+  gap: 12px;
+}
+.ticket-row:not(:last-child) { border-bottom: 1px solid var(--border-faint); }
+.ticket-row span { color: var(--muted); flex-shrink: 0; }
+.ticket-row strong { text-align: right; word-break: break-all; }
+.checkout-access-note {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.checkout-download-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  width: 100%;
+  justify-content: center;
+}

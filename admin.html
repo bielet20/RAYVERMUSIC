@@ -3362,8 +3362,16 @@ async function ambLoadPacks() {
         <div style="font-weight:700">${_esc(p.title)} ${p.badge ? `<span style="background:rgba(168,85,247,.2);color:#c084fc;font-size:11px;padding:2px 8px;border-radius:999px;margin-left:6px">${_esc(p.badge)}</span>` : ''}</div>
         <div style="font-size:12px;color:var(--muted)">${_esc(p.description || '')} · ${tc} tracks · <strong style="color:var(--text)">${p.price} ${p.currency}</strong></div>
       </div>
-      <button class="btn btn-sm btn-g" onclick="ambOpenPackModal('${p.id}')" style="margin-right:4px"><i class="fas fa-edit"></i></button>
-      <button class="btn btn-sm" style="background:rgba(239,68,68,.15);color:#f87171;border:none;border-radius:6px;padding:5px 10px;cursor:pointer" onclick="ambDeletePack('${p.id}')"><i class="fas fa-trash"></i></button>
+      <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">
+        ${p.stripePriceId
+          ? `<span style="font-size:10px;color:#4ade80;background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.2);padding:2px 8px;border-radius:999px"><i class="fas fa-check-circle"></i> Stripe OK</span>`
+          : `<span style="font-size:10px;color:#fb923c;background:rgba(251,146,60,.1);border:1px solid rgba(251,146,60,.2);padding:2px 8px;border-radius:999px">Sin precio Stripe</span>`}
+        <div style="display:flex;gap:4px">
+          <button class="btn btn-sm" title="Crear precio en Stripe" style="background:rgba(168,85,247,.15);color:#c084fc;border:none;border-radius:6px;padding:5px 9px;cursor:pointer" onclick="ambSyncPackStripe('${p.id}')"><i class="fas fa-bolt"></i></button>
+          <button class="btn btn-sm btn-g" onclick="ambOpenPackModal('${p.id}')" style="margin-right:0"><i class="fas fa-edit"></i></button>
+          <button class="btn btn-sm" style="background:rgba(239,68,68,.15);color:#f87171;border:none;border-radius:6px;padding:5px 10px;cursor:pointer" onclick="ambDeletePack('${p.id}')"><i class="fas fa-trash"></i></button>
+        </div>
+      </div>
     </div>`;
   }).join('');
 }
@@ -3420,6 +3428,15 @@ async function ambDeletePack(id) {
   if (!confirm('¿Eliminar este pack?')) return;
   await _ambApi('DELETE', `/admin/ambient/packs/${id}`);
   ambLoadPacks();
+}
+
+async function ambSyncPackStripe(id) {
+  if (!confirm('¿Crear producto y precio en Stripe para este pack?')) return;
+  try {
+    const data = await _ambApi('POST', `/admin/ambient/packs/${id}/stripe-price`);
+    toast('Precio Stripe creado: ' + data.stripePriceId);
+    ambLoadPacks();
+  } catch(e) { toast(e.message || 'Error Stripe', 'err'); }
 }
 
 // ── Zonas ──────────────────────────────────────────────────────
@@ -3515,7 +3532,15 @@ async function ambLoadPlans() {
           <span style="color:var(--purple);margin-left:8px">${p.price} ${p.currency}</span></div>
         <div style="font-size:12px;color:var(--muted)">${_esc(p.description || '')} — ${p.durationDays} días</div>
       </div>
-      <button class="btn btn-sm btn-g" onclick="ambEditPlan('${p.id}')"><i class="fas fa-edit"></i> Editar</button>
+      <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">
+        ${p.stripePriceId
+          ? `<span style="font-size:10px;color:#4ade80;background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.2);padding:2px 8px;border-radius:999px"><i class="fas fa-check-circle"></i> Stripe OK</span>`
+          : `<span style="font-size:10px;color:#fb923c;background:rgba(251,146,60,.1);border:1px solid rgba(251,146,60,.2);padding:2px 8px;border-radius:999px">Sin precio Stripe</span>`}
+        <div style="display:flex;gap:4px">
+          <button class="btn btn-sm" title="Crear precio en Stripe" style="background:rgba(168,85,247,.15);color:#c084fc;border:none;border-radius:6px;padding:5px 9px;cursor:pointer" onclick="ambSyncPlanStripe('${p.id}')"><i class="fas fa-bolt"></i></button>
+          <button class="btn btn-sm btn-g" onclick="ambEditPlan('${p.id}')"><i class="fas fa-edit"></i></button>
+        </div>
+      </div>
     </div>`).join('') || '<div class="re-empty"><i class="fas fa-tags"></i><p>No hay planes configurados.</p></div>';
 }
 
@@ -3526,6 +3551,15 @@ function ambEditPlan(id) {
   if (price === null) return;
   _ambApi('PUT', `/admin/ambient/plans/${id}`, { ...plan, price: parseFloat(price) || plan.price })
     .then(() => ambLoadPlans()).catch(e => alert(e.message));
+}
+
+async function ambSyncPlanStripe(id) {
+  if (!confirm('¿Crear producto y precio de suscripción en Stripe para este plan?')) return;
+  try {
+    const data = await _ambApi('POST', `/admin/ambient/plans/${id}/stripe-price`);
+    toast('Precio Stripe creado: ' + data.stripePriceId);
+    ambLoadPlans();
+  } catch(e) { toast(e.message || 'Error Stripe', 'err'); }
 }
 
 // ── Access ──────────────────────────────────────────────────────

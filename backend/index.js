@@ -59,6 +59,17 @@ app.use(cors({
   origin: FRONTEND_ORIGIN === '*' ? true : FRONTEND_ORIGIN.split(',').map(s => s.trim()),
   credentials: true,
 }));
+
+// ── STRIPE ───────────────────────────────────────────────────────
+const STRIPE_SECRET         = process.env.STRIPE_SECRET_KEY    || '';
+const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || '';
+const SITE_URL              = (process.env.SITE_URL || 'https://rayvermusic.com').replace(/\/$/, '');
+let stripe = null;
+try { if (STRIPE_SECRET) stripe = require('stripe')(STRIPE_SECRET); }
+catch (e) { console.warn('[Stripe] No se pudo cargar el módulo stripe:', e.message); }
+
+// Raw body para /api/stripe/webhook — debe ir ANTES de express.json()
+app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }));
 app.use(express.json({ limit: '5mb' }));
 
 // ───────────────────────── DB helpers ─────────────────────────
@@ -135,10 +146,12 @@ function verifyPassword(password, salt, storedHash) {
 }
 
 // Migrate: seed missing collections
-if (!db.users)     { db.users     = []; saveDB(db); }
-if (!db.playlists) { db.playlists = []; saveDB(db); }
-if (!db.likes)     { db.likes     = []; saveDB(db); }
-if (!db.userPlays) { db.userPlays = []; saveDB(db); }
+if (!db.users)          { db.users          = []; saveDB(db); }
+if (!db.playlists)      { db.playlists      = []; saveDB(db); }
+if (!db.likes)          { db.likes          = []; saveDB(db); }
+if (!db.userPlays)      { db.userPlays      = []; saveDB(db); }
+if (!db.orders)         { db.orders         = []; saveDB(db); }
+if (!db.downloadTokens) { db.downloadTokens = []; saveDB(db); }
 if (!db.genres) {
   db.genres = [
     { id:'g1', name:'Trance',       slug:'trance',      color:'#8a2be2', order:0 },
@@ -809,6 +822,74 @@ app.patch('/api/videos/reorder', authMiddleware, (req, res) => {
   });
   saveDB(db);
   res.json({ ok: true });
+});
+
+// ── Stripe: crear producto + precio para un producto digital / membresía ──
+app.post('/api/products/:id/stripe-price', authMiddleware, async (req, res) => {
+  if (!stripe) return res.status(503).json({ error: 'Stripe no configurado. Añade STRIPE_SECRET_KEY en Coolify.' });
+  const product = (db.products || []).find(p => p.id === req.params.id);
+  if (!product) return res.status(404).json({ error: 'Producto no encontrado' });
+  try {
+    const sp = await stripe.products.create({
+      name: product.name,
+      description: product.description || undefined,
+    });
+    const priceData = {
+      product:     sp.id,
+      currency:    (product.currency || 'eur').toLowerCase(),
+      unit_amount: Math.round((product.price || 0) * 100),
+    };
+    if (product.type === 'membership') priceData.recurring = { interval: 'month' };
+    const price = await stripe.prices.create(priceData);
+    product.stripeProductId = sp.id;
+    product.stripePriceId   = price.id;
+    saveDB(db);
+    res.json({ ok: true, stripeProductId: sp.id, stripePriceId: price.id });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Stripe: crear precio para pack de ambiente ──────────────────
+app.post('/api/admin/ambient/packs/:id/stripe-price', authMiddleware, async (req, res) => {
+  if (!stripe) return res.status(503).json({ error: 'Stripe no configurado' });
+  const pack = (db.ambientPacks || []).find(p => p.id === req.params.id);
+  if (!pack) return res.status(404).json({ error: 'Pack no encontrado' });
+  try {
+    const sp = await stripe.products.create({
+      name: pack.title,
+      description: pack.description || undefined,
+    });
+    const price = await stripe.prices.create({
+      product:     sp.id,
+      currency:    (pack.currency || 'eur').toLowerCase(),
+      unit_amount: Math.round((pack.price || 0) * 100),
+    });
+    pack.stripeProductId = sp.id;
+    pack.stripePriceId   = price.id;
+    saveDB(db);
+    res.json({ ok: true, stripeProductId: sp.id, stripePriceId: price.id });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Stripe: crear precio para plan de suscripción ──────────────
+app.post('/api/admin/ambient/plans/:id/stripe-price', authMiddleware, async (req, res) => {
+  if (!stripe) return res.status(503).json({ error: 'Stripe no configurado' });
+  const idx = (db.ambientPlans || []).findIndex(p => p.id === req.params.id);
+  if (idx < 0) return res.status(404).json({ error: 'Plan no encontrado' });
+  const plan = db.ambientPlans[idx];
+  try {
+    const sp = await stripe.products.create({ name: plan.title, description: plan.description || undefined });
+    const interval = plan.durationDays >= 300 ? 'year' : 'month';
+    const price = await stripe.prices.create({
+      product:     sp.id,
+      currency:    (plan.currency || 'eur').toLowerCase(),
+      unit_amount: Math.round((plan.price || 0) * 100),
+      recurring:   { interval },
+    });
+    db.ambientPlans[idx].stripeProductId = sp.id;
+    db.ambientPlans[idx].stripePriceId   = price.id;
+    saveDB(db);
+    res.json({ ok: true, stripeProductId: sp.id, stripePriceId: price.id });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ───────────────────────── USUARIOS & PLAYLISTS ─────────────────────────
@@ -2451,6 +2532,328 @@ app.get('/api/admin/analytics/events', authMiddleware, (req, res) => {
     page,
     items: evs.slice(page * limit, (page + 1) * limit),
   });
+});
+
+// ══════════════════════════════════════════════════════════════
+// STRIPE CHECKOUT & PAYMENTS
+// ══════════════════════════════════════════════════════════════
+
+// ── POST /api/user/checkout ─ crear sesión de pago ─────────────
+// type: 'product' | 'pack' | 'plan'
+// id:   id del producto/pack/plan
+app.post('/api/user/checkout', userAuth, async (req, res) => {
+  if (!stripe) return res.status(503).json({ error: 'Pagos no disponibles. Contacta con el administrador.' });
+  const { type, id } = req.body || {};
+  if (!type || !id) return res.status(400).json({ error: 'type e id son requeridos' });
+
+  try {
+    let priceId, mode, itemName, itemPrice;
+
+    if (type === 'product') {
+      const product = (db.products || []).find(p => p.id === id && p.active !== false);
+      if (!product) return res.status(404).json({ error: 'Producto no encontrado' });
+      if (!product.stripePriceId) return res.status(400).json({ error: 'Este producto aún no tiene precio Stripe configurado.' });
+      mode      = product.type === 'membership' ? 'subscription' : 'payment';
+      priceId   = product.stripePriceId;
+      itemName  = product.name;
+      itemPrice = product.price;
+
+    } else if (type === 'pack') {
+      const pack = (db.ambientPacks || []).find(p => p.id === id && p.active !== false);
+      if (!pack) return res.status(404).json({ error: 'Pack no encontrado' });
+      if (!pack.stripePriceId) return res.status(400).json({ error: 'Este pack aún no tiene precio Stripe configurado.' });
+      mode      = 'payment';
+      priceId   = pack.stripePriceId;
+      itemName  = pack.title;
+      itemPrice = pack.price;
+
+    } else if (type === 'plan') {
+      const plan = (db.ambientPlans || []).find(p => p.id === id && p.active !== false);
+      if (!plan) return res.status(404).json({ error: 'Plan no encontrado' });
+      if (!plan.stripePriceId) return res.status(400).json({ error: 'Este plan aún no tiene precio Stripe configurado.' });
+      mode      = 'subscription';
+      priceId   = plan.stripePriceId;
+      itemName  = plan.title;
+      itemPrice = plan.price;
+
+    } else {
+      return res.status(400).json({ error: 'Tipo no válido' });
+    }
+
+    const session = await stripe.checkout.sessions.create({
+      mode,
+      line_items: [{ price: priceId, quantity: 1 }],
+      customer_email: req.user.email,
+      metadata: { type, id, userId: req.user.userId, itemName: String(itemName).slice(0, 100) },
+      success_url: `${SITE_URL}/?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url:  `${SITE_URL}/?checkout=cancel`,
+      locale: 'es',
+      ...(mode === 'payment' ? { payment_intent_data: { metadata: { type, id, userId: req.user.userId } } } : {}),
+    });
+
+    res.json({ url: session.url, sessionId: session.id });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── GET /api/user/orders ─ historial de compras ─────────────────
+app.get('/api/user/orders', userAuth, (req, res) => {
+  const orders = (db.orders || [])
+    .filter(o => o.userId === req.user.userId)
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    .map(o => {
+      // Resolve item name
+      let itemName = o.itemName || o.itemId || '—';
+      if (o.type === 'product') {
+        const p = (db.products    || []).find(x => x.id === o.itemId);
+        if (p) itemName = p.name;
+      } else if (o.type === 'pack') {
+        const p = (db.ambientPacks  || []).find(x => x.id === o.itemId);
+        if (p) itemName = p.title;
+      } else if (o.type === 'plan') {
+        const p = (db.ambientPlans  || []).find(x => x.id === o.itemId);
+        if (p) itemName = p.title;
+      }
+      return { ...o, itemName };
+    });
+  res.json(orders);
+});
+
+// ── GET /api/download/:token ─ descarga segura ──────────────────
+app.get('/api/download/:token', (req, res) => {
+  const rec = (db.downloadTokens || []).find(t => t.token === req.params.token);
+  if (!rec) return res.status(404).json({ error: 'Enlace no encontrado o expirado' });
+  if (new Date(rec.expiresAt).getTime() < Date.now()) return res.status(410).json({ error: 'El enlace de descarga ha expirado' });
+  if (rec.used >= rec.maxUses) return res.status(410).json({ error: 'El enlace de descarga ya se usó el máximo de veces' });
+
+  const product = (db.products || []).find(p => p.id === rec.productId);
+  if (!product?.downloadUrl) return res.status(404).json({ error: 'Archivo no configurado' });
+
+  rec.used = (rec.used || 0) + 1;
+  saveDB(db);
+  res.redirect(product.downloadUrl);
+});
+
+// ── POST /api/stripe/webhook ─ evento de pago ──────────────────
+// El body llega como Buffer (raw) — NO pasar por express.json()
+app.post('/api/stripe/webhook', async (req, res) => {
+  if (!stripe || !STRIPE_WEBHOOK_SECRET) return res.status(503).json({ error: 'Stripe no configurado' });
+
+  let event;
+  try {
+    event = stripe.webhooks.constructEvent(req.body, req.headers['stripe-signature'], STRIPE_WEBHOOK_SECRET);
+  } catch (e) {
+    console.error('[Stripe webhook] Firma inválida:', e.message);
+    return res.status(400).send(`Webhook Error: ${e.message}`);
+  }
+
+  console.log('[Stripe webhook]', event.type);
+
+  try {
+    // ── Pago único / inicio de suscripción ────────────────────
+    if (event.type === 'checkout.session.completed') {
+      const session = event.data.object;
+      const { type, id, userId, itemName } = session.metadata || {};
+      if (!userId || !type || !id) { res.json({ received: true }); return; }
+
+      const user = (db.users || []).find(u => u.id === userId);
+      if (!user) { res.json({ received: true }); return; }
+
+      // Idempotencia: evitar doble procesado
+      if ((db.orders || []).find(o => o.stripeSessionId === session.id)) {
+        res.json({ received: true }); return;
+      }
+
+      if (!db.orders) db.orders = [];
+      const orderId = uid();
+      const now     = new Date().toISOString();
+      const order   = {
+        id:                   orderId,
+        userId,
+        email:                session.customer_email || user.email,
+        type,
+        itemId:               id,
+        itemName:             itemName || id,
+        amount:               session.amount_total   || 0,
+        currency:             session.currency        || 'eur',
+        stripeSessionId:      session.id,
+        stripePaymentIntent:  session.payment_intent  || null,
+        stripeSubscriptionId: session.subscription    || null,
+        status:               'paid',
+        createdAt:            now,
+      };
+
+      // ── Dar acceso pack/plan ─────────────────────────────────
+      if (type === 'pack') {
+        if (!db.ambientAccess) db.ambientAccess = [];
+        // No añadir si ya tiene acceso a este pack
+        const alreadyHas = db.ambientAccess.some(a => a.userId === userId && a.type === 'pack' && a.packId === id);
+        if (!alreadyHas) {
+          db.ambientAccess.push({
+            id: uid(), userId, email: user.email,
+            type: 'pack', packId: id, planId: null,
+            grantedAt: now, expiresAt: null,
+            note: `Pago Stripe #${orderId}`,
+          });
+        }
+
+      } else if (type === 'plan') {
+        const plan = (db.ambientPlans || []).find(p => p.id === id);
+        const days = plan?.durationDays || 30;
+        const expiresAt = new Date(Date.now() + days * 86400000).toISOString();
+        if (!db.ambientAccess) db.ambientAccess = [];
+        db.ambientAccess.push({
+          id: uid(), userId, email: user.email,
+          type: 'subscription', packId: null, planId: id,
+          grantedAt: now, expiresAt,
+          note: `Pago Stripe #${orderId}`,
+        });
+
+      } else if (type === 'product') {
+        // Generar token de descarga (válido 7 días, 5 usos)
+        const product = (db.products || []).find(p => p.id === id);
+        if (product?.downloadUrl) {
+          const token = crypto.randomBytes(32).toString('hex');
+          if (!db.downloadTokens) db.downloadTokens = [];
+          db.downloadTokens.push({
+            id: uid(), token, orderId,
+            productId: id, userId,
+            expiresAt: new Date(Date.now() + 7 * 86400000).toISOString(),
+            used: 0, maxUses: 5,
+            createdAt: now,
+          });
+          order.downloadToken = token;
+        }
+      }
+
+      db.orders.push(order);
+      saveDB(db);
+      console.log(`[Stripe] Orden creada: ${orderId} (${type}/${id}) para ${user.email}`);
+    }
+
+    // ── Renovación de suscripción ────────────────────────────
+    else if (event.type === 'invoice.payment_succeeded') {
+      const invoice = event.data.object;
+      if (invoice.billing_reason !== 'subscription_cycle') { res.json({ received: true }); return; }
+      const sub     = invoice.subscription;
+      const cus     = invoice.customer;
+      if (!sub) { res.json({ received: true }); return; }
+
+      // Encontrar acceso activo de este customer y extenderlo
+      const stripeCustomer = await stripe.customers.retrieve(cus);
+      const userId = stripeCustomer?.metadata?.userId;
+      if (userId) {
+        // Renovar la fecha de expiración del acceso
+        const access = (db.ambientAccess || []).find(a =>
+          a.userId === userId && a.type === 'subscription' && a.stripeSubscriptionId === sub
+        );
+        if (access) {
+          const plan = (db.ambientPlans || []).find(p => p.id === access.planId);
+          const days = plan?.durationDays || 30;
+          access.expiresAt = new Date(Date.now() + days * 86400000).toISOString();
+          access.lastRenewedAt = new Date().toISOString();
+          // Registrar el abono
+          const user = (db.users || []).find(u => u.id === userId);
+          if (!db.orders) db.orders = [];
+          db.orders.push({
+            id:                   uid(),
+            userId,
+            email:                user?.email || '',
+            type:                 'plan',
+            itemId:               access.planId,
+            itemName:             plan?.title || access.planId,
+            amount:               invoice.amount_paid || 0,
+            currency:             invoice.currency || 'eur',
+            stripeSubscriptionId: sub,
+            stripeInvoiceId:      invoice.id,
+            status:               'paid',
+            note:                 'Renovación automática',
+            createdAt:            new Date().toISOString(),
+          });
+          saveDB(db);
+        }
+      }
+    }
+
+    // ── Cancelación de suscripción ───────────────────────────
+    else if (event.type === 'customer.subscription.deleted') {
+      const sub = event.data.object;
+      const cus = sub.customer;
+      try {
+        const stripeCustomer = await stripe.customers.retrieve(cus);
+        const userId = stripeCustomer?.metadata?.userId;
+        if (userId && db.ambientAccess) {
+          // Revocar acceso de suscripción (marcar con expiresAt = now)
+          const access = db.ambientAccess.find(a =>
+            a.userId === userId && a.type === 'subscription' && (!a.expiresAt || new Date(a.expiresAt) > new Date())
+          );
+          if (access) {
+            access.expiresAt    = new Date().toISOString();
+            access.cancelledAt  = new Date().toISOString();
+            access.note         = (access.note || '') + ' | Cancelada desde Stripe';
+            saveDB(db);
+            console.log(`[Stripe] Suscripción cancelada para userId=${userId}`);
+          }
+        }
+      } catch (e) { console.error('[Stripe] Error procesando cancelación:', e.message); }
+    }
+
+    // ── Reembolso ────────────────────────────────────────────
+    else if (event.type === 'charge.refunded') {
+      const charge = event.data.object;
+      const pi = charge.payment_intent;
+      if (pi && db.orders) {
+        const order = db.orders.find(o => o.stripePaymentIntent === pi);
+        if (order) {
+          order.status    = 'refunded';
+          order.refundedAt = new Date().toISOString();
+          // Revocar acceso si era pack
+          if (order.type === 'pack' && db.ambientAccess) {
+            db.ambientAccess = db.ambientAccess.filter(a =>
+              !(a.userId === order.userId && a.type === 'pack' && a.packId === order.itemId)
+            );
+          }
+          // Invalidar token de descarga
+          if (order.downloadToken && db.downloadTokens) {
+            const tok = db.downloadTokens.find(t => t.token === order.downloadToken);
+            if (tok) tok.maxUses = 0;
+          }
+          saveDB(db);
+          console.log(`[Stripe] Reembolso procesado para orden ${order.id}`);
+        }
+      }
+    }
+  } catch (e) {
+    console.error('[Stripe webhook] Error procesando evento:', e.message);
+  }
+
+  res.json({ received: true });
+});
+
+// ── GET /api/admin/orders ─ todos los pedidos (admin) ──────────
+app.get('/api/admin/orders', authMiddleware, (req, res) => {
+  const orders = (db.orders || [])
+    .slice()
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    .map(o => {
+      let itemName = o.itemName || o.itemId || '—';
+      if (!o.itemName) {
+        if (o.type === 'product') { const p = (db.products   || []).find(x => x.id === o.itemId); if (p) itemName = p.name; }
+        if (o.type === 'pack')    { const p = (db.ambientPacks|| []).find(x => x.id === o.itemId); if (p) itemName = p.title; }
+        if (o.type === 'plan')    { const p = (db.ambientPlans|| []).find(x => x.id === o.itemId); if (p) itemName = p.title; }
+      }
+      return { ...o, itemName };
+    });
+  res.json(orders);
+});
+
+// ── GET /api/admin/stripe/status ─ check Stripe config ─────────
+app.get('/api/admin/stripe/status', authMiddleware, async (req, res) => {
+  if (!stripe) return res.json({ configured: false, liveMode: false, message: 'STRIPE_SECRET_KEY no configurada' });
+  try {
+    const bal = await stripe.balance.retrieve();
+    const liveMode = !STRIPE_SECRET.startsWith('sk_test_');
+    res.json({ configured: true, liveMode, currency: bal.available?.[0]?.currency || 'eur', message: liveMode ? 'Live mode activo' : 'Test mode activo' });
+  } catch (e) { res.json({ configured: false, liveMode: false, message: e.message }); }
 });
 
 app.listen(PORT, () => console.log('Backend escuchando en :' + PORT));

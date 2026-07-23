@@ -1,5 +1,7 @@
 'use strict';
 
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
 // ── AUTH STATE ────────────────────────────────────────────────────
 let AUTH = { token: null, user: null };
 
@@ -328,8 +330,16 @@ document.addEventListener('DOMContentLoaded', () => {
   const sections = document.querySelectorAll('section[id]');
   const navLinks = document.querySelectorAll('.nav-links a[data-section]');
 
+  // El Master Player va fijo justo debajo de la navbar (su altura varía al hacer scroll)
+  function syncMasterTop() {
+    if (navbar) document.documentElement.style.setProperty('--master-top', navbar.offsetHeight + 'px');
+  }
+  syncMasterTop();
+  window.addEventListener('resize', syncMasterTop, { passive: true });
+
   window.addEventListener('scroll', () => {
     navbar.classList.toggle('scrolled', window.scrollY > 60);
+    syncMasterTop();
     let current = '';
     sections.forEach(s => { if (window.scrollY >= s.offsetTop - 120) current = s.id; });
     navLinks.forEach(a => a.classList.toggle('active', a.dataset.section === current));
@@ -427,7 +437,6 @@ document.addEventListener('DOMContentLoaded', () => {
     deezer:{l:'Deezer',c:'ptag-dz',i:'fas fa-music'},distrokid:{l:'Link',c:'ptag-lk',i:'fas fa-link'}
   };
   const GRADS = ['linear-gradient(135deg,#1a0a2e,#4c1d95)','linear-gradient(135deg,#0f0520,#3b0764)','linear-gradient(135deg,#071424,#0c2d54)','linear-gradient(135deg,#200820,#451540)','linear-gradient(135deg,#0a1a08,#1a3510)','linear-gradient(135deg,#1a1008,#352a08)'];
-  function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 
   // ── TRACKS + FILTROS DINÁMICOS ────────────────────────────────────
   let allTracks      = [];
@@ -592,7 +601,7 @@ document.addEventListener('DOMContentLoaded', () => {
       // Can this track be played in radio?
       const canPlay = !!(t.youtubeId || t.scUrl || t.spotifyUrl || t.platforms?.spotify);
       const playBtn = canPlay
-        ? `<button class="btn-play-radio" onclick="RADIO_PLAYER.addAndPlay(${esc(JSON.stringify({...t, _gridIdx: i}))});document.getElementById('radio').scrollIntoView({behavior:'smooth'})" title="Reproducir en Radio"><i class="fas fa-play"></i> Escuchar</button>`
+        ? `<button class="btn-play-radio" onclick="masterPlayTrackByTitle('${esc(t.title).replace(/'/g,"\\'")}')" title="Reproducir arriba"><i class="fas fa-play"></i> Escuchar</button>`
         : '';
 
       return `
@@ -686,9 +695,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!_tsTrack) return;
     const t = _tsTrack;
     window.closeTrackSheet();
-    if (window.RADIO_PLAYER?.skip !== undefined) {
-      document.getElementById('radio')?.scrollIntoView({behavior:'smooth'});
-    }
+    masterPlayTrackByTitle(t.title);
   };
 
   window.tsAddToList = async function(plId) {
@@ -878,13 +885,14 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   window.selectVideo = function(videoId, title, desc) {
-    setMainVideo({videoId, title, desc});
     // Actualizar highlight en grid
     document.querySelectorAll('.yt-card').forEach(c => {
       c.classList.toggle('yt-card-active', c.dataset.videoid === videoId);
     });
-    // Scroll al video principal
-    document.getElementById('youtube')?.scrollIntoView({behavior:'smooth', block:'start'});
+    // Reproducir arriba, en el Master Player (sin saltos de página)
+    const idx = miniPlaylist.findIndex(v => v.videoId === videoId);
+    if (idx !== -1) miniPlayVideo(idx);
+    else setMainVideo({videoId, title, desc});
   };
 
   function setMainVideo(video) {
@@ -923,137 +931,133 @@ document.addEventListener('DOMContentLoaded', () => {
     }).join('');
   }
 
-  // ── MINI PLAYER FLOTANTE ─────────────────────────────────────────
+  // ── MASTER PLAYER (fusiona radio SoundCloud + videos YouTube) ────
   let miniPlaylist = [];
   let miniCurrentIdx = 0;
-  let miniVisible = true;
-  let miniMinimized = false;
-  let activeUserPlaylist = null;
+  let activeEngine = null; // 'radio' | 'video'
 
   function miniPlayerSetPlaylist(videos) {
     miniPlaylist = videos;
     miniRenderQueue();
   }
 
-  function createMiniPlayer() {
-    if (document.getElementById('mini-player')) return;
-    const mp = document.createElement('div');
-    mp.id = 'mini-player';
-    mp.innerHTML = `
-      <div id="mini-player-bar">
-        <div id="mini-info">
-          <img id="mini-thumb" src="" alt="">
-          <div id="mini-meta">
-            <div id="mini-title">RAYVER Radio</div>
-            <div id="mini-sub">Selecciona un video</div>
-          </div>
-        </div>
-        <div id="mini-controls">
-          <button onclick="miniPrev()" title="Anterior"><i class="fas fa-step-backward"></i></button>
-          <button id="mini-play-btn" onclick="miniTogglePlay()" title="Play/Pausa"><i class="fas fa-play" id="mini-play-icon"></i></button>
-          <button onclick="miniNext()" title="Siguiente"><i class="fas fa-step-forward"></i></button>
-        </div>
-        <div id="mini-actions">
-          <button onclick="miniToggleQueue()" title="Cola" id="mini-queue-btn"><i class="fas fa-list"></i></button>
-          <button onclick="miniTogglePlaylists()" title="Mis listas" id="mini-pl-btn"><i class="fas fa-heart"></i></button>
-          <button onclick="miniToggleMinimize()" title="Minimizar" id="mini-min-btn"><i class="fas fa-chevron-up"></i></button>
-          <button onclick="miniClose()" title="Cerrar"><i class="fas fa-times"></i></button>
-        </div>
-      </div>
-      <div id="mini-yt-wrap" style="display:none">
-        <iframe id="mini-yt-iframe" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
-      </div>
-      <div id="mini-panel" style="display:none">
-        <div id="mini-panel-tabs">
-          <button class="mini-tab active" onclick="miniSwitchTab('queue')">Cola</button>
-          <button class="mini-tab" onclick="miniSwitchTab('playlists')">Mis listas</button>
-        </div>
-        <div id="mini-tab-queue" class="mini-tab-content">
-          <div id="mini-queue-list"></div>
-        </div>
-        <div id="mini-tab-playlists" class="mini-tab-content" style="display:none">
-          <div id="mini-pl-actions">
-            <button onclick="miniCreatePlaylist()" class="mini-pl-new"><i class="fas fa-plus"></i> Nueva lista</button>
-          </div>
-          <div id="mini-pl-list"></div>
-        </div>
-      </div>
-    `;
-    document.body.appendChild(mp);
-    miniRenderQueue();
-    miniRenderPlaylists();
+  function updateEngineWraps() {
+    const radioWrap = document.getElementById('master-radio-wrap');
+    const ytWrap = document.getElementById('mini-yt-wrap');
+    if (radioWrap) radioWrap.style.display = activeEngine === 'radio' ? '' : 'none';
+    if (ytWrap) ytWrap.style.display = activeEngine === 'video' ? '' : 'none';
   }
 
-  let miniPanelOpen = false;
-  let miniActiveTab = 'queue';
-
-  window.miniToggleQueue = function() {
-    miniActiveTab = 'queue';
-    miniPanelOpen = !miniPanelOpen || miniActiveTab !== 'queue';
-    miniPanelOpen = true;
-    updateMiniPanel();
-  };
-
-  window.miniTogglePlaylists = function() {
-    miniActiveTab = 'playlists';
-    miniPanelOpen = true;
-    updateMiniPanel();
-  };
-
-  function updateMiniPanel() {
-    const panel = document.getElementById('mini-panel');
-    if (!panel) return;
-    panel.style.display = miniPanelOpen ? '' : 'none';
-    miniSwitchTab(miniActiveTab);
+  function setActiveEngine(mode) {
+    activeEngine = mode;
+    updateEngineWraps();
+    const mp = document.getElementById('master-player');
+    if (mp) mp.style.display = '';
   }
+
+  // Mientras suena la radio (SC widget), el bar compacto refleja radio-title/cover
+  function mirrorRadioToBar() {
+    if (activeEngine !== 'radio') return;
+    const t = document.getElementById('master-title');
+    const s = document.getElementById('master-sub');
+    const th = document.getElementById('master-thumb');
+    const titleTxt = document.getElementById('radio-title')?.textContent;
+    const artistTxt = document.getElementById('radio-artist')?.textContent;
+    const coverSrc = document.getElementById('radio-cover')?.src;
+    if (t && titleTxt) t.textContent = titleTxt;
+    if (s && artistTxt) s.textContent = artistTxt;
+    if (th && coverSrc) th.src = coverSrc;
+  }
+  function mirrorRadioPlayIcon() {
+    if (activeEngine !== 'radio') return;
+    const ic = document.getElementById('master-play-icon');
+    const src = document.getElementById('radio-play-icon');
+    if (ic && src) ic.className = src.className.includes('fa-pause') ? 'fas fa-pause' : 'fas fa-play';
+  }
+  ['radio-title','radio-artist'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) new MutationObserver(mirrorRadioToBar).observe(el, { childList: true, characterData: true, subtree: true });
+  });
+  const _radioCoverEl = document.getElementById('radio-cover');
+  if (_radioCoverEl) new MutationObserver(mirrorRadioToBar).observe(_radioCoverEl, { attributes: true, attributeFilter: ['src'] });
+  const _radioPlayIcoEl = document.getElementById('radio-play-icon');
+  if (_radioPlayIcoEl) new MutationObserver(mirrorRadioPlayIcon).observe(_radioPlayIcoEl, { attributes: true, attributeFilter: ['class'] });
+
+  // Clic en una fila de la playlist de Radio → activa el motor radio en el Master Player
+  document.getElementById('radio-tracklist-body')?.addEventListener('click', e => {
+    if (e.target.closest('.radio-track-item')) setActiveEngine('radio');
+  });
+
+  window.masterPlayTrackByTitle = function(title) {
+    setActiveEngine('radio');
+    const ok = window.RADIO_PLAYER?.playByTitle ? window.RADIO_PLAYER.playByTitle(title) : false;
+    if (!ok) showToastGlobal('Esta canción no está en la Radio todavía — escúchala en Spotify/SoundCloud');
+  };
+
+  window.masterPlayVideoId = function(videoId) {
+    const idx = miniPlaylist.findIndex(v => v.videoId === videoId);
+    if (idx !== -1) miniPlayVideo(idx);
+  };
+
+  let masterExpanded = false;
+  function setMasterExpanded(v) {
+    masterExpanded = v;
+    const body = document.getElementById('master-body');
+    if (body) body.style.display = v ? '' : 'none';
+    const icon = document.querySelector('#master-expand-btn i');
+    if (icon) icon.className = v ? 'fas fa-chevron-up' : 'fas fa-chevron-down';
+  }
+  window.masterToggleExpand = function() { setMasterExpanded(!masterExpanded); };
+
+  window.masterOpenTab = function(tab) {
+    setMasterExpanded(true);
+    miniSwitchTab(tab);
+  };
+
+  window.masterTogglePlay = function() {
+    if (activeEngine === 'radio') { document.getElementById('radio-play')?.click(); return; }
+    miniTogglePlay();
+  };
+  window.masterPrev = function() {
+    if (activeEngine === 'radio') { document.getElementById('radio-prev')?.click(); return; }
+    miniPrev();
+  };
+  window.masterNext = function() {
+    if (activeEngine === 'radio') { document.getElementById('radio-next')?.click(); return; }
+    miniNext();
+  };
 
   window.miniSwitchTab = function(tab) {
-    miniActiveTab = tab;
-    document.querySelectorAll('.mini-tab').forEach(t => t.classList.toggle('active', t.textContent.toLowerCase().includes(tab==='queue'?'cola':'lista')));
-    document.getElementById('mini-tab-queue').style.display = tab==='queue'?'':'none';
-    document.getElementById('mini-tab-playlists').style.display = tab==='playlists'?'':'none';
-    if (tab==='playlists') miniRenderPlaylists();
+    document.querySelectorAll('.mini-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+    document.getElementById('mini-tab-search').style.display    = tab === 'search'    ? '' : 'none';
+    document.getElementById('mini-tab-queue').style.display     = tab === 'queue'     ? '' : 'none';
+    document.getElementById('mini-tab-playlists').style.display = tab === 'playlists' ? '' : 'none';
+    if (tab === 'playlists') miniRenderPlaylists();
+    if (tab === 'search') { renderMasterSearchResults(); document.getElementById('master-search-input')?.focus(); }
   };
 
-  window.miniToggleMinimize = function() {
-    miniMinimized = !miniMinimized;
-    const mp = document.getElementById('mini-player');
-    if (!mp) return;
-    mp.classList.toggle('mini-minimized', miniMinimized);
-    const icon = document.getElementById('mini-min-btn')?.querySelector('i');
-    if (icon) icon.className = miniMinimized ? 'fas fa-chevron-down' : 'fas fa-chevron-up';
-    if (miniMinimized) {
-      const panel = document.getElementById('mini-panel');
-      const wrap  = document.getElementById('mini-yt-wrap');
-      if (panel) panel.style.display = 'none';
-      if (wrap)  wrap.style.display  = 'none';
-      miniPanelOpen = false;
-    }
-  };
-
-  window.miniClose = function() {
-    const mp = document.getElementById('mini-player');
-    if (mp) { mp.style.display = 'none'; miniVisible = false; }
-    const ytWrap = document.getElementById('mini-yt-wrap');
-    if (ytWrap) ytWrap.style.display = 'none';
+  window.masterClose = function() {
+    const mp = document.getElementById('master-player');
+    if (mp) mp.style.display = 'none';
     const iframe = document.getElementById('mini-yt-iframe');
     if (iframe) iframe.src = '';
+    if (window.RADIO_PLAYER?.pause) window.RADIO_PLAYER.pause();
   };
 
   let miniPlaying = false;
 
-  window.miniTogglePlay = function() {
+  function miniTogglePlay() {
     if (!miniPlaylist.length) return;
     if (!miniPlaying) {
       miniPlayVideo(miniCurrentIdx);
     } else {
       const iframe = document.getElementById('mini-yt-iframe');
       if (iframe) iframe.src = iframe.src.replace('autoplay=1','autoplay=0');
-      const icon = document.getElementById('mini-play-icon');
+      const icon = document.getElementById('master-play-icon');
       if (icon) icon.className = 'fas fa-play';
       miniPlaying = false;
     }
-  };
+  }
 
   function miniPlayVideo(idx) {
     if (!miniPlaylist.length) return;
@@ -1061,31 +1065,25 @@ document.addEventListener('DOMContentLoaded', () => {
     const v = miniPlaylist[miniCurrentIdx];
     if (!v) return;
 
-    // Mostrar iframe
-    const wrap = document.getElementById('mini-yt-wrap');
+    setActiveEngine('video');
+
     const iframe = document.getElementById('mini-yt-iframe');
-    if (wrap) { wrap.style.display = ''; }
     if (iframe) iframe.src = `https://www.youtube.com/embed/${v.videoId}?autoplay=1&rel=0`;
 
     // Update info
-    const thumb = document.getElementById('mini-thumb');
-    const titleEl = document.getElementById('mini-title');
-    const subEl = document.getElementById('mini-sub');
+    const thumb = document.getElementById('master-thumb');
+    const titleEl = document.getElementById('master-title');
+    const subEl = document.getElementById('master-sub');
     if (thumb) thumb.src = `https://img.youtube.com/vi/${v.videoId}/default.jpg`;
     if (titleEl) titleEl.textContent = v.title || v.videoId;
     if (subEl) subEl.textContent = 'RAYVER';
 
-    const icon = document.getElementById('mini-play-icon');
+    const icon = document.getElementById('master-play-icon');
     if (icon) icon.className = 'fas fa-pause';
     miniPlaying = true;
 
     // Pausar el radio SC si está sonando
     if (window.RADIO_PLAYER?.pause) window.RADIO_PLAYER.pause();
-
-    // Si el mini player está cerrado, reabrirlo
-    const mp = document.getElementById('mini-player');
-    if (mp) mp.style.display = '';
-    miniVisible = true;
 
     // Highlight en queue
     miniRenderQueue();
@@ -1212,17 +1210,73 @@ document.addEventListener('DOMContentLoaded', () => {
     pause: () => {
       const iframe = document.getElementById('mini-yt-iframe');
       if (iframe && iframe.src) iframe.src = iframe.src.replace('autoplay=1','autoplay=0');
-      const icon = document.getElementById('mini-play-icon');
+      const icon = document.getElementById('master-play-icon');
       if (icon) icon.className = 'fas fa-play';
       miniPlaying = false;
     },
     isPlaying: () => miniPlaying,
   };
 
+  // ── BÚSQUEDA UNIFICADA (tracks + videos) EN EL MASTER PLAYER ─────
+  let _searchResults = [];
+
+  function renderMasterSearchResults() {
+    const wrap = document.getElementById('master-search-results');
+    const input = document.getElementById('master-search-input');
+    if (!wrap) return;
+    const q = (input?.value || '').trim().toLowerCase();
+    let results = [];
+    allTracks.forEach(t => {
+      const hay = [t.title, t.artist, t.genre].filter(Boolean).join(' ').toLowerCase();
+      if (!q || hay.includes(q)) {
+        results.push({ kind: 'track', title: t.title, sub: [t.genre, t.type || 'Single'].filter(Boolean).join(' · '), cover: t.cover, ref: t });
+      }
+    });
+    allVideos.forEach(v => {
+      const hay = (v.title || v.videoId || '').toLowerCase();
+      if (!q || hay.includes(q)) {
+        results.push({ kind: 'video', title: v.title || v.videoId, sub: 'Video', cover: `https://img.youtube.com/vi/${v.videoId}/default.jpg`, ref: v });
+      }
+    });
+    if (!q) results = results.slice(0, 25);
+    _searchResults = results.slice(0, 60);
+    if (!_searchResults.length) { wrap.innerHTML = '<div class="master-search-empty">Sin resultados</div>'; return; }
+    wrap.innerHTML = _searchResults.map((r, i) => {
+      const img = r.cover ? `<img src="${esc(r.cover)}" alt="">` : `<span class="msi-fallback"><i class="fas fa-music"></i></span>`;
+      return `<div class="master-search-item" data-sidx="${i}">
+        ${img}
+        <div class="master-search-info">
+          <div class="master-search-title">${esc(r.title)}</div>
+          <div class="master-search-sub">${esc(r.sub)}</div>
+        </div>
+        <div class="master-search-actions">
+          <button class="msi-play" title="Reproducir"><i class="fas fa-play"></i></button>
+          <button class="msi-add" title="Añadir a lista"><i class="fas fa-plus"></i></button>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  document.getElementById('master-search-input')?.addEventListener('input', renderMasterSearchResults);
+  document.getElementById('master-search-results')?.addEventListener('click', e => {
+    const item = e.target.closest('.master-search-item');
+    if (!item) return;
+    const r = _searchResults[+item.dataset.sidx];
+    if (!r) return;
+    if (e.target.closest('.msi-play')) {
+      if (r.kind === 'track') masterPlayTrackByTitle(r.ref.title);
+      else masterPlayVideoId(r.ref.videoId);
+    } else if (e.target.closest('.msi-add')) {
+      if (r.kind === 'track') openTrackSheet(r.ref);
+      else addToPlaylist('video', r.ref.videoId, r.ref.title || r.ref.videoId, `https://img.youtube.com/vi/${r.ref.videoId}/default.jpg`, `https://www.youtube.com/watch?v=${r.ref.videoId}`);
+    }
+  });
+
   // ── INIT ─────────────────────────────────────────────────────────
   initAuth();
   updateAuthUI();
-  createMiniPlayer();
+  miniRenderQueue();
+  miniRenderPlaylists();
   loadTracks();
   loadVideos();
   loadBeats();

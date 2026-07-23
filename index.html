@@ -68,6 +68,114 @@
   </button>
 </nav>
 
+<!-- ═══════════════════════════════════════════════════════ MASTER PLAYER (fijo arriba) -->
+<div id="master-player">
+  <div id="master-bar">
+    <div id="master-info" onclick="masterToggleExpand()">
+      <img id="master-thumb" src="logo.jpg" alt="">
+      <div id="master-meta">
+        <div id="master-title">RAYVER</div>
+        <div id="master-sub">Elige algo para escuchar</div>
+      </div>
+    </div>
+    <div id="master-controls">
+      <button onclick="masterPrev()" title="Anterior" aria-label="Anterior"><i class="fas fa-step-backward"></i></button>
+      <button id="master-play-btn" onclick="masterTogglePlay()" title="Play / Pausa" aria-label="Play"><i class="fas fa-play" id="master-play-icon"></i></button>
+      <button onclick="masterNext()" title="Siguiente" aria-label="Siguiente"><i class="fas fa-step-forward"></i></button>
+    </div>
+    <div id="master-actions">
+      <button onclick="masterOpenTab('search')" title="Buscar" id="master-search-btn"><i class="fas fa-search"></i></button>
+      <button onclick="masterOpenTab('queue')" title="Cola" id="master-queue-btn"><i class="fas fa-list"></i></button>
+      <button onclick="masterOpenTab('playlists')" title="Mis listas" id="master-pl-btn"><i class="fas fa-heart"></i></button>
+      <button onclick="masterToggleExpand()" title="Expandir/minimizar" id="master-expand-btn"><i class="fas fa-chevron-down"></i></button>
+      <button onclick="masterClose()" title="Cerrar"><i class="fas fa-times"></i></button>
+    </div>
+  </div>
+
+  <div id="master-body" style="display:none">
+    <!-- Motor RADIO (SoundCloud) — relocado desde la sección Radio -->
+    <div id="master-radio-wrap" class="radio-player glass" style="display:none">
+      <div class="radio-onair-bar">
+        <span class="radio-onair-dot" id="radio-onair-dot"></span>
+        <span class="radio-onair-label">RAYVER RADIO</span>
+        <span class="radio-track-counter" id="radio-counter"></span>
+      </div>
+
+      <div class="radio-now-playing">
+        <div class="radio-cover-wrap">
+          <img id="radio-cover" src="logo.jpg" alt="Portada" class="radio-cover">
+          <div class="radio-cover-pulse" id="radio-cover-pulse"></div>
+        </div>
+        <div class="radio-meta">
+          <div id="radio-title" class="radio-track-title">Cargando playlist…</div>
+          <div id="radio-artist" class="radio-track-artist">RAYVER</div>
+          <div id="radio-genre" class="radio-track-genre"></div>
+          <div class="radio-platform-tags" id="radio-platform-tags"></div>
+        </div>
+      </div>
+
+      <div class="radio-progress-wrap">
+        <span id="radio-current-time" class="radio-time">0:00</span>
+        <div id="radio-progress" class="radio-progress" role="slider" aria-label="Progreso">
+          <div id="radio-progress-fill" class="radio-progress-fill"></div>
+        </div>
+        <span id="radio-duration" class="radio-time">0:00</span>
+      </div>
+
+      <div class="radio-controls">
+        <button id="radio-shuffle" class="radio-btn-sm" title="Shuffle" aria-label="Shuffle">
+          <i class="fas fa-random"></i>
+        </button>
+        <button id="radio-prev" class="radio-btn" title="Anterior" aria-label="Anterior">
+          <i class="fas fa-step-backward"></i>
+        </button>
+        <button id="radio-play" class="radio-btn-play" title="Play / Pausa" aria-label="Play">
+          <i class="fas fa-play" id="radio-play-icon"></i>
+        </button>
+        <button id="radio-next" class="radio-btn" title="Siguiente" aria-label="Siguiente">
+          <i class="fas fa-step-forward"></i>
+        </button>
+        <div class="radio-volume-wrap">
+          <button id="radio-mute" class="radio-btn-sm" aria-label="Silenciar"><i class="fas fa-volume-up" id="radio-vol-icon"></i></button>
+          <input id="radio-volume" type="range" min="0" max="100" value="80" class="radio-volume" aria-label="Volumen">
+        </div>
+      </div>
+
+      <!-- Audio element nativo (sin uso — motor real es el widget SC) -->
+      <audio id="radio-audio" preload="none" style="display:none"></audio>
+    </div>
+
+    <!-- Motor VIDEO (YouTube) -->
+    <div id="mini-yt-wrap" style="display:none">
+      <iframe id="mini-yt-iframe" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+    </div>
+
+    <div id="mini-panel">
+      <div id="mini-panel-tabs">
+        <button class="mini-tab active" data-tab="search" onclick="masterOpenTab('search')">Buscar</button>
+        <button class="mini-tab" data-tab="queue" onclick="masterOpenTab('queue')">Cola</button>
+        <button class="mini-tab" data-tab="playlists" onclick="masterOpenTab('playlists')">Mis listas</button>
+      </div>
+      <div id="mini-tab-search" class="mini-tab-content">
+        <div id="master-search-wrap">
+          <i class="fas fa-search master-search-icon"></i>
+          <input type="search" id="master-search-input" placeholder="Buscar canciones, videos, beats…" autocomplete="off">
+        </div>
+        <div id="master-search-results"></div>
+      </div>
+      <div id="mini-tab-queue" class="mini-tab-content" style="display:none">
+        <div id="mini-queue-list"></div>
+      </div>
+      <div id="mini-tab-playlists" class="mini-tab-content" style="display:none">
+        <div id="mini-pl-actions">
+          <button onclick="miniCreatePlaylist()" class="mini-pl-new"><i class="fas fa-plus"></i> Nueva lista</button>
+        </div>
+        <div id="mini-pl-list"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ═══════════════════════════════════════════════════════ AUTH MODAL -->
 <div class="modal-overlay" id="auth-modal" style="display:none" onclick="if(event.target===this)closeAuthModal()">
   <div class="modal-box glass">
@@ -197,57 +305,8 @@
     <p class="section-subtitle">Toda mi música en un player — sin parar</p>
   </div>
 
-  <div class="radio-wrap">
-    <div class="radio-player glass">
-      <div class="radio-onair-bar">
-        <span class="radio-onair-dot" id="radio-onair-dot"></span>
-        <span class="radio-onair-label">RAYVER RADIO</span>
-        <span class="radio-track-counter" id="radio-counter"></span>
-      </div>
-
-      <div class="radio-now-playing">
-        <div class="radio-cover-wrap">
-          <img id="radio-cover" src="logo.jpg" alt="Portada" class="radio-cover">
-          <div class="radio-cover-pulse" id="radio-cover-pulse"></div>
-        </div>
-        <div class="radio-meta">
-          <div id="radio-title" class="radio-track-title">Cargando playlist…</div>
-          <div id="radio-artist" class="radio-track-artist">RAYVER</div>
-          <div id="radio-genre" class="radio-track-genre"></div>
-          <div class="radio-platform-tags" id="radio-platform-tags"></div>
-        </div>
-      </div>
-
-      <div class="radio-progress-wrap">
-        <span id="radio-current-time" class="radio-time">0:00</span>
-        <div id="radio-progress" class="radio-progress" role="slider" aria-label="Progreso">
-          <div id="radio-progress-fill" class="radio-progress-fill"></div>
-        </div>
-        <span id="radio-duration" class="radio-time">0:00</span>
-      </div>
-
-      <div class="radio-controls">
-        <button id="radio-shuffle" class="radio-btn-sm" title="Shuffle" aria-label="Shuffle">
-          <i class="fas fa-random"></i>
-        </button>
-        <button id="radio-prev" class="radio-btn" title="Anterior" aria-label="Anterior">
-          <i class="fas fa-step-backward"></i>
-        </button>
-        <button id="radio-play" class="radio-btn-play" title="Play / Pausa" aria-label="Play">
-          <i class="fas fa-play" id="radio-play-icon"></i>
-        </button>
-        <button id="radio-next" class="radio-btn" title="Siguiente" aria-label="Siguiente">
-          <i class="fas fa-step-forward"></i>
-        </button>
-        <div class="radio-volume-wrap">
-          <button id="radio-mute" class="radio-btn-sm" aria-label="Silenciar"><i class="fas fa-volume-up" id="radio-vol-icon"></i></button>
-          <input id="radio-volume" type="range" min="0" max="100" value="80" class="radio-volume" aria-label="Volumen">
-        </div>
-      </div>
-
-      <!-- Audio element nativo — sin dependencia de SoundCloud -->
-      <audio id="radio-audio" preload="none"></audio>
-    </div>
+  <div class="radio-wrap radio-wrap-solo">
+    <p class="radio-hint"><i class="fas fa-arrow-up"></i> Se reproduce en el reproductor de arriba — toca una pista para empezar.</p>
 
     <!-- Tracklist -->
     <div class="radio-tracklist glass" id="radio-tracklist">

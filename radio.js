@@ -403,6 +403,15 @@
     },
     isPlaying: () => playing,
     getPlaylist: () => enriched,
+    playByTitle: title => {
+      if (!scSounds.length) return false;
+      const target = norm(title);
+      if (!target) return false;
+      const idx = scSounds.findIndex(s => norm(s.title) === target);
+      if (idx === -1) return false;
+      window.RADIO_PLAYER.skip(idx);
+      return true;
+    },
   };
   window.radioPlayIdx = idx => window.RADIO_PLAYER.skip(idx);
 

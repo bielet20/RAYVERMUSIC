@@ -1,5 +1,41 @@
 'use strict';
 
+// ── TEMA CLARO / OSCURO ───────────────────────────────────────────
+(function initTheme() {
+  const ICONS = { dark: '🌙', light: '☀️' };
+  const root  = document.documentElement;
+
+  function applyTheme(mode) {
+    if (mode === 'light') {
+      root.setAttribute('data-theme', 'light');
+    } else {
+      root.removeAttribute('data-theme');
+    }
+    localStorage.setItem('rm-theme', mode);
+    const btn = document.getElementById('theme-toggle');
+    if (btn) btn.textContent = mode === 'light' ? ICONS.dark : ICONS.light;
+  }
+
+  function autoTheme() {
+    const h = new Date().getHours();
+    return (h >= 6 && h < 20) ? 'light' : 'dark';
+  }
+
+  const saved   = localStorage.getItem('rm-theme');
+  const initial = saved || autoTheme();
+
+  document.addEventListener('DOMContentLoaded', () => {
+    const btn = document.getElementById('theme-toggle');
+    if (btn) {
+      btn.textContent = initial === 'light' ? ICONS.dark : ICONS.light;
+      btn.addEventListener('click', () => {
+        const current = root.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+        applyTheme(current === 'light' ? 'dark' : 'light');
+      });
+    }
+  });
+})();
+
 // ── UTILS (global scope — usadas tanto dentro como fuera de DOMContentLoaded) ──
 function esc(s) {
   return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');

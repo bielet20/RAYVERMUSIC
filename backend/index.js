@@ -1730,6 +1730,17 @@ if (!db.ambientPlans) {
   ];
   saveDB(db);
 }
+if (!db.ambientChannels) {
+  db.ambientChannels = [
+    { id: 'ch_chill',  name: 'Chill Lounge',  description: 'Relajación y vibras suaves',          style: 'chill',  icon: 'fa-cloud',      color: '#0ea5e9', trackIds: [], active: true, order: 0, createdAt: new Date().toISOString() },
+    { id: 'ch_focus',  name: 'Deep Focus',    description: 'Concentración y productividad',        style: 'focus',  icon: 'fa-brain',      color: '#8b5cf6', trackIds: [], active: true, order: 1, createdAt: new Date().toISOString() },
+    { id: 'ch_jazz',   name: 'Jazz & Soul',   description: 'Calidez y groove para tu espacio',    style: 'jazz',   icon: 'fa-music',      color: '#f59e0b', trackIds: [], active: true, order: 2, createdAt: new Date().toISOString() },
+    { id: 'ch_nature', name: 'Naturaleza',    description: 'Sonidos naturales y paisajes sonoros', style: 'nature', icon: 'fa-leaf',       color: '#10b981', trackIds: [], active: true, order: 3, createdAt: new Date().toISOString() },
+    { id: 'ch_lounge', name: 'Lounge & Cafés',description: 'Ambiente para locales y cafeterías',  style: 'lounge', icon: 'fa-coffee',     color: '#a855f7', trackIds: [], active: true, order: 4, createdAt: new Date().toISOString() },
+    { id: 'ch_deep',   name: 'Deep House',    description: 'Beats electrónicos profundos',         style: 'deep',   icon: 'fa-headphones', color: '#ec4899', trackIds: [], active: true, order: 5, createdAt: new Date().toISOString() },
+  ];
+  saveDB(db);
+}
 
 // Multer: audio (500MB) y covers (5MB)
 const _audioStorage = multer.diskStorage({
@@ -1784,6 +1795,19 @@ app.get('/api/public/ambient/plans', (req, res) => {
   res.json({ plans: (db.ambientPlans || []).filter(p => p.active !== false).sort((a, b) => (a.order ?? 999) - (b.order ?? 999)) });
 });
 
+app.get('/api/public/ambient/channels', (req, res) => {
+  const channels = (db.ambientChannels || [])
+    .filter(c => c.active !== false)
+    .sort((a, b) => (a.order ?? 999) - (b.order ?? 999))
+    .map(({ id, name, description, style, icon, color, cover, order, trackIds }) => ({
+      id, name, description: description || '', style: style || '',
+      icon: icon || 'fa-music', color: color || '#a855f7',
+      cover: cover || null, order: order ?? 999,
+      trackCount: (trackIds || []).length,
+    }));
+  res.json({ channels });
+});
+
 // ── USER: access check + stream ─────────────────────────────────
 app.get('/api/ambient/access', userAuth, (req, res) => {
   const now    = Date.now();
@@ -1791,6 +1815,23 @@ app.get('/api/ambient/access', userAuth, (req, res) => {
   const sub    = myAcc.find(a => a.type === 'subscription' && (!a.expiresAt || new Date(a.expiresAt).getTime() > now));
   const packs  = myAcc.filter(a => a.type === 'pack').map(a => a.packId);
   res.json({ hasSubscription: !!sub, subscription: sub || null, packs });
+});
+
+app.get('/api/ambient/channels/:id/tracks', userAuth, (req, res) => {
+  const ch = (db.ambientChannels || []).find(c => c.id === req.params.id && c.active !== false);
+  if (!ch) return res.status(404).json({ error: 'Canal no encontrado' });
+  const now = Date.now();
+  const access = (db.ambientAccess || []).filter(a => a.userId === req.user.userId);
+  const hasSub = access.some(a => a.type === 'subscription' && (!a.expiresAt || new Date(a.expiresAt).getTime() > now));
+  const packIds = new Set(access.filter(a => a.type === 'pack').map(a => a.packId));
+  const allTracks = db.ambientTracks || [];
+  const tracks = (ch.trackIds || [])
+    .map(tid => allTracks.find(t => t.id === tid && t.active !== false))
+    .filter(t => t && (hasSub || packIds.has(t.packId)))
+    .map(({ id, title, cover, tags, duration, packId }) => ({ id, title, cover: cover || null, tags: tags || [], duration: duration || 0, packId: packId || null }));
+  if (!tracks.length && !hasSub && !packIds.size)
+    return res.status(403).json({ error: 'Sin acceso a este canal', code: 'NO_ACCESS' });
+  res.json({ tracks, channelName: ch.name });
 });
 
 app.get('/api/ambient/stream/:id', userAuth, (req, res) => {
@@ -2327,6 +2368,50 @@ app.put('/api/admin/ambient/plans/:id', authMiddleware, (req, res) => {
   }
   saveDB(db);
   res.json({ ok: true });
+});
+
+// ── ADMIN: Canales ──────────────────────────────────────────────
+app.get('/api/admin/ambient/channels', authMiddleware, (req, res) => res.json({ channels: db.ambientChannels || [] }));
+
+app.post('/api/admin/ambient/channels', authMiddleware, (req, res) => {
+  const { name, description, style, icon, color, cover } = req.body || {};
+  if (!name) return res.status(400).json({ error: 'Nombre requerido' });
+  const ch = {
+    id: uid(), name, description: description || '', style: style || '',
+    icon: icon || 'fa-music', color: color || '#a855f7', cover: cover || null,
+    trackIds: [], active: true, order: (db.ambientChannels || []).length,
+    createdAt: new Date().toISOString(),
+  };
+  if (!db.ambientChannels) db.ambientChannels = [];
+  db.ambientChannels.push(ch);
+  saveDB(db);
+  res.json({ channel: ch });
+});
+
+app.put('/api/admin/ambient/channels/:id', authMiddleware, (req, res) => {
+  const idx = (db.ambientChannels || []).findIndex(c => c.id === req.params.id);
+  if (idx < 0) return res.status(404).json({ error: 'No encontrado' });
+  db.ambientChannels[idx] = { ...db.ambientChannels[idx], ...req.body, id: req.params.id };
+  saveDB(db);
+  res.json({ channel: db.ambientChannels[idx] });
+});
+
+app.delete('/api/admin/ambient/channels/:id', authMiddleware, (req, res) => {
+  if (!(db.ambientChannels || []).some(c => c.id === req.params.id))
+    return res.status(404).json({ error: 'No encontrado' });
+  db.ambientChannels = db.ambientChannels.filter(c => c.id !== req.params.id);
+  saveDB(db);
+  res.json({ ok: true });
+});
+
+app.put('/api/admin/ambient/channels/:id/tracks', authMiddleware, (req, res) => {
+  const ch = (db.ambientChannels || []).find(c => c.id === req.params.id);
+  if (!ch) return res.status(404).json({ error: 'No encontrado' });
+  const { trackIds } = req.body || {};
+  if (!Array.isArray(trackIds)) return res.status(400).json({ error: 'trackIds debe ser un array' });
+  ch.trackIds = trackIds.filter(id => (db.ambientTracks || []).some(t => t.id === id));
+  saveDB(db);
+  res.json({ ok: true, trackIds: ch.trackIds });
 });
 
 // ── ADMIN: Access management ────────────────────────────────────

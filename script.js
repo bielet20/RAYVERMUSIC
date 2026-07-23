@@ -1421,7 +1421,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // ══════════════════════════════════════════════════════════════
 // MÓDULO MÚSICA AMBIENTE (frontend público)
 // ══════════════════════════════════════════════════════════════
-let _ambData = { packs: [], plans: [], tracks: [], zones: [], access: null };
+let _ambData = { packs: [], plans: [], tracks: [], zones: [], channels: [], access: null };
 
 async function _ambFetch(path) {
   const tok = AUTH.token || getToken();
@@ -1432,16 +1432,18 @@ async function _ambFetch(path) {
 
 async function loadAmbient() {
   try {
-    const [p, pk, tr, zn] = await Promise.all([
+    const [p, pk, tr, zn, ch] = await Promise.all([
       _ambFetch('/public/ambient/plans'),
       _ambFetch('/public/ambient/packs'),
       _ambFetch('/public/ambient/tracks'),
       _ambFetch('/public/ambient/zones'),
+      _ambFetch('/public/ambient/channels'),
     ]);
-    _ambData.plans  = p.plans  || [];
-    _ambData.packs  = pk.packs || [];
-    _ambData.tracks = tr.tracks || [];
-    _ambData.zones  = (zn.zones || []).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    _ambData.plans    = p.plans    || [];
+    _ambData.packs    = pk.packs   || [];
+    _ambData.tracks   = tr.tracks  || [];
+    _ambData.zones    = (zn.zones  || []).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    _ambData.channels = ch.channels || [];
   } catch(e) { console.warn('[Ambient] load error', e); }
 
   // Check access if logged in
@@ -1456,6 +1458,7 @@ async function loadAmbient() {
   renderAmbientPlans();
   renderAmbientPacks();
   renderAmbientZoneTabs();
+  renderAmbientChannels();
   renderAmbientTracks();
   renderAmbientAccessBanner();
 }
@@ -1576,7 +1579,7 @@ function renderAmbientTabs() {
     </button>`
   ).join('');
   // Sync active class on fixed tabs
-  ['all','favs'].forEach(id => {
+  ['channels','all','favs'].forEach(id => {
     const btn = document.getElementById('ambtab-' + id);
     if (btn) btn.classList.toggle('active', _ambActiveTab === id);
   });
@@ -1585,7 +1588,20 @@ function renderAmbientTabs() {
 function ambSetTab(tab) {
   _ambActiveTab = tab;
   renderAmbientTabs();
-  renderAmbientTracks();
+  const channelsGrid = document.getElementById('ambient-channels-grid');
+  const trackList    = document.getElementById('ambient-track-list');
+  const zoneFilter   = document.getElementById('ambient-zone-filter');
+  if (tab === 'channels') {
+    if (channelsGrid) channelsGrid.style.display = '';
+    if (trackList)    trackList.style.display    = 'none';
+    if (zoneFilter)   zoneFilter.style.display   = 'none';
+    renderAmbientChannels();
+  } else {
+    if (channelsGrid) channelsGrid.style.display = 'none';
+    if (trackList)    trackList.style.display    = '';
+    renderAmbientZoneTabs();
+    renderAmbientTracks();
+  }
 }
 
 async function toggleAmbientFav(trackId, e) {
@@ -1679,6 +1695,96 @@ async function ambAddTrackToPlaylist(plId) {
   const pl = _ambUserPlaylists.find(p => p.id === plId);
   if (pl) pl.tracks = [...(pl.tracks || []), r.data];
   _ambPendingAddTrackId = null;
+}
+
+function renderAmbientChannels() {
+  const el = document.getElementById('ambient-channels-grid');
+  if (!el) return;
+  const channels = _ambData.channels || [];
+  if (!channels.length) {
+    el.innerHTML = `<div style="text-align:center;padding:40px;color:var(--muted)">No hay canales disponibles.</div>`;
+    return;
+  }
+  const hasAccess = _ambData.access?.hasSubscription || (_ambData.access?.packs || []).length > 0;
+  el.innerHTML = `
+    <div style="margin-bottom:12px;font-size:13px;color:var(--muted)">
+      <i class="fas fa-info-circle"></i> Selecciona un canal para escucharlo o añadirlo a una lista de reproducción.
+    </div>
+    <div class="amb-channels-grid">
+      ${channels.map(ch => {
+        const lockIcon = !AUTH.user || !hasAccess
+          ? `<span class="ch-lock"><i class="fas fa-lock"></i></span>` : '';
+        return `
+        <div class="amb-channel-card" style="--ch-color:${ch.color}" onclick="ambPlayChannel('${ch.id}','${ch.name.replace(/'/g,"\\'")}','${(ch.cover||'').replace(/'/g,"\\'")}')">
+          <div class="ch-bg"></div>
+          <div class="ch-icon"><i class="fas ${ch.icon || 'fa-music'}"></i></div>
+          <div class="ch-info">
+            <div class="ch-name">${ch.name}</div>
+            <div class="ch-desc">${ch.description || ''}</div>
+            <div class="ch-count">${ch.trackCount} track${ch.trackCount !== 1 ? 's' : ''}</div>
+          </div>
+          ${lockIcon}
+          <div class="ch-actions" onclick="event.stopPropagation()">
+            <button class="ch-btn ch-btn-play" title="Escuchar canal" onclick="ambPlayChannel('${ch.id}','${ch.name.replace(/'/g,"\\'")}','${(ch.cover||'').replace(/'/g,"\\'")}')">
+              <i class="fas fa-play"></i>
+            </button>
+            <button class="ch-btn ch-btn-add" title="Añadir a lista" onclick="ambAddChannelToPlaylist('${ch.id}','${ch.name.replace(/'/g,"\\'")}','${(ch.cover||'').replace(/'/g,"\\'")}')">
+              <i class="fas fa-list-ul"></i>
+            </button>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>`;
+}
+
+function ambPlayChannel(chId, name, cover) {
+  if (!AUTH.user) { openAuthModal(); return; }
+  if (typeof window.loadSharedPlaylist === 'function') {
+    window.loadSharedPlaylist(name, [{ type: 'channel', itemId: chId, title: name, cover: cover || null }]);
+  }
+}
+
+let _ambPendingChannelId = null;
+let _ambPendingChannelName = null;
+let _ambPendingChannelCover = null;
+
+function ambAddChannelToPlaylist(chId, name, cover) {
+  if (!AUTH.user) { openAuthModal(); return; }
+  _ambPendingChannelId    = chId;
+  _ambPendingChannelName  = name;
+  _ambPendingChannelCover = cover || null;
+  _ambPendingAddTrackId   = null;
+  const listEl = document.getElementById('amb-playlist-picker-list');
+  const userPls = _ambUserPlaylists.filter(p => p.name !== '__favs__');
+  if (!listEl) return;
+  listEl.innerHTML = userPls.length
+    ? userPls.map(p =>
+        `<button class="btn btn-sm" style="width:100%;text-align:left;justify-content:flex-start" onclick="ambConfirmAddChannelToPlaylist('${p.id}')">
+          <i class="fas fa-broadcast-tower" style="color:var(--primary-2);margin-right:8px"></i>${esc(p.name)}
+        </button>`
+      ).join('')
+    : `<div style="color:var(--muted);font-size:13px;text-align:center;padding:16px 0">No tienes listas aún.<br>
+        <button class="btn btn-primary btn-sm" style="margin-top:10px" onclick="document.getElementById('amb-add-to-playlist-modal').style.display='none';ambNewPlaylistModal()">
+          <i class="fas fa-plus"></i> Crear lista
+        </button></div>`;
+  document.getElementById('amb-add-to-playlist-modal').style.display = 'flex';
+}
+
+async function ambConfirmAddChannelToPlaylist(plId) {
+  document.getElementById('amb-add-to-playlist-modal').style.display = 'none';
+  if (!_ambPendingChannelId) return;
+  const r = await apiUser(`/playlists/${plId}/tracks`, {
+    method: 'POST',
+    body: JSON.stringify({ type: 'channel', itemId: _ambPendingChannelId, title: _ambPendingChannelName, cover: _ambPendingChannelCover || '' }),
+  });
+  if (r.ok) {
+    toast(`"${_ambPendingChannelName}" añadido a la lista`, 'success');
+    const pl = _ambUserPlaylists.find(p => p.id === plId);
+    if (pl) pl.tracks = [...(pl.tracks || []), r.data];
+  } else {
+    toast(r.data?.error || 'Error al añadir canal', 'error');
+  }
+  _ambPendingChannelId = null;
 }
 
 function renderAmbientTracks() {

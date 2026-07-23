@@ -906,12 +906,78 @@
     }, 500);
   }
 
+  function _playChannelTrack(idx) {
+    if (!_activeChannelId) return;
+    if (idx >= _channelTracks.length) {
+      // Loop the channel
+      idx = 0;
+    }
+    _channelTrackIdx = idx;
+    const track = _channelTracks[idx];
+    if (!track) { _activeChannelId = null; return; }
+
+    if (titleEl)  titleEl.textContent  = track.title || 'Canal';
+    if (artistEl) artistEl.textContent = `Canal · ${idx + 1}/${_channelTracks.length}`;
+    if (coverEl) {
+      if (track.cover) { coverEl.src = track.cover; coverEl.style.display = ''; }
+      else { coverEl.style.display = 'none'; }
+    }
+
+    const token = window.getToken?.();
+    if (!token) { if (artistEl) artistEl.textContent = 'Inicia sesión para escuchar'; return; }
+
+    ambientAudioActive = true;
+    if (artistEl) artistEl.textContent = 'Cargando…';
+
+    fetch(`/api/ambient/stream/${encodeURIComponent(track.id)}`, {
+      headers: { 'Authorization': 'Bearer ' + token }
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (!ambientAudioActive || !_activeChannelId) return;
+        if (data.type === 'audio' && data.streamUrl) {
+          if (!audioEl) return;
+          audioEl.src    = data.streamUrl;
+          audioEl.volume = muted ? 0 : vol() / 100;
+          audioEl.play()
+            .then(() => {
+              customPlaylistStarted = true;
+              userPlayed            = true;
+              setPlaying(true);
+              _startAmbientProgress();
+              if (artistEl) artistEl.textContent = `Canal · ${idx + 1}/${_channelTracks.length}`;
+            })
+            .catch(err => {
+              ambientAudioActive = false;
+              console.warn('[Channel] play error:', err);
+              _playChannelTrack(idx + 1 < _channelTracks.length ? idx + 1 : 0);
+            });
+        } else {
+          // Skip unsupported format
+          const next = idx + 1 < _channelTracks.length ? idx + 1 : 0;
+          if (next === 0 && idx === 0) { ambientAudioActive = false; return; } // avoid infinite loop
+          _playChannelTrack(next);
+        }
+      })
+      .catch(() => {
+        ambientAudioActive = false;
+        if (artistEl) artistEl.textContent = 'Error de conexión';
+      });
+  }
+
   // Bind native audioEl events for ambient playback
   if (audioEl) {
     audioEl.addEventListener('play',  () => { if (ambientAudioActive) setPlaying(true);  });
     audioEl.addEventListener('pause', () => { if (ambientAudioActive) setPlaying(false); });
     audioEl.addEventListener('ended', () => {
       if (!ambientAudioActive) return;
+      if (_activeChannelId) {
+        // Channel mode: advance within channel tracks
+        _stopAmbientAudio();
+        setPlaying(false);
+        _playChannelTrack(_channelTrackIdx + 1);
+        return;
+      }
       _stopAmbientAudio();
       setPlaying(false);
       if (activeRadioPlaylist !== null) {
@@ -1480,6 +1546,9 @@
       window.playCustomTrack(0);
       document.getElementById('radio')?.scrollIntoView({ behavior: 'smooth' });
     },
+    loadChannel: (id, name, cover) => {
+      window.loadSharedPlaylist?.(name, [{ type: 'channel', itemId: id, title: name, cover: cover || null }]);
+    },
   };
   window.radioPlayIdx = idx => window.RADIO_PLAYER.skip(idx);
 
@@ -1578,6 +1647,9 @@
   // ── PLAYLIST SELECTOR ────────────────────────────────────────────
   let activeRadioPlaylist = null; // null o '__default__' = RAYVER Radio; id = lista de usuario
   let customTrackList = [];
+  let _activeChannelId  = null;
+  let _channelTracks    = [];
+  let _channelTrackIdx  = 0;
   let rplDropOpen = false;
   let upPlDropOpen = false;
   let defaultRadioTracks = []; // lista curada desde el admin
@@ -1799,18 +1871,23 @@
     listBody.innerHTML = tracks.map((t, i) => {
       const isVideo   = t.type === 'video';
       const isAmbient = t.type === 'ambient';
+      const isChannel = t.type === 'channel';
       const vid = t.itemId || '';
       const coverHtml = isVideo
         ? `<img class="rtitem-cover" src="https://img.youtube.com/vi/${esc(vid)}/default.jpg" alt="" onerror="this.style.display='none'">`
         : t.cover
           ? `<img class="rtitem-cover" src="${esc(t.cover)}" alt="" onerror="this.style.display='none'">`
-          : `<span class="rtitem-cover rtitem-cover-grad" style="background:${GRADS[i%GRADS.length]}">${esc((t.title||'?')[0].toUpperCase())}</span>`;
+          : isChannel
+            ? `<span class="rtitem-cover rtitem-cover-grad" style="background:linear-gradient(135deg,#a855f7,#6366f1)"><i class="fas fa-broadcast-tower" style="font-size:14px"></i></span>`
+            : `<span class="rtitem-cover rtitem-cover-grad" style="background:${GRADS[i%GRADS.length]}">${esc((t.title||'?')[0].toUpperCase())}</span>`;
       const badge = isVideo
         ? `<span class="rtitem-plat-badge" style="color:#ff4444"><i class="fab fa-youtube"></i></span>`
         : isAmbient
           ? `<span class="rtitem-plat-badge" style="color:#4ade80"><i class="fas fa-leaf"></i></span>`
-          : `<span class="rtitem-plat-badge ptag-soundcloud"><i class="fab fa-soundcloud"></i></span>`;
-      const subLabel = isVideo ? 'YouTube' : isAmbient ? 'Ambiente' : 'SoundCloud';
+          : isChannel
+            ? `<span class="rtitem-plat-badge" style="color:#a855f7"><i class="fas fa-broadcast-tower"></i></span>`
+            : `<span class="rtitem-plat-badge ptag-soundcloud"><i class="fab fa-soundcloud"></i></span>`;
+      const subLabel = isVideo ? 'YouTube' : isAmbient ? 'Ambiente' : isChannel ? 'Canal' : 'SoundCloud';
       return `
         <div class="radio-track-item${i === customCurrentIdx ? ' active' : ''}" draggable="true" data-ridx="${i}" onclick="window.playCustomTrack(${i})">
           <span class="rtitem-drag-handle" title="Arrastrar"><i class="fas fa-grip-lines"></i></span>
@@ -1879,6 +1956,8 @@
   window.playCustomTrack = function(idx) {
     const t = customTrackList[idx];
     if (!t) return;
+    // Reset channel state when navigating away from a channel item
+    if (t.type !== 'channel') { _activeChannelId = null; _channelTracks = []; }
     _wdProgress = null;  // reset watchdog immediately so previous SC position can't trigger skip
     customCurrentIdx = idx;
     // Cancelar cualquier fade en curso si el usuario cambió manualmente
@@ -1956,6 +2035,44 @@
             ambientAudioActive = false;
             if (artistEl) artistEl.textContent = data.error;
           }
+        })
+        .catch(() => {
+          ambientAudioActive = false;
+          if (artistEl) artistEl.textContent = 'Error de conexión';
+        });
+      return;
+    }
+
+    if (t.type === 'channel') {
+      iframe.style.height = '0px';
+      stopYoutube();
+      stopCrossfade();
+      if (widgetRdy) widget.pause();
+
+      const token = window.getToken?.();
+      if (!token) {
+        if (artistEl) artistEl.textContent = 'Inicia sesión para escuchar';
+        return;
+      }
+
+      ambientAudioActive = true;
+      if (artistEl) artistEl.textContent = 'Cargando canal…';
+
+      fetch(`/api/ambient/channels/${encodeURIComponent(t.itemId || t.id)}/tracks`, {
+        headers: { 'Authorization': 'Bearer ' + token }
+      })
+        .then(r => r.json())
+        .then(data => {
+          if (!ambientAudioActive) return;
+          if (data.error || !data.tracks?.length) {
+            ambientAudioActive = false;
+            if (artistEl) artistEl.textContent = data.error || 'Canal sin tracks accesibles';
+            return;
+          }
+          _activeChannelId = t.itemId || t.id;
+          _channelTracks   = data.tracks;
+          _channelTrackIdx = 0;
+          _playChannelTrack(0);
         })
         .catch(() => {
           ambientAudioActive = false;

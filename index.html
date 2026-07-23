@@ -20,7 +20,7 @@
 <meta name="twitter:image" content="https://rayvermusic.com/hero_bg.png">
 <link rel="preload" href="hero_bg.png" as="image">
 <script>(function(){var h=new Date().getHours();var t=localStorage.getItem('rm-theme')||(h>=6&&h<20?'light':'dark');if(t==='light')document.documentElement.setAttribute('data-theme','light');}());</script>
-<link rel="stylesheet" href="styles.css?v=9">
+<link rel="stylesheet" href="styles.css?v=10">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Orbitron:wght@400;600;700;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <script async src="https://plausible.io/js/pa-ax8pbKKZr_jYIfg8t1P28.js"></script>
@@ -434,7 +434,11 @@
   </div>
 
   <!-- Tabs de filtrado (solo usuarios con acceso) -->
+  <!-- Canales (visible to all) -->
+  <div id="ambient-channels-grid" style="display:none;margin-bottom:32px"></div>
+
   <div id="ambient-tabs" style="display:none;gap:8px;margin-bottom:20px;flex-wrap:wrap;align-items:center">
+    <button id="ambtab-channels" class="amb-tab" onclick="ambSetTab('channels')"><i class="fas fa-broadcast-tower"></i> Canales</button>
     <button id="ambtab-all" class="amb-tab active" onclick="ambSetTab('all')"><i class="fas fa-music"></i> Todos</button>
     <button id="ambtab-favs" class="amb-tab" onclick="ambSetTab('favs')"><i class="fas fa-heart"></i> Favoritas</button>
     <div id="ambtab-playlists" style="display:contents"></div>
@@ -670,8 +674,8 @@
 </footer>
 
 <script src="tracker.js?v=2" defer></script>
-<script src="script.js?v=24"></script>
-<script src="radio.js?v=31"></script>
+<script src="script.js?v=25"></script>
+<script src="radio.js?v=32"></script>
 <!-- PWA: botón flotante de instalación (oculto por defecto, se muestra solo si el navegador soporta instalar) -->
 <div id="pwa-install-wrap" style="display:none;position:fixed;bottom:90px;right:20px;z-index:9999;flex-direction:column;align-items:flex-end;gap:8px;">
   <div style="background:rgba(15,5,30,.9);color:#d8b4fe;font-size:12px;border-radius:8px;padding:7px 12px;

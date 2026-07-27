@@ -1476,7 +1476,8 @@ function ambFilterByZone(zoneId) {
 function renderAmbientZoneTabs() {
   const el = document.getElementById('ambient-zone-filter');
   if (!el) return;
-  if (!_ambData.zones.length) { el.style.display = 'none'; return; }
+  const hasAccess = _ambData.access?.hasSubscription || (_ambData.access?.packs || []).length > 0;
+  if (!hasAccess || !_ambData.zones.length) { el.style.display = 'none'; return; }
   el.style.display = 'flex';
   el.innerHTML = _ambData.zones.map(z =>
     `<button class="amb-zone-filter-btn" data-zid="${z.id}" onclick="ambFilterByZone('${z.id}')"
@@ -1729,6 +1730,25 @@ function renderAmbientTracks() {
   const hasSub   = _ambData.access?.hasSubscription;
   const myPacks  = _ambData.access?.packs || [];
   const hasAccess = hasSub || myPacks.length > 0;
+  const ctaEl = document.getElementById('ambient-cta-login');
+
+  if (!hasAccess) {
+    el.innerHTML = '';
+    if (ctaEl) {
+      ctaEl.style.display = '';
+      ctaEl.innerHTML = AUTH.user
+        ? `<i class="fas fa-lock" style="font-size:32px;color:var(--ambient-accent);margin-bottom:12px;display:block"></i>
+           <div style="font-size:1.1rem;font-weight:700;margin-bottom:8px">Necesitas un plan o pack activo</div>
+           <p style="color:var(--muted);font-size:14px;margin-bottom:20px">Elige un plan arriba para desbloquear toda la biblioteca.</p>
+           <button class="btn btn-primary" onclick="document.getElementById('ambient-plans-wrap').scrollIntoView({behavior:'smooth'})"><i class="fas fa-star"></i> Ver planes</button>`
+        : `<i class="fas fa-lock" style="font-size:32px;color:var(--ambient-accent);margin-bottom:12px;display:block"></i>
+           <div style="font-size:1.1rem;font-weight:700;margin-bottom:8px">Acceso exclusivo</div>
+           <p style="color:var(--muted);font-size:14px;margin-bottom:20px">Inicia sesión para activar tu plan y acceder a la biblioteca.</p>
+           <button class="btn btn-primary" onclick="openAuthModal()"><i class="fas fa-user"></i> Iniciar sesión</button>`;
+    }
+    return;
+  }
+  if (ctaEl) ctaEl.style.display = 'none';
 
   let tracks = _ambActivePackFilter
     ? _ambData.tracks.filter(t => t.packId === _ambActivePackFilter)
@@ -1790,10 +1810,6 @@ function renderAmbientTracks() {
       </div>
     </div>`;
   }).join('');
-
-  // Show CTA if not logged in
-  const ctaEl = document.getElementById('ambient-cta-login');
-  if (ctaEl) ctaEl.style.display = AUTH.user ? 'none' : '';
 }
 
 function renderAmbientAccessBanner() {

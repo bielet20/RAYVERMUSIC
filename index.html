@@ -89,7 +89,6 @@
     <li><a href="#music" data-section="music">Música</a></li>
     <li><a href="#youtube" data-section="youtube">Videos</a></li>
     <li><a href="#ambient" data-section="ambient"><i class="fas fa-leaf"></i> Ambiente</a></li>
-    <li style="display:none"><a href="#beats" data-section="beats"><i class="fas fa-tag"></i> Beats</a></li>
     <li><a href="#about" data-section="about">Sobre Mí</a></li>
     <li><a href="#contact" data-section="contact">Contacto</a></li>
     <li class="nav-mobile-auth" style="display:none"></li>
@@ -416,16 +415,16 @@
 <!-- ══════════════════════════════════════════════ MÚSICA AMBIENTE -->
 <section id="ambient" class="section ambient-section">
   <div class="section-header">
-    <div class="section-eyebrow"><i class="fas fa-leaf"></i> Experiencia</div>
+    <div class="section-eyebrow"><i class="fas fa-leaf"></i> Para negocios</div>
     <h2 class="section-title">Música <span class="gradient-text">Ambiente</span></h2>
-    <p class="section-desc">Paisajes sonoros inmersivos para concentración, meditación y descanso.</p>
+    <p class="section-desc">Paisajes sonoros con licencia para locales, oficinas y estudios: concentración, meditación y descanso, sin preocuparte por derechos de reproducción. Elige un plan y activa el acceso al instante.</p>
   </div>
 
-  <!-- Planes (ocultos hasta activar Stripe) -->
-  <div id="ambient-plans-wrap" style="display:none"></div>
+  <!-- Planes: precios visibles siempre que existan con precio Stripe -->
+  <div id="ambient-plans-wrap"></div>
 
-  <!-- Packs (ocultos hasta activar Stripe) -->
-  <div id="ambient-packs-wrap" style="display:none"></div>
+  <!-- Packs: precios visibles siempre que existan con precio Stripe -->
+  <div id="ambient-packs-wrap"></div>
 
   <!-- Access status (logged in) -->
   <div id="ambient-access-banner" style="display:none;background:linear-gradient(135deg,rgba(52,211,153,.1),rgba(168,85,247,.1));border:1px solid rgba(52,211,153,.3);border-radius:16px;padding:16px 24px;text-align:center;margin-bottom:24px">
@@ -524,69 +523,6 @@
   </div>
 </div>
 
-<!-- ═══════════════════════════════════════════════════════ BEATS -->
-<section id="beats" class="section beats-section" style="display:none">
-  <div class="section-header">
-    <div class="section-eyebrow">Producción</div>
-    <h2 class="section-title">Beats & <span>Licencias</span></h2>
-    <p class="section-subtitle">Adquiere derechos sobre mis producciones para tu proyecto</p>
-  </div>
-
-  <div class="beats-filter" id="beats-filter">
-    <button class="filter-btn active" data-genre="all">Todos</button>
-    <button class="filter-btn" data-genre="trance">Trance</button>
-    <button class="filter-btn" data-genre="electronica">Electrónica</button>
-    <button class="filter-btn" data-genre="orquestal">Orquestal</button>
-    <button class="filter-btn" data-genre="pop">Pop / Balada</button>
-  </div>
-
-  <div class="beats-grid" id="beats-grid">
-    <!-- Cargado desde API o fallback estático -->
-  </div>
-
-  <div class="license-grid">
-    <div class="license-card glass">
-      <div class="license-name">BÁSICA</div>
-      <div class="license-price">49€</div>
-      <ul class="license-features">
-        <li class="ok">MP3 320 kbps</li>
-        <li class="ok">YouTube &amp; redes sociales</li>
-        <li class="ok">Hasta 100.000 streams</li>
-        <li class="ok">Crédito al productor</li>
-        <li class="no">WAV / Stems</li>
-        <li class="no">Uso comercial amplio</li>
-      </ul>
-      <a href="#contact" class="btn btn-outline btn-block" onclick="setMotivo('Licencia Básica (49€)')">Contratar</a>
-    </div>
-    <div class="license-card glass license-featured">
-      <div class="license-badge">MÁS POPULAR</div>
-      <div class="license-name">PREMIUM</div>
-      <div class="license-price">149€</div>
-      <ul class="license-features">
-        <li class="ok">WAV sin comprimir</li>
-        <li class="ok">Stems separados</li>
-        <li class="ok">Streams ilimitados</li>
-        <li class="ok">Uso comercial completo</li>
-        <li class="ok">Radio y TV local</li>
-        <li class="no">Derechos exclusivos</li>
-      </ul>
-      <a href="#contact" class="btn btn-primary btn-block" onclick="setMotivo('Licencia Premium (149€)')">Contratar</a>
-    </div>
-    <div class="license-card glass">
-      <div class="license-name">EXCLUSIVA</div>
-      <div class="license-price">Consultar</div>
-      <ul class="license-features">
-        <li class="ok">Derechos exclusivos totales</li>
-        <li class="ok">WAV + Stems + Proyecto DAW</li>
-        <li class="ok">Sync: cine, TV, publicidad</li>
-        <li class="ok">Beat retirado del catálogo</li>
-        <li class="ok">Streams ilimitados</li>
-        <li class="ok">Sesión de producción incluida</li>
-      </ul>
-      <a href="#contact" class="btn btn-outline btn-block" onclick="setMotivo('Licencia Exclusiva (consultar precio)')">Consultar precio</a>
-    </div>
-  </div>
-</section>
 
 <!-- ═══════════════════════════════════════════════════════ SOBRE MÍ -->
 <section id="about" class="section about-section">
@@ -638,7 +574,6 @@
       <div class="form-group">
         <label>Motivo</label>
         <select name="Motivo" id="motivo">
-          <option value="Licencia de beat">🎵 Licencia de beat</option>
           <option value="Sync / Publicidad">🎬 Sync / Publicidad</option>
           <option value="Booking / Actuación">🎤 Booking / Actuación</option>
           <option value="Colaboración musical">🤝 Colaboración musical</option>

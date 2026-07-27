@@ -759,31 +759,11 @@ document.addEventListener('DOMContentLoaded', () => {
   })();
 
   // ── SCROLL REVEAL ────────────────────────────────────────────────
-  document.querySelectorAll('.glass,.track-card,.beat-card,.license-card,.platform-card-link,.yt-card').forEach(el => el.classList.add('reveal'));
+  document.querySelectorAll('.glass,.track-card,.platform-card-link,.yt-card').forEach(el => el.classList.add('reveal'));
   const revealObs = new IntersectionObserver(entries => {
     entries.forEach(e => { if(e.isIntersecting){e.target.classList.add('visible');revealObs.unobserve(e.target);} });
   }, {threshold:0.08});
   document.querySelectorAll('.reveal').forEach(el => revealObs.observe(el));
-
-  // ── BEATS FILTER ─────────────────────────────────────────────────
-  document.querySelectorAll('.filter-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      const genre = btn.dataset.genre;
-      document.querySelectorAll('.beat-card').forEach(card => {
-        const show = genre === 'all' || card.dataset.genre === genre;
-        card.style.display = show ? '' : 'none';
-      });
-    });
-  });
-
-  // ── CONTACT MOTIVO ───────────────────────────────────────────────
-  window.setMotivo = function(val) {
-    const el = document.getElementById('motivo');
-    if (!el) return;
-    Array.from(el.options).forEach(o => { if(o.value===val||o.text.includes(val)) el.value=o.value; });
-  };
 
   // ── API ──────────────────────────────────────────────────────────
   const API = '/api/public';
@@ -1327,31 +1307,6 @@ document.addEventListener('DOMContentLoaded', () => {
   // Compatibilidad con código interno que llama setMainVideo (solo metadatos ya)
   function setMainVideo(video) { _setVideoMeta(video); }
 
-  // ── BEATS ────────────────────────────────────────────────────────
-  async function loadBeats() {
-    const products = await apiGet('/products');
-    const grid = document.getElementById('beats-grid');
-    if (!grid) return;
-    const beats = (products||[]).filter(p=>p.type==='product');
-    if (!beats.length) {
-      grid.innerHTML = `
-        <div class="beat-card" data-genre="trance"><div class="beat-cover beat-trance"><span class="beat-genre-tag">Trance</span>🎹</div><div class="beat-body"><div class="beat-title">Feel It In The Air</div><div class="beat-meta">138 BPM · Am</div><div class="beat-footer"><span class="beat-price">desde <strong>49€</strong></span><a href="#contact" class="beats-btn" onclick="setMotivo('Licencia de beat — Feel It In The Air')">Licenciar</a></div></div></div>
-        <div class="beat-card" data-genre="electronica"><div class="beat-cover beat-electronic"><span class="beat-genre-tag">Electrónica</span>🎛️</div><div class="beat-body"><div class="beat-title">Summum</div><div class="beat-meta">124 BPM · Gm</div><div class="beat-footer"><span class="beat-price">desde <strong>49€</strong></span><a href="#contact" class="beats-btn" onclick="setMotivo('Licencia de beat — Summum')">Licenciar</a></div></div></div>
-        <div class="beat-card" data-genre="trance"><div class="beat-cover beat-trance2"><span class="beat-genre-tag">Trance</span>🎵</div><div class="beat-body"><div class="beat-title">Shine Together</div><div class="beat-meta">130 BPM · Em</div><div class="beat-footer"><span class="beat-price">desde <strong>49€</strong></span><a href="#contact" class="beats-btn" onclick="setMotivo('Licencia de beat — Shine Together')">Licenciar</a></div></div></div>
-        <div class="beat-card" data-genre="orquestal"><div class="beat-cover beat-orquestal"><span class="beat-genre-tag">Orquestal</span>🎻</div><div class="beat-body"><div class="beat-title">Eternal Frequencies</div><div class="beat-meta">120 BPM · Dm</div><div class="beat-footer"><span class="beat-price">desde <strong>49€</strong></span><a href="#contact" class="beats-btn" onclick="setMotivo('Licencia de beat — Eternal Frequencies')">Licenciar</a></div></div></div>
-        <div class="beat-card" data-genre="orquestal"><div class="beat-cover beat-orquestal2"><span class="beat-genre-tag">Orquestal</span>🎼</div><div class="beat-body"><div class="beat-title">Classic Essence</div><div class="beat-meta">80 BPM · Fm</div><div class="beat-footer"><span class="beat-price">desde <strong>69€</strong></span><a href="#contact" class="beats-btn" onclick="setMotivo('Licencia de beat — Classic Essence')">Licenciar</a></div></div></div>
-        <div class="beat-card" data-genre="pop"><div class="beat-cover beat-pop"><span class="beat-genre-tag">Pop</span>🎤</div><div class="beat-body"><div class="beat-title">Vuelven las Emociones</div><div class="beat-meta">118 BPM · C</div><div class="beat-footer"><span class="beat-price">desde <strong>39€</strong></span><a href="#contact" class="beats-btn" onclick="setMotivo('Licencia de beat — Vuelven las Emociones')">Licenciar</a></div></div></div>`;
-      return;
-    }
-    const EMOJIS=['🎹','🎛️','🎵','🎻','🎼','🎤','⚡','🌙'];
-    const COVERS=['beat-trance','beat-electronic','beat-orquestal','beat-trance2','beat-electronic2','beat-pop'];
-    grid.innerHTML = beats.map((p,i)=>{
-      const price = p.price?`desde <strong>${p.price}€</strong>`:'Consultar';
-      return `<div class="beat-card" data-genre="${esc(p.genre||'electronica')}"><div class="beat-cover ${COVERS[i%COVERS.length]}"><span class="beat-genre-tag">${esc(p.category||'Beat')}</span>${p.emoji||EMOJIS[i%EMOJIS.length]}</div><div class="beat-body"><div class="beat-title">${esc(p.name)}</div><div class="beat-meta">${esc(p.description||'')}</div><div class="beat-footer"><span class="beat-price">${price}</span><a href="#contact" class="beats-btn" onclick="setMotivo('Licencia de beat — ${esc(p.name)}')">Licenciar</a></div><button class="btn-add-playlist" onclick="addToPlaylist('beat','${esc(p.id)}','${esc(p.name)}','','')" style="margin-top:8px"><i class="fas fa-plus"></i> Mi lista</button></div></div>`;
-    }).join('');
-  }
-
-
   // ── GÉNEROS DINÁMICOS ─────────────────────────────────────────────
   async function loadGenres() {
     const genres = await apiGet('/genres');
@@ -1361,22 +1316,6 @@ document.addEventListener('DOMContentLoaded', () => {
       trackGenres = genres.map(g => g.name);
       populateGenreFilters();
     }
-
-    // Filtros de la sección beats
-    const filterEl = document.getElementById('beats-filter');
-    if (!filterEl || !genres?.length) return;
-    filterEl.innerHTML = `<button class="filter-btn active" data-genre="all">Todos</button>` +
-      genres.map(g => `<button class="filter-btn" data-genre="${esc(g.slug)}">${esc(g.name)}</button>`).join('');
-    filterEl.querySelectorAll('.filter-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        filterEl.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        const genre = btn.dataset.genre;
-        document.querySelectorAll('.beat-card').forEach(card => {
-          card.style.display = genre === 'all' || card.dataset.genre === genre ? '' : 'none';
-        });
-      });
-    });
   }
 
   // ── TOAST (alias para el global) ─────────────────────────────────
@@ -1387,7 +1326,6 @@ document.addEventListener('DOMContentLoaded', () => {
   updateAuthUI();
   loadTracks();
   loadVideos();
-  loadBeats();
   loadGenres();
   loadAmbient();
 
@@ -1471,8 +1409,8 @@ function _fmtDuration(sec) {
 }
 
 function renderAmbientPlans() {
-  // Hidden until Stripe is active
-  return;
+  const el = document.getElementById('ambient-plans-wrap');
+  if (!el || !_ambData.plans.length) { if (el) el.style.display = 'none'; return; }
   el.innerHTML = _ambData.plans.map(p => {
     const featured = p.badge;
     return `<div class="ambient-plan-card${featured ? ' featured' : ''}">
@@ -1489,9 +1427,6 @@ function renderAmbientPlans() {
 }
 
 function renderAmbientPacks() {
-  // Hidden until Stripe is active — element stays display:none set in HTML
-  return;
-  // eslint-disable-next-line no-unreachable
   const el = document.getElementById('ambient-packs-wrap');
   if (!el || !_ambData.packs.length) { if (el) el.style.display = 'none'; return; }
   el.innerHTML = _ambData.packs.map(p => {
@@ -1976,14 +1911,6 @@ async function ambRequestPack(packId, packTitle, price, currency) {
   if (!AUTH.user) { openAuthModal('login'); return; }
   showToastGlobal('Preparando el pago…');
   const r = await apiUser('/checkout', { method: 'POST', body: JSON.stringify({ type: 'pack', id: packId }) });
-  if (r.ok && r.data?.url) { window.location.href = r.data.url; }
-  else showToastGlobal(r.data?.error || 'Error al iniciar el pago. Inténtalo de nuevo.', 'error');
-}
-
-async function buyProduct(productId) {
-  if (!AUTH.user) { openAuthModal('login'); return; }
-  showToastGlobal('Preparando el pago…');
-  const r = await apiUser('/checkout', { method: 'POST', body: JSON.stringify({ type: 'product', id: productId }) });
   if (r.ok && r.data?.url) { window.location.href = r.data.url; }
   else showToastGlobal(r.data?.error || 'Error al iniciar el pago. Inténtalo de nuevo.', 'error');
 }

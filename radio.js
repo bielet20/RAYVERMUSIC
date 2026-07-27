@@ -53,6 +53,12 @@
   // ── AMBIENT AUDIO STATE ──────────────────────────────────────────
   let ambientAudioActive = false;  // true cuando el track actual es de Ambiente
   let ambProgressTimer   = null;   // intervalo para barra de progreso de Ambiente
+  // Clearing audioEl.src to '' (done when switching tracks) fires an async 'error'
+  // event on the element. Without this flag that stale error lands after the NEXT
+  // track has already set ambientAudioActive=true and gets misread as a failure of
+  // the new track, triggering showUnavailable()'s auto-skip — which repeats the same
+  // src='' reset on the following track, cascading into a skip-loop across the list.
+  let _ambSuppressNextError = false;
 
   // ── BACKGROUND TAB KEEP-ALIVE ────────────────────────────────────
   // Runs a near-silent oscillator in an AudioContext so the browser never
@@ -887,7 +893,10 @@
   function _stopAmbientAudio() {
     ambientAudioActive = false;
     _stopAmbientProgress();
-    if (audioEl) { audioEl.pause(); audioEl.src = ''; }
+    if (audioEl) {
+      audioEl.pause();
+      if (audioEl.src) { _ambSuppressNextError = true; audioEl.src = ''; }
+    }
   }
 
   function _startAmbientProgress() {
@@ -935,9 +944,12 @@
       .then(r => r.json())
       .then(data => {
         if (!ambientAudioActive || !_activeChannelId) return;
-        if (data.type === 'audio' && data.streamUrl) {
+        const audioUrl = data.type === 'audio' ? data.streamUrl
+                        : (data.type === 'file' || data.type === 'url') ? data.url
+                        : null;
+        if (audioUrl) {
           if (!audioEl) return;
-          audioEl.src    = data.streamUrl;
+          audioEl.src    = audioUrl;
           audioEl.volume = muted ? 0 : vol() / 100;
           audioEl.play()
             .then(() => {
@@ -993,6 +1005,7 @@
       }
     });
     audioEl.addEventListener('error', () => {
+      if (_ambSuppressNextError) { _ambSuppressNextError = false; return; }
       if (!ambientAudioActive) return;
       _stopAmbientAudio();
       setPlaying(false);
@@ -2000,10 +2013,13 @@
         .then(r => r.json())
         .then(data => {
           if (!ambientAudioActive) return; // track changed while fetching
-          if (data.type === 'audio' && data.streamUrl) {
+          const audioUrl = data.type === 'audio' ? data.streamUrl
+                          : (data.type === 'file' || data.type === 'url') ? data.url
+                          : null;
+          if (audioUrl) {
             // Native audio — full player control
             if (!audioEl) return;
-            audioEl.src  = data.streamUrl;
+            audioEl.src  = audioUrl;
             audioEl.volume = muted ? 0 : vol() / 100;
             audioEl.play()
               .then(() => {
@@ -2031,9 +2047,13 @@
             customPlaylistStarted = true;
             userPlayed = true;
             if (artistEl) artistEl.textContent = 'Ambiente';
-          } else if (data.error) {
+          } else {
+            // data.error, or an unrecognized/unsupported type (e.g. 'platform')
+            // that this bottom-bar player can't embed — surface it instead of
+            // hanging on "Cargando…" forever.
             ambientAudioActive = false;
-            if (artistEl) artistEl.textContent = data.error;
+            setPlaying(false);
+            if (artistEl) artistEl.textContent = data.error || 'Formato no soportado aquí';
           }
         })
         .catch(() => {

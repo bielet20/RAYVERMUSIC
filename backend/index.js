@@ -1702,7 +1702,8 @@ const mm     = require('music-metadata');
 const AMBIENT_DIR        = path.join(DATA_DIR, 'ambient');
 const AMBIENT_TRACKS_DIR = path.join(AMBIENT_DIR, 'tracks');
 const AMBIENT_COVERS_DIR = path.join(AMBIENT_DIR, 'covers');
-[AMBIENT_DIR, AMBIENT_TRACKS_DIR, AMBIENT_COVERS_DIR].forEach(d => {
+const MUSIC_DIR          = path.join(DATA_DIR, 'music');
+[AMBIENT_DIR, AMBIENT_TRACKS_DIR, AMBIENT_COVERS_DIR, MUSIC_DIR].forEach(d => {
   if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
 });
 
@@ -1751,8 +1752,17 @@ const _coverStorage = multer.diskStorage({
   destination: AMBIENT_COVERS_DIR,
   filename: (req, file, cb) => cb(null, Date.now() + '_' + file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_')),
 });
+const _musicStorage = multer.diskStorage({
+  destination: MUSIC_DIR,
+  filename: (req, file, cb) => {
+    const trackId = req.params?.trackId || req.body?.trackId || 'unknown';
+    const ext = path.extname(file.originalname) || '.mp3';
+    cb(null, trackId + ext);
+  },
+});
 const uploadAudio = multer({ storage: _audioStorage, limits: { fileSize: 500 * 1024 * 1024 } });
 const uploadCover = multer({ storage: _coverStorage, limits: { fileSize: 10  * 1024 * 1024 } });
+const uploadMusic = multer({ storage: _musicStorage, limits: { fileSize: 500 * 1024 * 1024 } });
 
 // ── Helper: check user ambient access ──────────────────────────
 function checkAmbientAccess(userId, packId) {
@@ -2939,6 +2949,186 @@ app.get('/api/admin/stripe/status', authMiddleware, async (req, res) => {
     const liveMode = !STRIPE_SECRET.startsWith('sk_test_');
     res.json({ configured: true, liveMode, currency: bal.available?.[0]?.currency || 'eur', message: liveMode ? 'Live mode activo' : 'Test mode activo' });
   } catch (e) { res.json({ configured: false, liveMode: false, message: e.message }); }
+});
+
+// ── MIX ENGINE — Harmonic mixing via Spotify audio features ────────────────
+
+// Spotify key (0-11) + mode (0=minor, 1=major) → Camelot wheel notation
+const CAMELOT_MAP = {
+  '0,1':'8B','1,1':'3B','2,1':'10B','3,1':'5B','4,1':'12B','5,1':'7B',
+  '6,1':'2B','7,1':'9B','8,1':'4B','9,1':'11B','10,1':'6B','11,1':'1B',
+  '0,0':'5A','1,0':'12A','2,0':'7A','3,0':'2A','4,0':'9A','5,0':'4A',
+  '6,0':'11A','7,0':'6A','8,0':'1A','9,0':'8A','10,0':'3A','11,0':'10A',
+};
+
+async function _mixGetFeatures(spotifyIds) {
+  const token = await getSpotifyToken();
+  const ids = [...new Set(spotifyIds)].filter(Boolean).slice(0, 100);
+  if (!ids.length) return {};
+  const r = await httpJSON(`https://api.spotify.com/v1/audio-features?ids=${ids.join(',')}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (r.status !== 200 || !r.json?.audio_features) return {};
+  const out = {};
+  for (const f of r.json.audio_features) {
+    if (!f) continue;
+    out[f.id] = {
+      bpm:          Math.round(f.tempo),
+      key:          f.key,
+      mode:         f.mode,
+      camelot:      CAMELOT_MAP[`${f.key},${f.mode}`] || null,
+      energy:       f.energy,
+      danceability: f.danceability,
+      valence:      f.valence,
+    };
+  }
+  return out;
+}
+
+async function _mixSearchTrack(title, artist) {
+  const token = await getSpotifyToken();
+  const q = encodeURIComponent(`${title} ${artist || ''}`.trim().slice(0, 80));
+  const r = await httpJSON(`https://api.spotify.com/v1/search?q=${q}&type=track&limit=1&market=ES`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return r.json?.tracks?.items?.[0]?.id || null;
+}
+
+// POST /api/mix/features
+// Body: { tracks: [{ title, artist? }] }
+// Returns: { features: { [normTitle]: { bpm, camelot, energy, ... } } }
+app.post('/api/mix/features', async (req, res) => {
+  const { tracks } = req.body || {};
+  if (!Array.isArray(tracks) || !tracks.length) {
+    return res.status(400).json({ error: 'tracks requerido' });
+  }
+  if (!CONFIG.spotifyClientId || !CONFIG.spotifyClientSecret) {
+    return res.json({ features: {}, warning: 'Spotify no configurado' });
+  }
+
+  if (!db.trackFeatures) db.trackFeatures = {};
+
+  const out    = {};
+  const fetch_ = [];   // { normKey, spotifyId }
+  const search = [];   // { normKey, title, artist }
+
+  for (const t of tracks) {
+    const nk = normTitle(t.title || '');
+    if (!nk) continue;
+    if (db.trackFeatures[nk]) { out[nk] = db.trackFeatures[nk]; continue; }
+    const dbTrack = (db.tracks || []).find(x => normTitle(x.title) === nk);
+    dbTrack?.spotifyId
+      ? fetch_.push({ normKey: nk, spotifyId: dbTrack.spotifyId })
+      : search.push({ normKey: nk, title: t.title, artist: t.artist || dbTrack?.artist || '' });
+  }
+
+  try {
+    // Search (limit 8 to avoid rate-limiting)
+    for (const item of search.slice(0, 8)) {
+      try {
+        const sid = await _mixSearchTrack(item.title, item.artist);
+        if (sid) fetch_.push({ normKey: item.normKey, spotifyId: sid });
+      } catch (_) {}
+    }
+
+    // Batch-fetch audio features (100 max per call)
+    const allIds = [...new Set(fetch_.map(x => x.spotifyId))];
+    let allFeat = {};
+    for (let i = 0; i < allIds.length; i += 100) {
+      Object.assign(allFeat, await _mixGetFeatures(allIds.slice(i, i + 100)));
+    }
+
+    for (const { normKey, spotifyId } of fetch_) {
+      const f = allFeat[spotifyId];
+      if (f) { db.trackFeatures[normKey] = f; out[normKey] = f; }
+    }
+
+    if (Object.keys(db.trackFeatures).length) saveDB(db);
+  } catch (e) {
+    console.error('[Mix] Error fetching audio features:', e.message);
+  }
+
+  res.json({ features: out });
+});
+
+// ── MIX+ — Audio local para suscriptores ────────────────────────────────────
+
+function _hasMixAccess(userId) {
+  const now  = Date.now();
+  const user = (db.users || []).find(u => u.id === userId);
+  if (!user) return false;
+  if (user.role === 'admin') return true;
+  const subs = (db.subscriptions || db.ambientAccess || []).filter(s => s.userId === userId);
+  return subs.some(s => s.type === 'subscription' && (!s.expiresAt || new Date(s.expiresAt).getTime() > now));
+}
+
+// Admin: subir archivo de audio para un track de la playlist principal
+app.post('/api/admin/tracks/:trackId/audio', authMiddleware, uploadMusic.single('audio'), (req, res) => {
+  const track = (db.tracks || []).find(t => t.id === req.params.trackId);
+  if (!track) { if (req.file) fs.unlinkSync(req.file.path); return res.status(404).json({ error: 'Track no encontrado' }); }
+  if (!req.file) return res.status(400).json({ error: 'Archivo requerido' });
+  if (track.audioFile) {
+    const old = path.join(MUSIC_DIR, track.audioFile);
+    if (fs.existsSync(old)) try { fs.unlinkSync(old); } catch(_) {}
+  }
+  track.audioFile = path.basename(req.file.path);
+  track.audioUpdatedAt = new Date().toISOString();
+  saveDB(db);
+  res.json({ ok: true, audioFile: track.audioFile });
+});
+
+// Admin: eliminar audio local de un track
+app.delete('/api/admin/tracks/:trackId/audio', authMiddleware, (req, res) => {
+  const track = (db.tracks || []).find(t => t.id === req.params.trackId);
+  if (!track) return res.status(404).json({ error: 'Track no encontrado' });
+  if (track.audioFile) {
+    const fp = path.join(MUSIC_DIR, track.audioFile);
+    if (fs.existsSync(fp)) try { fs.unlinkSync(fp); } catch(_) {}
+    delete track.audioFile;
+    delete track.audioUpdatedAt;
+    saveDB(db);
+  }
+  res.json({ ok: true });
+});
+
+// Suscriptores: streaming del archivo local con soporte de rango (seeking)
+app.get('/api/music/stream/:trackId', authMiddleware, (req, res) => {
+  if (!_hasMixAccess(req.user?.id)) return res.status(403).json({ error: 'Requiere suscripción Mix+' });
+  const track = (db.tracks || []).find(t => t.id === req.params.trackId);
+  if (!track?.audioFile) return res.status(404).json({ error: 'Sin audio local para este track' });
+  const filePath = path.join(MUSIC_DIR, track.audioFile);
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Archivo no encontrado' });
+
+  const stat  = fs.statSync(filePath);
+  const total = stat.size;
+  const ext   = path.extname(track.audioFile).toLowerCase();
+  const mime  = ext === '.wav' ? 'audio/wav' : ext === '.flac' ? 'audio/flac' : 'audio/mpeg';
+  const range = req.headers.range;
+
+  if (range) {
+    const [s, e]  = range.replace(/bytes=/, '').split('-');
+    const start   = parseInt(s, 10);
+    const end     = e ? parseInt(e, 10) : total - 1;
+    res.writeHead(206, {
+      'Content-Range':  `bytes ${start}-${end}/${total}`,
+      'Accept-Ranges':  'bytes',
+      'Content-Length': end - start + 1,
+      'Content-Type':   mime,
+    });
+    fs.createReadStream(filePath, { start, end }).pipe(res);
+  } else {
+    res.writeHead(200, { 'Content-Length': total, 'Content-Type': mime, 'Accept-Ranges': 'bytes' });
+    fs.createReadStream(filePath).pipe(res);
+  }
+});
+
+// API pública: saber qué tracks tienen audio local (sin streaming — solo metadatos)
+app.get('/api/music/available', authMiddleware, (req, res) => {
+  if (!_hasMixAccess(req.user?.id)) return res.json({ available: [] });
+  const available = (db.tracks || [])
+    .filter(t => t.audioFile && fs.existsSync(path.join(MUSIC_DIR, t.audioFile)))
+    .map(t => t.id);
+  res.json({ available });
 });
 
 app.listen(PORT, () => console.log('Backend escuchando en :' + PORT));

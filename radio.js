@@ -78,7 +78,7 @@
   // ── AUTOMIX STATE ────────────────────────────────────────────────
   let automixEnabled     = false;
   let isCrossfading      = false;
-  let crossfadeDuration  = 8000;  // ms fade-out al final del track
+  let crossfadeDuration  = 8000;  // ms — dinámico en mix mode (8 beats del BPM actual)
   let fadeInDuration     = 2000;  // ms fade-in al arrancar el siguiente
   let crossfadeOutTimer  = null;
   let crossfadeInTimer   = null;
@@ -86,6 +86,210 @@
   let widgetPre          = null;  // SC.Widget del iframe de precarga
   let widgetPreRdy       = false;
   let preloadTriggered   = false; // evita doble preload por tick de PLAY_PROGRESS
+
+  // ── MIX ENGINE — Harmonic mixing (Camelot wheel + BPM) ──────────
+  let mixFeatures    = {};    // { [normTitle]: { bpm, camelot, energy, danceability } }
+  let _mixQueue      = null;  // array de índices en customTrackList, orden harmónico
+  let _mixQueuePos   = 0;     // posición actual en _mixQueue
+  let _localAudio    = new Set(); // IDs de tracks con archivo local disponible
+  let _mixPlusActive = false; // true si el usuario es suscriptor y hay audio local activo
+  let _mixPlusUrl    = null;  // URL del stream del track actual
+
+  function _trackStreamUrl(t) {
+    const id = t?.itemId || t?.id;
+    return id ? `/api/music/stream/${id}` : null;
+  }
+
+  function _hasLocalAudio(t) {
+    const id = t?.itemId || t?.id;
+    return id ? _localAudio.has(String(id)) : false;
+  }
+
+  async function _loadLocalAvailable() {
+    try {
+      const tok = window.getToken?.();
+      if (!tok) return;
+      const r = await fetch('/api/music/available', { headers: { Authorization: 'Bearer ' + tok } });
+      if (!r.ok) return;
+      const data = await r.json();
+      _localAudio = new Set((data.available || []).map(String));
+    } catch (_) {}
+  }
+
+  function _normMix(s) { return (s || '').toLowerCase().trim().replace(/\s+/g, ' '); }
+
+  function _camelotScore(a, b) {
+    if (!a || !b) return 1;
+    const na = parseInt(a), nb = parseInt(b), la = a.slice(-1), lb = b.slice(-1);
+    if (a === b) return 3;
+    if (la === lb && (Math.abs(na - nb) === 1 || (na === 12 && nb === 1) || (na === 1 && nb === 12))) return 2;
+    if (la !== lb && na === nb) return 2;
+    if (la === lb && (Math.abs(na - nb) === 2 || (na === 12 && nb === 2) || (na === 2 && nb === 12))) return 1;
+    return 0;
+  }
+
+  function _calcCrossfadeDuration(bpm) {
+    if (!bpm || bpm < 60 || bpm > 220) return 8000;
+    return Math.round(Math.max(3000, Math.min(12000, (60000 / bpm) * 8)));
+  }
+
+  function _buildMixQueue() {
+    const n = customTrackList.length;
+    if (!n) { _mixQueue = null; return; }
+    const used = new Set([customCurrentIdx]);
+    const queue = [customCurrentIdx];
+    let prev = customCurrentIdx;
+    while (queue.length < n) {
+      const pf   = mixFeatures[_normMix(customTrackList[prev]?.title)];
+      const pBpm = pf?.bpm || 120, pNrg = pf?.energy || 0.5, pCam = pf?.camelot || null;
+      let bestIdx = -1, bestScore = -Infinity;
+      for (let i = 0; i < n; i++) {
+        if (used.has(i)) continue;
+        const f = mixFeatures[_normMix(customTrackList[i]?.title)];
+        const score = _camelotScore(pCam, f?.camelot || null) * 3
+          + Math.max(0, 1 - Math.abs(pBpm - (f?.bpm || 120)) / Math.max(pBpm, f?.bpm || 120) * 4) * 2
+          + ((f?.energy || 0.5) >= pNrg - 0.1 ? 1 : 0.4);
+        if (score > bestScore) { bestScore = score; bestIdx = i; }
+      }
+      if (bestIdx === -1) { for (let i = 0; i < n; i++) if (!used.has(i)) { bestIdx = i; break; } }
+      if (bestIdx === -1) break;
+      queue.push(bestIdx); used.add(bestIdx); prev = bestIdx;
+    }
+    _mixQueue = queue; _mixQueuePos = 0;
+  }
+
+  function _camelotColor(cam) {
+    if (!cam) return '#374151';
+    return cam.endsWith('A') ? '#1e3a5f' : '#3b1f06';
+  }
+  function _camelotTextColor(cam) {
+    return cam?.endsWith('A') ? '#60a5fa' : '#fb923c';
+  }
+
+  // ── DJ MIXER TOOLS ───────────────────────────────────────────────
+  let _fadeCurve    = 'linear'; // 'linear' | 'ease' | 'scurve'
+  let _transitionFx = 'none';  // 'none' | 'riser' | 'whoosh'
+  let _mixAudioCtx  = null;
+  let _crossfaderEl = null;
+
+  function _getMixAudioCtx() {
+    if (!_mixAudioCtx) _mixAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (_mixAudioCtx.state === 'suspended') _mixAudioCtx.resume();
+    return _mixAudioCtx;
+  }
+
+  function _applyFadeCurve(p) {
+    if (_fadeCurve === 'ease')   return 1 - Math.pow(1 - p, 3);
+    if (_fadeCurve === 'scurve') return p < 0.5 ? 2*p*p : 1 - Math.pow(-2*p+2, 2)/2;
+    return p;
+  }
+
+  function _playTransitionFx(type) {
+    try {
+      const ctx = _getMixAudioCtx();
+      if (type === 'riser') {
+        const osc = ctx.createOscillator(), gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(80, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(800, ctx.currentTime + 2);
+        gain.gain.setValueAtTime(0, ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.07, ctx.currentTime + 1.5);
+        gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 2);
+        osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 2.05);
+      } else if (type === 'whoosh') {
+        const bufSize = ctx.sampleRate * 1.5;
+        const buf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
+        const data = buf.getChannelData(0);
+        for (let i = 0; i < bufSize; i++) data[i] = Math.random() * 2 - 1;
+        const src = ctx.createBufferSource(); src.buffer = buf;
+        const filter = ctx.createBiquadFilter();
+        filter.type = 'bandpass'; filter.Q.value = 2;
+        filter.frequency.setValueAtTime(150, ctx.currentTime);
+        filter.frequency.exponentialRampToValueAtTime(5000, ctx.currentTime + 1.5);
+        const gain = ctx.createGain();
+        gain.gain.setValueAtTime(0.12, ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 1.5);
+        src.connect(filter); filter.connect(gain); gain.connect(ctx.destination);
+        src.start();
+      }
+    } catch (_) {}
+  }
+
+  function _updateCrossfaderUI(pos01) { // 0=A, 1=B
+    if (_crossfaderEl) _crossfaderEl.value = Math.round(pos01 * 100);
+  }
+
+  let _prefetchDebounce = null;
+  let _prefetching = false;
+  function _prefetchMixFeatures(tracks) {
+    // Prefetch automático en background cuando carga una playlist — sin acción del usuario
+    if (_prefetching) return;
+    if (_prefetchDebounce) clearTimeout(_prefetchDebounce);
+    _prefetchDebounce = setTimeout(async () => {
+      const sc = (tracks || []).filter(t => !t.type || t.type === 'soundcloud');
+      if (sc.length < 2) return;
+      _prefetching = true;
+      try {
+        const r = await fetch('/api/mix/features', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tracks: sc.map(t => ({ title: t.title, artist: t.artist || '' })) }),
+        });
+        const data = await r.json();
+        if (data.features) {
+          Object.assign(mixFeatures, data.features);
+          if (automixEnabled) { _buildMixQueue(); _prefetching = false; renderCustomTracklist(customTrackList); _renderMixPanel(); }
+        }
+      } catch (_) {}
+      _prefetching = false;
+    }, 1500);
+  }
+
+  function _renderMixPanel() {
+    let panel = document.getElementById('mix-dj-panel');
+    if (!panel) {
+      const anchor = $('radio-tracklist-body');
+      if (!anchor) return;
+      panel = document.createElement('div');
+      panel.id = 'mix-dj-panel';
+      anchor.insertAdjacentElement('beforebegin', panel);
+    }
+    if (!automixEnabled) { panel.style.display = 'none'; return; }
+    panel.style.display = '';
+    panel.innerHTML = `<div class="mix-panel">
+      <div class="mix-panel-row">
+        <span class="mix-label mix-label-a">A</span>
+        <input type="range" id="mix-crossfader" class="mix-crossfader" min="0" max="100" value="0" title="Crossfader manual">
+        <span class="mix-label mix-label-b">B</span>
+        <div class="mix-sep"></div>
+        <span class="mix-section-label">CURVA</span>
+        <button class="mix-opt-btn${_fadeCurve==='linear'?' on':''}" data-curve="linear" title="Fade lineal">—</button>
+        <button class="mix-opt-btn${_fadeCurve==='ease'?' on':''}" data-curve="ease" title="Fade suave (ease-out)">∿</button>
+        <button class="mix-opt-btn${_fadeCurve==='scurve'?' on':''}" data-curve="scurve" title="Curva S (DJ estándar)">S</button>
+        <div class="mix-sep"></div>
+        <span class="mix-section-label">FX</span>
+        <button class="mix-opt-btn${_transitionFx==='none'?' on':''}" data-fx="none" title="Sin efecto de transición">OFF</button>
+        <button class="mix-opt-btn${_transitionFx==='riser'?' on':''}" data-fx="riser" title="Riser — tono ascendente">↑</button>
+        <button class="mix-opt-btn${_transitionFx==='whoosh'?' on':''}" data-fx="whoosh" title="Whoosh — barrido de ruido">~</button>
+      </div>
+    </div>`;
+    _crossfaderEl = document.getElementById('mix-crossfader');
+    _crossfaderEl.addEventListener('input', () => {
+      const p = +_crossfaderEl.value / 100;
+      const v = muted ? 0 : vol();
+      if (widget && widgetRdy) widget.setVolume(Math.round(v * (1 - p)));
+      if (widgetPre && widgetPreRdy) widgetPre.setVolume(Math.round(v * p));
+    });
+    panel.querySelectorAll('[data-curve]').forEach(b => b.addEventListener('click', () => {
+      _fadeCurve = b.dataset.curve;
+      panel.querySelectorAll('[data-curve]').forEach(x => x.classList.toggle('on', x === b));
+    }));
+    panel.querySelectorAll('[data-fx]').forEach(b => b.addEventListener('click', () => {
+      _transitionFx = b.dataset.fx;
+      panel.querySelectorAll('[data-fx]').forEach(x => x.classList.toggle('on', x === b));
+    }));
+  }
 
   // ── DOM ──────────────────────────────────────────────────────────
   const $        = id => document.getElementById(id);
@@ -527,6 +731,10 @@
 
   // ── AUTOMIX HELPERS ──────────────────────────────────────────────
   function getNextCustomIdx() {
+    if (automixEnabled && _mixQueue && _mixQueue.length > 1) {
+      const qNext = (_mixQueuePos + 1) % _mixQueue.length;
+      return _mixQueue[qNext];
+    }
     const next = customCurrentIdx + 1;
     if (next < customTrackList.length) return next;
     return loopPlaylist ? 0 : -1;
@@ -588,13 +796,20 @@
   function startFadeOut() {
     if (isCrossfading) return;
     isCrossfading = true;
+    if (_transitionFx !== 'none') _playTransitionFx(_transitionFx);
+    _updateCrossfaderUI(0);
+    // Arrancar widgetPre en silencio para que el navegador bufferice el siguiente track.
+    // Cuando playCustomTrack() lo cargue en el widget principal, ya está en memoria → sin gap.
+    if (widgetPreRdy && preloadTriggered) { try { widgetPre.play(); } catch(_) {} }
     const startVol  = muted ? 0 : vol();
     const startTime = Date.now();
     crossfadeOutTimer = setInterval(() => {
       if (muted) return;
-      const p = Math.min((Date.now() - startTime) / crossfadeDuration, 1);
+      const raw = Math.min((Date.now() - startTime) / crossfadeDuration, 1);
+      const p   = _applyFadeCurve(raw);
       widget.setVolume(Math.round(startVol * (1 - p)));
-      if (p >= 1) { clearInterval(crossfadeOutTimer); crossfadeOutTimer = null; }
+      _updateCrossfaderUI(raw * 0.5);
+      if (raw >= 1) { clearInterval(crossfadeOutTimer); crossfadeOutTimer = null; }
     }, 80);
   }
 
@@ -604,11 +819,14 @@
     const startTime = Date.now();
     crossfadeInTimer = setInterval(() => {
       if (muted) { clearInterval(crossfadeInTimer); crossfadeInTimer = null; return; }
-      const p = Math.min((Date.now() - startTime) / fadeInDuration, 1);
+      const raw = Math.min((Date.now() - startTime) / fadeInDuration, 1);
+      const p   = _applyFadeCurve(raw);
       widget.setVolume(Math.round(targetVol * p));
-      if (p >= 1) {
+      _updateCrossfaderUI(0.5 + raw * 0.5);
+      if (raw >= 1) {
         clearInterval(crossfadeInTimer); crossfadeInTimer = null;
         isCrossfading = false; preloadTriggered = false;
+        _updateCrossfaderUI(0); // reset para la siguiente transición
       }
     }, 80);
   }
@@ -638,8 +856,32 @@
       if (automixEnabled) {
         createPreloadWidget();
         stopCrossfade();
+        _mixQueue = null;
+        const tracks = customTrackList.filter(t => !t.type || t.type === 'soundcloud');
+        if (tracks.length > 1) {
+          btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> MIX';
+          fetch('/api/mix/features', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tracks: tracks.map(t => ({ title: t.title, artist: t.artist || '' })) })
+          })
+            .then(r => r.json())
+            .then(data => {
+              if (data.features) {
+                Object.assign(mixFeatures, data.features);
+                _buildMixQueue();
+                renderCustomTracklist(customTrackList);
+                _renderMixPanel();
+              }
+            })
+            .catch(() => {})
+            .finally(() => { btn.innerHTML = '<i class="fas fa-magic"></i> MIX'; });
+        }
       } else {
         stopCrossfade();
+        _mixQueue = null;
+        renderCustomTracklist(customTrackList);
+        _renderMixPanel();
       }
     });
   }
@@ -1110,7 +1352,12 @@
       _wdProgress = null; // new track started — reset watchdog
       window._pendingYtFallback = null;
       if (_scLoadTimeout) { clearTimeout(_scLoadTimeout); _scLoadTimeout = null; }
-      if (youtubeActive) stopYoutube();
+      // Stale SC PLAY events (from a previous widget.load()) must not kill an active YT session.
+      // Normal flow already calls stopYoutube() in playCustomTrack() before _loadScUrl(),
+      // so youtubeActive should be false here. If it's still true, it's a stale event.
+      if (youtubeActive) return;
+      // Restore SC Widget volume — widget.load() may silently reset it to 0 or widget default.
+      if (!isCrossfading && widgetRdy) widget.setVolume(muted ? 0 : vol());
       setPlaying(true);
       // Ignorar PLAY automático del widget (antes de que el usuario pulse play)
       if (!userPlayed) return;
@@ -1269,6 +1516,10 @@
 
   // Calcula el siguiente índice en la playlist personalizada respetando shuffle
   function _nextCustomIdx() {
+    if (automixEnabled && _mixQueue && _mixQueue.length > 1) {
+      _mixQueuePos = (_mixQueuePos + 1) % _mixQueue.length;
+      return _mixQueue[_mixQueuePos];
+    }
     if (shuffle && customTrackList.length > 1) {
       let r = Math.floor(Math.random() * customTrackList.length);
       if (r === customCurrentIdx) r = (r + 1) % customTrackList.length;
@@ -1321,7 +1572,11 @@
         } else if (ambientAudioActive) {
           audioEl?.play().catch(() => {});
         } else {
-          if (widgetRdy) widget.play();
+          if (widgetRdy) {
+            // Garantizar volumen antes de reanudar — puede haberse perdido tras una pausa larga
+            widget.setVolume(muted ? 0 : vol());
+            widget.play();
+          }
         }
       }
       return;
@@ -1332,6 +1587,7 @@
       widget.pause();
       iframe.style.height = '0px';
     } else {
+      widget.setVolume(muted ? 0 : vol());
       widget.play();
       iframe.style.height = '116px';
     }
@@ -1877,6 +2133,7 @@
   function renderCustomTracklist(tracks) {
     if (!listBody) return;
     customTrackList = tracks;
+    _prefetchMixFeatures(tracks);
     if (!tracks.length) {
       listBody.innerHTML = '<div class="radio-empty"><i class="fas fa-music"></i><p>Lista vacía</p></div>';
       return;
@@ -1901,14 +2158,23 @@
             ? `<span class="rtitem-plat-badge" style="color:#a855f7"><i class="fas fa-broadcast-tower"></i></span>`
             : `<span class="rtitem-plat-badge ptag-soundcloud"><i class="fab fa-soundcloud"></i></span>`;
       const subLabel = isVideo ? 'YouTube' : isAmbient ? 'Ambiente' : isChannel ? 'Canal' : 'SoundCloud';
+      const mf = (automixEnabled && !isVideo && !isAmbient && !isChannel) ? mixFeatures[_normMix(t.title)] : null;
+      const mixChips = mf
+        ? `<span class="rtitem-mix-chips">
+            ${mf.bpm ? `<span class="rtitem-chip-bpm">${mf.bpm}</span>` : ''}
+            ${mf.camelot ? `<span class="rtitem-chip-cam" style="background:${_camelotColor(mf.camelot)};color:${_camelotTextColor(mf.camelot)}">${mf.camelot}</span>` : ''}
+          </span>`
+        : '';
+      const mixOrder = automixEnabled && _mixQueue
+        ? `<span class="rtitem-mix-order">${(_mixQueue.indexOf(i) + 1) || '—'}</span>` : '';
       return `
         <div class="radio-track-item${i === customCurrentIdx ? ' active' : ''}" draggable="true" data-ridx="${i}" onclick="window.playCustomTrack(${i})">
           <span class="rtitem-drag-handle" title="Arrastrar"><i class="fas fa-grip-lines"></i></span>
-          <span class="rtitem-num">${i + 1}</span>
+          <span class="rtitem-num">${mixOrder || i + 1}</span>
           ${coverHtml}
           <div class="rtitem-info">
             <div class="rtitem-title">${esc(t.title || '—')}</div>
-            <div class="rtitem-sub">${subLabel}</div>
+            <div class="rtitem-sub">${subLabel}${mixChips}</div>
           </div>
           ${badge}
         </div>`;
@@ -1951,6 +2217,7 @@
         if (customCurrentIdx === from) customCurrentIdx = to;
         else if (from < customCurrentIdx && to >= customCurrentIdx) customCurrentIdx--;
         else if (from > customCurrentIdx && to <= customCurrentIdx) customCurrentIdx++;
+        if (automixEnabled) { _buildMixQueue(); }
         renderCustomTracklist(customTrackList);
         showCustomTrack(customCurrentIdx);
         // Persistir orden en backend
@@ -1973,6 +2240,13 @@
     if (t.type !== 'channel') { _activeChannelId = null; _channelTracks = []; }
     _wdProgress = null;  // reset watchdog immediately so previous SC position can't trigger skip
     customCurrentIdx = idx;
+    // Update mix queue position and BPM-aware crossfade duration
+    if (automixEnabled && _mixQueue) {
+      const qPos = _mixQueue.indexOf(idx);
+      if (qPos !== -1) _mixQueuePos = qPos;
+      const f = mixFeatures[_normMix(t.title)];
+      if (f?.bpm) crossfadeDuration = _calcCrossfadeDuration(f.bpm);
+    }
     // Cancelar cualquier fade en curso si el usuario cambió manualmente
     if (!isCrossfading) { preloadTriggered = false; }
     else { stopCrossfade(); }
@@ -2109,9 +2383,75 @@
 
     if (t.type === 'video') {
       playYoutubeTrack(t.itemId || t.videoId, t.title || '');
+    } else if (automixEnabled && _hasLocalAudio(t) && window.MixPlayer) {
+      // ── Mix+ modo Web Audio API ────────────────────────────────────
+      if (youtubeActive) stopYoutube();
+      if (ambientAudioActive) _stopAmbientAudio();
+      _mixPlusActive = true;
+      const streamUrl = _trackStreamUrl(t);
+      _mixPlusUrl = streamUrl;
+      customPlaylistStarted = true; userPlayed = true;
+      setPlaying(true);
+      if (artistEl) artistEl.textContent = t.artist || 'RAYVER';
+      window.MixPlayer.stop();
+      window.MixPlayer.onProgress((pos, dur) => {
+        if (fillEl) fillEl.style.width = Math.min((pos / dur) * 100, 100) + '%';
+        if (curEl)  curEl.textContent  = fmt(pos);
+        if (durEl)  durEl.textContent  = fmt(dur);
+        _syncUpProgress(pos, dur);
+        // Precargar y lanzar crossfade Mix+ cuando quede crossfadeDuration
+        if (automixEnabled && dur > 5000 && (dur - pos) < crossfadeDuration && !preloadTriggered) {
+          preloadTriggered = true;
+          const nextIdx = getNextCustomIdx();
+          const nextT   = nextIdx >= 0 ? customTrackList[nextIdx] : null;
+          if (nextT && _hasLocalAudio(nextT)) {
+            const nextUrl = _trackStreamUrl(nextT);
+            window.MixPlayer.preload(nextUrl);
+            if (_transitionFx !== 'none') _playTransitionFx(_transitionFx);
+            _updateCrossfaderUI(0);
+            window.MixPlayer.crossfadeTo(
+              nextUrl, crossfadeDuration, _applyFadeCurve.bind(null),
+              true, // eqEnabled
+              (pos2, dur2) => { // onProgressB — se convierte en el progress principal tras el fade
+                if (fillEl) fillEl.style.width = Math.min((pos2/dur2)*100,100) + '%';
+                if (curEl)  curEl.textContent  = fmt(pos2);
+                if (durEl)  durEl.textContent  = fmt(dur2);
+              },
+              () => { // onFinishB
+                const ni = _nextCustomIdx();
+                if (customTrackList[ni]) setTimeout(() => window.playCustomTrack(ni), 100);
+                else if (loopPlaylist)   setTimeout(() => window.playCustomTrack(0), 100);
+                else setPlaying(false);
+              }
+            ).then(() => {
+              // Actualizar UI al track siguiente inmediatamente
+              showCustomTrack(nextIdx);
+              customCurrentIdx = nextIdx;
+              listBody?.querySelectorAll('.radio-track-item').forEach((el, i) => {
+                el.classList.toggle('active', i === nextIdx);
+                if (i === nextIdx) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+              });
+            });
+          }
+        }
+      });
+      window.MixPlayer.onFinish(() => {
+        const ni = _nextCustomIdx();
+        if (customTrackList[ni]) setTimeout(() => window.playCustomTrack(ni), 100);
+        else if (loopPlaylist)   setTimeout(() => window.playCustomTrack(0), 100);
+        else setPlaying(false);
+      });
+      window.MixPlayer.play(streamUrl).catch(() => {
+        // Fallback a SC Widget si el stream falla (archivo no disponible aún)
+        _mixPlusActive = false;
+        _mixPlusUrl = null;
+        if (youtubeActive) stopYoutube();
+      });
+      return; // no continuar al bloque SC Widget
     } else {
       // Detener YouTube si estaba activo — evita reproducción simultánea YT+SC
       if (youtubeActive) stopYoutube();
+      if (_mixPlusActive) { window.MixPlayer?.stop(); _mixPlusActive = false; }
 
       // Resolver fuentes del track (SC, YouTube, Spotify)
       // Nota: tracks de playlists de usuario guardan la URL en campo 'url', no 'scUrl'
@@ -2139,11 +2479,13 @@
           auto_play: true, hide_related: true, show_comments: false,
           show_user: true, show_reposts: false, show_teaser: false,
         });
-        // Si SC no arranca en 6s (track privado/no disponible), fallback a YouTube
+        // Si SC no arranca en 6s (track privado/no disponible), fallback a YouTube.
+        // Usamos _wdProgress (set por PLAY_PROGRESS) como indicador de audio real,
+        // no `playing` (que se activa con el evento PLAY aunque no haya audio).
         if (ytFallback) {
           _scLoadTimeout = setTimeout(() => {
             _scLoadTimeout = null;
-            if (youtubeActive || !customPlaylistStarted || playing) return;
+            if (youtubeActive || !customPlaylistStarted || _wdProgress !== null) return;
             console.warn('[Radio] SC timeout, fallback YT:', ytFallback);
             playYoutubeTrack(ytFallback, customTrackList[customCurrentIdx]?.title || '');
           }, 6000);
@@ -2176,7 +2518,7 @@
         // enriched vacío aún: reintentar cuando cargue
         setTimeout(() => window.playCustomTrack(idx), 500);
       }
-    }
+    } // end else SC Widget block
   };
 
   // Activa la lista curada del admin como playlist por defecto del radio
@@ -2223,6 +2565,11 @@
     }
     _wdCheck();
     if (playing && ambientAudioActive && audioEl?.paused) audioEl.play().catch(() => {});
+    // Al volver de background, el SC Widget puede haber perdido su volumen interno.
+    // Restaurarlo explícitamente si estaba reproduciendo audio SC.
+    if (playing && !youtubeActive && !ambientAudioActive && widgetRdy && !isCrossfading) {
+      widget.setVolume(muted ? 0 : vol());
+    }
   });
 
   // Close dropdowns when clicking outside
@@ -2392,4 +2739,17 @@
 
   init();
   _loadLikedIds();
+  // Cargar tracks con audio local disponible en background (Mix+ suscriptores)
+  _loadLocalAvailable();
+  // Re-cargar si el usuario hace login mientras la página está abierta
+  const _origGetToken = window.getToken;
+  let _prevTokenState = !!window.getToken?.();
+  setInterval(() => {
+    const now = !!window.getToken?.();
+    if (now !== _prevTokenState) {
+      _prevTokenState = now;
+      if (now) _loadLocalAvailable();
+      else { _localAudio = new Set(); _mixPlusActive = false; }
+    }
+  }, 5000);
 })();

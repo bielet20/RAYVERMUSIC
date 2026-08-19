@@ -1864,12 +1864,17 @@ async function ambPlayTrack(id) {
     const r = await fetch('/api/ambient/stream/' + id, { headers: { Authorization: 'Bearer ' + tok } });
     const data = await r.json();
     if (r.status === 403) {
-      // No access — show preview or paywall
+      if (data.code === 'EXPIRED') {
+        showToastGlobal('Tu suscripcion de musica ambiente ha caducado. Contacta con el administrador para renovarla.', 'error');
+        document.getElementById('ambient-player-paywall').style.display = '';
+        return;
+      }
+      // Sin acceso — mostrar preview o paywall
       if (track.previewUrl) {
         audio.src = track.previewUrl; audio.style.display = '';
         audio.play().catch(() => {});
         const pw = document.getElementById('ambient-player-paywall');
-        pw.style.display = ''; // show paywall below
+        pw.style.display = '';
       } else {
         document.getElementById('ambient-player-paywall').style.display = '';
       }

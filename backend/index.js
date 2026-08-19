@@ -5,6 +5,46 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const https = require('https');
+const nodemailer = require('nodemailer');
+
+// ── EMAIL ────────────────────────────────────────────────────────
+function _buildMailer() {
+  const user = process.env.EMAIL_USER;
+  const pass = process.env.EMAIL_PASS;
+  if (!user || !pass) return null;
+  return nodemailer.createTransport({
+    host:   process.env.EMAIL_HOST   || 'smtp.gmail.com',
+    port:   Number(process.env.EMAIL_PORT || 587),
+    secure: process.env.EMAIL_SECURE === 'true',
+    auth: { user, pass },
+  });
+}
+
+async function sendExpiryWarning(userEmail, userName, expiresAt, daysLeft) {
+  const mailer = _buildMailer();
+  if (!mailer) return;
+  const dateStr = new Date(expiresAt).toLocaleDateString('es-ES', { day: '2-digit', month: 'long', year: 'numeric' });
+  await mailer.sendMail({
+    from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
+    to:   userEmail,
+    subject: `Tu suscripcion de musica ambiente caduca en ${daysLeft} dia${daysLeft !== 1 ? 's' : ''}`,
+    html: `
+      <div style="font-family:sans-serif;max-width:520px;margin:0 auto">
+        <h2 style="color:#a855f7">RAYVER Music</h2>
+        <p>Hola ${userName},</p>
+        <p>Tu suscripcion de <strong>musica ambiente</strong> caduca el <strong>${dateStr}</strong>
+           (en ${daysLeft} dia${daysLeft !== 1 ? 's' : ''}).</p>
+        <p>Para seguir disfrutando sin interrupciones, contacta con el administrador
+           o renueva tu acceso antes de esa fecha.</p>
+        <p style="color:#888;font-size:13px">— Equipo RAYVER Music</p>
+      </div>`,
+  }).catch(e => console.error('[Email] Error enviando aviso expiracion:', e.message));
+}
+
+// Revisa suscripciones que caducan en los proximos WARNING_DAYS dias y envia aviso (una sola vez)
+const EXPIRY_WARNING_DAYS = Number(process.env.EXPIRY_WARNING_DAYS || 7);
+// Set en memoria de ids ya avisados en este arranque (evita duplicados entre checks del mismo dia)
+const _expWarningSent = new Set();
 
 // Short-lived audio stream tokens — lets <audio> src work without auth headers
 // Map: token (uuid) → { fileId, userId, exp (ms timestamp) }
@@ -727,6 +767,28 @@ app.post('/api/sync/run', authMiddleware, async (req, res) => {
 // Sync automático cada 6 horas + uno al arrancar (a los 20s para no bloquear el boot)
 setTimeout(() => runFullSync('startup').catch(e => console.error('sync startup error', e)), 20000);
 setInterval(() => runFullSync('scheduled').catch(e => console.error('sync scheduled error', e)), 6 * 60 * 60 * 1000);
+
+// ── AVISO DE EXPIRACIÓN DE SUSCRIPCIÓN ──────────────────────────
+async function checkExpiringSubscriptions() {
+  const now     = Date.now();
+  const warning = EXPIRY_WARNING_DAYS * 24 * 60 * 60 * 1000;
+  const subs    = (db.ambientAccess || []).filter(a => a.type === 'subscription' && a.expiresAt);
+  for (const sub of subs) {
+    const exp  = new Date(sub.expiresAt).getTime();
+    const diff = exp - now;
+    if (diff <= 0 || diff > warning) continue; // ya caducada o caduca en mas de N dias
+    if (_expWarningSent.has(sub.id)) continue;  // ya avisado en este arranque
+    const user = (db.users || []).find(u => u.id === sub.userId);
+    if (!user) continue;
+    const daysLeft = Math.ceil(diff / (24 * 60 * 60 * 1000));
+    console.log(`[Expiry] Enviando aviso a ${user.email} — caduca en ${daysLeft} dias`);
+    await sendExpiryWarning(user.email, user.name, sub.expiresAt, daysLeft);
+    _expWarningSent.add(sub.id);
+  }
+}
+// Comprobar una vez al arrancar (con delay) y luego cada 24h
+setTimeout(() => checkExpiringSubscriptions().catch(e => console.error('[Expiry] check error:', e)), 30000);
+setInterval(() => { _expWarningSent.clear(); checkExpiringSubscriptions().catch(e => console.error('[Expiry] check error:', e)); }, 24 * 60 * 60 * 1000);
 
 // ───────────────────────── RUTAS PÚBLICAS (frontend) ─────────────────────────
 app.get('/api/public/tracks', (req, res) => {
@@ -1768,13 +1830,16 @@ const uploadMusic = multer({ storage: _musicStorage, limits: { fileSize: 500 * 1
 function checkAmbientAccess(userId, packId) {
   const now    = Date.now();
   const access = (db.ambientAccess || []).filter(a => a.userId === userId);
-  const hasSub = access.some(a => a.type === 'subscription' && (!a.expiresAt || new Date(a.expiresAt).getTime() > now));
-  if (hasSub) return { ok: true, type: 'subscription' };
+  const activeSub = access.find(a => a.type === 'subscription' && (!a.expiresAt || new Date(a.expiresAt).getTime() > now));
+  if (activeSub) return { ok: true, type: 'subscription' };
+  // Suscripcion existe pero ha caducado
+  const expiredSub = access.find(a => a.type === 'subscription' && a.expiresAt && new Date(a.expiresAt).getTime() <= now);
+  if (expiredSub) return { ok: false, code: 'EXPIRED', expiresAt: expiredSub.expiresAt };
   if (packId) {
     const hasPack = access.some(a => a.type === 'pack' && a.packId === packId);
     if (hasPack) return { ok: true, type: 'pack' };
   }
-  return { ok: false };
+  return { ok: false, code: 'NO_ACCESS' };
 }
 
 // ── PUBLIC endpoints ────────────────────────────────────────────
@@ -1848,7 +1913,7 @@ app.get('/api/ambient/stream/:id', userAuth, (req, res) => {
   const track = (db.ambientTracks || []).find(t => t.id === req.params.id && t.active !== false);
   if (!track) return res.status(404).json({ error: 'Track no encontrado' });
   const acc = checkAmbientAccess(req.user.userId, track.packId);
-  if (!acc.ok) return res.status(403).json({ error: 'Sin acceso', code: 'NO_ACCESS' });
+  if (!acc.ok) return res.status(403).json({ error: acc.code === 'EXPIRED' ? 'Tu suscripcion ha caducado' : 'Sin acceso', code: acc.code || 'NO_ACCESS' });
   const src = track.source || {};
   if (src.type === 'file') return res.json({ type: 'file', url: `/api/ambient/media/${path.basename(src.file)}` });
   if (src.type === 'url')  return res.json({ type: 'url',  url: src.url });
@@ -2023,7 +2088,7 @@ app.get('/api/ambient/media/:filename', userAuth, (req, res) => {
   const track    = (db.ambientTracks || []).find(t => t.source?.type === 'file' && t.source.file && path.basename(t.source.file) === filename);
   if (!track) return res.status(404).json({ error: 'No encontrado' });
   const acc = checkAmbientAccess(req.user.userId, track.packId);
-  if (!acc.ok) return res.status(403).json({ error: 'Sin acceso', code: 'NO_ACCESS' });
+  if (!acc.ok) return res.status(403).json({ error: acc.code === 'EXPIRED' ? 'Tu suscripcion ha caducado' : 'Sin acceso', code: acc.code || 'NO_ACCESS' });
   const filePath = path.join(AMBIENT_TRACKS_DIR, filename);
   if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Archivo no encontrado en disco' });
   const stat     = fs.statSync(filePath);
@@ -2179,6 +2244,55 @@ app.post('/api/admin/ambient/upload/cover', authMiddleware, uploadCover.single('
 // ── ADMIN: Tracks CRUD ──────────────────────────────────────────
 app.get('/api/admin/ambient/tracks', authMiddleware, (req, res) => res.json({ tracks: db.ambientTracks || [] }));
 
+app.post('/api/admin/ambient/tracks/auto-tag', authMiddleware, async (req, res) => {
+  const { overwrite = false, useAI = false, dryRun = false } = req.body || {};
+
+  const tracks = (db.ambientTracks || []).filter(t =>
+    overwrite ? true : (!t.tags || t.tags.length === 0)
+  );
+
+  if (!tracks.length) return res.json({ updated: [], skipped: 0, total: 0 });
+
+  // Keyword pass — infer from title (title was set from filename)
+  const candidates = tracks.map(t => ({
+    t,
+    tags: _ambInferTags(t.title || '', null),
+  }));
+
+  // Optional AI pass for tracks where keywords gave nothing
+  if (useAI) {
+    const needAI = candidates.filter(c => c.tags.length === 0);
+    if (needAI.length) {
+      const aiResults = await _ambClassifyWithClaude(
+        needAI.map(c => ({ filename: c.t.title || '', folderName: '' }))
+      );
+      if (aiResults) {
+        for (let i = 0; i < needAI.length; i++) {
+          const aiTags = aiResults.find(r => r.idx === i)?.tags || [];
+          needAI[i].tags = [...new Set([...needAI[i].tags, ...aiTags])].slice(0, 4);
+        }
+      }
+    }
+  }
+
+  const updated = [];
+  if (!dryRun) {
+    for (const { t, tags } of candidates) {
+      const idx = db.ambientTracks.findIndex(x => x.id === t.id);
+      if (idx < 0) continue;
+      db.ambientTracks[idx].tags = tags;
+      updated.push({ id: t.id, title: t.title, tags });
+    }
+    if (updated.length) saveDB(db);
+  } else {
+    for (const { t, tags } of candidates) {
+      updated.push({ id: t.id, title: t.title, tags });
+    }
+  }
+
+  res.json({ updated, skipped: (db.ambientTracks || []).length - tracks.length, total: db.ambientTracks?.length || 0 });
+});
+
 app.post('/api/admin/ambient/tracks/bulk-update', authMiddleware, (req, res) => {
   const { ids, packId, zones, zonesMode } = req.body || {};
   if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids requerido' });
@@ -2242,14 +2356,117 @@ app.delete('/api/admin/ambient/tracks/:id', authMiddleware, (req, res) => {
 });
 
 // ── ADMIN: Google Drive folder batch import ────────────────────
+// ── Helpers de auto-clasificación ambient ────────────────────────
+const _AMB_STYLE_KEYWORDS = [
+  [/lo[\s-]?fi/i,           'Lo-Fi'],
+  [/jazz/i,                 'Jazz'],
+  [/chill/i,                'Chill'],
+  [/ambient/i,              'Ambient'],
+  [/meditat/i,              'Meditación'],
+  [/nature|naturaleza/i,    'Naturaleza'],
+  [/rain|lluvia/i,          'Lluvia'],
+  [/forest|bosque/i,        'Bosque'],
+  [/ocean|sea|mar\b/i,      'Océano'],
+  [/river|río/i,            'Río'],
+  [/piano/i,                'Piano'],
+  [/guitar|guitarra/i,      'Guitarra'],
+  [/electronic/i,           'Electrónica'],
+  [/trance/i,               'Trance'],
+  [/\bhouse\b/i,            'House'],
+  [/classic|clásic/i,       'Clásica'],
+  [/study|estudio/i,        'Estudio'],
+  [/sleep|dormir/i,         'Sueño'],
+  [/focus|enfoque/i,        'Focus'],
+  [/deep/i,                 'Deep'],
+  [/caf[eé]|coffee/i,       'Café'],
+  [/acoustic|acústic/i,     'Acústico'],
+  [/vocal/i,                'Vocal'],
+  [/instrumental/i,         'Instrumental'],
+  [/hip[\s-]?hop/i,         'Hip-Hop'],
+  [/soul/i,                 'Soul'],
+  [/blues/i,                'Blues'],
+  [/relax/i,                'Relax'],
+  [/drone/i,                'Drone'],
+  [/binaural/i,             'Binaural'],
+  [/space|cosmos|espacial/i,'Espacial'],
+  [/\bdark\b/i,             'Dark'],
+  [/cinematic|cinemát/i,    'Cinemático'],
+  [/trap/i,                 'Trap'],
+  [/funk/i,                 'Funk'],
+  [/bossa/i,                'Bossa Nova'],
+  [/flamenco/i,             'Flamenco'],
+  [/oriental|eastern/i,     'Oriental'],
+  [/fire|fuego/i,           'Fuego'],
+  [/wind|viento/i,          'Viento'],
+  [/thunder|tormenta/i,     'Tormenta'],
+  [/wave|ola/i,             'Ondas'],
+];
+
+function _ambInferTags(filename, folderName) {
+  const tags = new Set();
+  // Subfolder name is the strongest signal
+  if (folderName) {
+    const cleaned = folderName.trim()
+      .replace(/[_-]/g, ' ')
+      .replace(/\b\w/g, c => c.toUpperCase())
+      .trim();
+    if (cleaned.length >= 2) tags.add(cleaned);
+  }
+  // Keyword scan over filename
+  const haystack = (filename || '') + ' ' + (folderName || '');
+  for (const [re, tag] of _AMB_STYLE_KEYWORDS) {
+    if (re.test(haystack) && !tags.has(tag)) tags.add(tag);
+    if (tags.size >= 4) break;
+  }
+  return [...tags].slice(0, 4);
+}
+
+function _ambCleanTitle(filename) {
+  return filename
+    .replace(/\.[^.]+$/, '')          // drop extension
+    .replace(/^[\d\s._\-#()[\]]+/, '') // strip leading track numbers / separators
+    .replace(/[_]/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+async function _ambClassifyWithClaude(items) {
+  const key = process.env.ANTHROPIC_API_KEY;
+  if (!key || !items.length) return null;
+  const list = items.map((it, i) =>
+    `${i + 1}. filename="${it.filename}" folder="${it.folderName || ''}"`
+  ).join('\n');
+  try {
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 1024,
+        messages: [{ role: 'user', content:
+          'Eres un clasificador de música ambiente. Para cada pista sugiere 1-3 etiquetas de estilo en español.\n' +
+          'Responde ÚNICAMENTE con JSON válido: {"results":[{"idx":0,"tags":["tag1"]},...]}\n\nPistas:\n' + list
+        }]
+      })
+    });
+    const d = await r.json();
+    const text = d.content?.[0]?.text || '';
+    const m = text.match(/\{[\s\S]*\}/);
+    if (!m) return null;
+    return JSON.parse(m[0]).results;
+  } catch (e) {
+    console.error('[gdrive-import] Claude classify error:', e.message);
+    return null;
+  }
+}
+
 app.post('/api/admin/ambient/gdrive-folder-import', authMiddleware, async (req, res) => {
-  const { folderUrl, packId } = req.body || {};
+  const { folderUrl, packId, autoTagAI = false } = req.body || {};
   if (!folderUrl) return res.status(400).json({ error: 'folderUrl requerido' });
 
   const apiKey = process.env.GOOGLE_API_KEY;
   if (!apiKey) return res.status(500).json({ error: 'GOOGLE_API_KEY no configurada en el servidor' });
 
-  // Extract folder ID from URL
   const folderMatch = folderUrl.match(/\/folders\/([a-zA-Z0-9_-]{10,})/);
   const folderId = folderMatch ? folderMatch[1] : (/^[a-zA-Z0-9_-]{20,}$/.test(folderUrl.trim()) ? folderUrl.trim() : null);
   if (!folderId) return res.status(400).json({ error: 'No se pudo extraer el ID de la carpeta de Google Drive de la URL proporcionada' });
@@ -2258,10 +2475,9 @@ app.post('/api/admin/ambient/gdrive-folder-import', authMiddleware, async (req, 
     'audio/mpeg', 'audio/mp3', 'audio/flac', 'audio/wav', 'audio/ogg',
     'audio/aac', 'audio/mp4', 'audio/x-m4a', 'audio/opus', 'audio/webm'
   ]);
-
   const FOLDER_MIME = 'application/vnd.google-apps.folder';
 
-  async function scanFolder(id, depth = 0) {
+  async function scanFolder(id, depth = 0, folderName = null) {
     if (depth > 5) return [];
     let files = [];
     let pageToken = null;
@@ -2281,10 +2497,10 @@ app.post('/api/admin/ambient/gdrive-folder-import', authMiddleware, async (req, 
       const data = await apiRes.json();
       for (const f of (data.files || [])) {
         if (f.mimeType === FOLDER_MIME) {
-          const sub = await scanFolder(f.id, depth + 1);
+          const sub = await scanFolder(f.id, depth + 1, f.name);
           files = files.concat(sub);
         } else {
-          files.push(f);
+          files.push({ ...f, _folderName: folderName });
         }
       }
       pageToken = data.nextPageToken || null;
@@ -2294,27 +2510,35 @@ app.post('/api/admin/ambient/gdrive-folder-import', authMiddleware, async (req, 
 
   try {
     const allFiles = await scanFolder(folderId);
-
     const existingIds = new Set((db.ambientTracks || []).map(t => t.source?.fileId).filter(Boolean));
 
-    const imported = [];
-    const skipped  = [];
+    const toImport = allFiles.filter(f => AUDIO_MIME.has(f.mimeType) && !existingIds.has(f.id));
+    const skipped  = allFiles
+      .filter(f => !AUDIO_MIME.has(f.mimeType) || existingIds.has(f.id))
+      .map(f => ({ name: f.name, reason: !AUDIO_MIME.has(f.mimeType) ? 'not-audio' : 'exists' }));
 
-    for (const f of allFiles) {
-      if (!AUDIO_MIME.has(f.mimeType)) {
-        skipped.push({ name: f.name, reason: 'not-audio' });
-        continue;
-      }
-      if (existingIds.has(f.id)) {
-        skipped.push({ name: f.name, reason: 'exists' });
-        continue;
-      }
+    // Optional AI classification
+    let aiTags = null;
+    if (autoTagAI && toImport.length) {
+      aiTags = await _ambClassifyWithClaude(
+        toImport.map(f => ({ filename: f.name, folderName: f._folderName || '' }))
+      );
+    }
+
+    const imported = [];
+    for (let i = 0; i < toImport.length; i++) {
+      const f    = toImport[i];
+      const base = _ambInferTags(f.name, f._folderName);
+      const ai   = aiTags?.find(r => r.idx === i)?.tags || [];
+      // Merge: keyword tags first, then AI tags deduplicated
+      const merged = [...new Set([...base, ...ai])].slice(0, 4);
+
       const track = {
         id: uid(),
-        title: f.name.replace(/\.[^.]+$/, ''),
+        title: _ambCleanTitle(f.name),
         description: '',
         cover: null,
-        tags: [],
+        tags: merged,
         duration: 0,
         packId: packId || null,
         previewUrl: null,
@@ -2324,7 +2548,7 @@ app.post('/api/admin/ambient/gdrive-folder-import', authMiddleware, async (req, 
         createdAt: new Date().toISOString(),
       };
       db.ambientTracks = [...(db.ambientTracks || []), track];
-      imported.push({ name: f.name, id: track.id });
+      imported.push({ name: f.name, id: track.id, title: track.title, tags: track.tags });
     }
 
     if (imported.length) saveDB(db);
@@ -2422,6 +2646,133 @@ app.put('/api/admin/ambient/channels/:id/tracks', authMiddleware, (req, res) => 
   ch.trackIds = trackIds.filter(id => (db.ambientTracks || []).some(t => t.id === id));
   saveDB(db);
   res.json({ ok: true, trackIds: ch.trackIds });
+});
+
+// ── ADMIN: Auto-organizar canales por estilo ─────────────────────
+const _CH_STYLE_META = {
+  'lo-fi':        { icon: 'fa-headphones', color: '#6366f1' },
+  'lofi':         { icon: 'fa-headphones', color: '#6366f1' },
+  'jazz':         { icon: 'fa-music',      color: '#f59e0b' },
+  'chill':        { icon: 'fa-cloud',      color: '#0ea5e9' },
+  'ambient':      { icon: 'fa-wind',       color: '#a855f7' },
+  'meditación':   { icon: 'fa-spa',        color: '#10b981' },
+  'naturaleza':   { icon: 'fa-leaf',       color: '#22c55e' },
+  'lluvia':       { icon: 'fa-cloud-rain', color: '#64748b' },
+  'bosque':       { icon: 'fa-tree',       color: '#15803d' },
+  'océano':       { icon: 'fa-water',      color: '#0284c7' },
+  'río':          { icon: 'fa-water',      color: '#0ea5e9' },
+  'piano':        { icon: 'fa-music',      color: '#d97706' },
+  'guitarra':     { icon: 'fa-guitar',     color: '#92400e' },
+  'electrónica':  { icon: 'fa-bolt',       color: '#7c3aed' },
+  'trance':       { icon: 'fa-compact-disc', color: '#c026d3' },
+  'house':        { icon: 'fa-compact-disc', color: '#ec4899' },
+  'clásica':      { icon: 'fa-violin',     color: '#78716c' },
+  'estudio':      { icon: 'fa-brain',      color: '#8b5cf6' },
+  'sueño':        { icon: 'fa-moon',       color: '#4f46e5' },
+  'focus':        { icon: 'fa-brain',      color: '#8b5cf6' },
+  'deep':         { icon: 'fa-headphones', color: '#7c3aed' },
+  'café':         { icon: 'fa-coffee',     color: '#92400e' },
+  'acústico':     { icon: 'fa-guitar',     color: '#d97706' },
+  'vocal':        { icon: 'fa-microphone', color: '#db2777' },
+  'instrumental': { icon: 'fa-music',      color: '#0ea5e9' },
+  'hip-hop':      { icon: 'fa-headphones', color: '#1d4ed8' },
+  'soul':         { icon: 'fa-heart',      color: '#dc2626' },
+  'blues':        { icon: 'fa-music',      color: '#1e3a8a' },
+  'relax':        { icon: 'fa-spa',        color: '#059669' },
+  'drone':        { icon: 'fa-wave-square', color: '#6d28d9' },
+  'binaural':     { icon: 'fa-brain',      color: '#0f766e' },
+  'espacial':     { icon: 'fa-star',       color: '#1e40af' },
+  'dark':         { icon: 'fa-moon',       color: '#374151' },
+  'cinemático':   { icon: 'fa-film',       color: '#b45309' },
+  'trap':         { icon: 'fa-headphones', color: '#111827' },
+  'funk':         { icon: 'fa-music',      color: '#d97706' },
+  'bossa nova':   { icon: 'fa-music',      color: '#f59e0b' },
+  'flamenco':     { icon: 'fa-guitar',     color: '#b91c1c' },
+  'oriental':     { icon: 'fa-star-and-crescent', color: '#b45309' },
+  'ondas':        { icon: 'fa-water',      color: '#0369a1' },
+  'tormenta':     { icon: 'fa-bolt',       color: '#374151' },
+  'viento':       { icon: 'fa-wind',       color: '#64748b' },
+  'fuego':        { icon: 'fa-fire',       color: '#ea580c' },
+};
+
+function _chMetaFor(tag) {
+  const key = tag.toLowerCase();
+  return _CH_STYLE_META[key] || { icon: 'fa-music', color: '#a855f7' };
+}
+
+app.post('/api/admin/ambient/channels/auto-organize', authMiddleware, (req, res) => {
+  const { createMissing = true, assignTracks = true, dryRun = false } = req.body || {};
+
+  const tracks = (db.ambientTracks || []).filter(t => t.active !== false && t.tags?.length);
+
+  // Build tag → trackId map
+  const tagMap = {};
+  for (const t of tracks) {
+    for (const tag of t.tags) {
+      const norm = tag.trim();
+      if (!norm) continue;
+      (tagMap[norm] = tagMap[norm] || []).push(t.id);
+    }
+  }
+
+  const channels = db.ambientChannels || [];
+
+  // Match existing channels by name (case-insensitive) or style field
+  function findChannel(tag) {
+    const lc = tag.toLowerCase();
+    return channels.find(c =>
+      c.name.toLowerCase() === lc || (c.style || '').toLowerCase() === lc
+    );
+  }
+
+  const toCreate  = [];
+  const toAssign  = [];
+
+  for (const [tag, trackIds] of Object.entries(tagMap)) {
+    const existing = findChannel(tag);
+    if (existing) {
+      // Merge tracks into existing channel
+      const current = new Set(existing.trackIds || []);
+      const added   = trackIds.filter(id => !current.has(id));
+      if (added.length) toAssign.push({ channelId: existing.id, name: existing.name, add: added, total: current.size + added.length });
+    } else if (createMissing) {
+      toCreate.push({ tag, trackIds: [...new Set(trackIds)] });
+    }
+  }
+
+  if (dryRun) {
+    return res.json({ toCreate, toAssign, tagCount: Object.keys(tagMap).length, trackCount: tracks.length });
+  }
+
+  const created  = [];
+  const assigned = [];
+
+  if (createMissing) {
+    for (const { tag, trackIds } of toCreate) {
+      const meta = _chMetaFor(tag);
+      const ch = {
+        id: uid(), name: tag, description: `Canal de ${tag}`,
+        style: tag.toLowerCase(), icon: meta.icon, color: meta.color,
+        cover: null, trackIds, active: true,
+        order: (db.ambientChannels || []).length,
+        createdAt: new Date().toISOString(),
+      };
+      db.ambientChannels = [...(db.ambientChannels || []), ch];
+      created.push({ id: ch.id, name: ch.name, trackCount: trackIds.length });
+    }
+  }
+
+  if (assignTracks) {
+    for (const { channelId, name, add } of toAssign) {
+      const ch = (db.ambientChannels || []).find(c => c.id === channelId);
+      if (!ch) continue;
+      ch.trackIds = [...new Set([...(ch.trackIds || []), ...add])];
+      assigned.push({ id: channelId, name, added: add.length, total: ch.trackIds.length });
+    }
+  }
+
+  if (created.length || assigned.length) saveDB(db);
+  res.json({ created, assigned });
 });
 
 // ── ADMIN: Access management ────────────────────────────────────

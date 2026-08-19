@@ -2284,9 +2284,16 @@
       fetch(`/api/ambient/stream/${encodeURIComponent(t.itemId || t.id)}`, {
         headers: { 'Authorization': 'Bearer ' + token }
       })
-        .then(r => r.json())
-        .then(data => {
-          if (!ambientAudioActive) return; // track changed while fetching
+        .then(r => r.json().then(data => ({ status: r.status, data })))
+        .then(({ status, data }) => {
+          if (!ambientAudioActive) return;
+          if (status === 403) {
+            ambientAudioActive = false;
+            setPlaying(false);
+            if (artistEl) artistEl.textContent = data.code === 'EXPIRED' ? 'Suscripcion caducada' : 'Sin acceso';
+            if (data.code === 'EXPIRED') window.showToastGlobal?.('Tu suscripcion de musica ambiente ha caducado. Contacta con el administrador para renovarla.', 'error');
+            return;
+          }
           const audioUrl = data.type === 'audio' ? data.streamUrl
                           : (data.type === 'file' || data.type === 'url') ? data.url
                           : null;

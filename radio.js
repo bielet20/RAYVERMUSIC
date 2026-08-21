@@ -1414,9 +1414,11 @@
       // Ignore SC Widget FINISH if ambient audio is active — the widget was running
       // in the hidden iframe from the previous track and its FINISH must not skip the playlist.
       if (ambientAudioActive) return;
-      // In background: switch to native SC auto_play instead of sending more
-      // postMessages that the throttled iframe won't process in time
-      if (document.hidden && !_bgContinuousMode) { _bgContinuousPlay(); return; }
+      // In background (RAYVER Radio mode only): switch to native SC auto_play instead of
+      // sending postMessages that the throttled iframe won't process in time.
+      // In custom playlist mode the keep-alive AudioContext prevents throttling, so we
+      // continue advancing the user's list normally.
+      if (document.hidden && !_bgContinuousMode && activeRadioPlaylist === null) { _bgContinuousPlay(); return; }
       if (_bgContinuousMode) return; // SC Widget self-managing, don't interfere
       iframe.style.height = '0px';
       if (fillEl) fillEl.style.width = '0%';
@@ -2577,6 +2579,12 @@
     if (playing && !youtubeActive && !ambientAudioActive && widgetRdy && !isCrossfading) {
       widget.setVolume(muted ? 0 : vol());
     }
+    // Si se estaba en custom playlist y el SC Widget se detuvo sin que el watchdog
+    // pudiera avanzar (e.g. audio bloqueado), forzar reanudación del track actual.
+    if (activeRadioPlaylist !== null && !ambientAudioActive && !youtubeActive &&
+        customPlaylistStarted && !playing && widgetRdy) {
+      widget.play();
+    }
   });
 
   // Close dropdowns when clicking outside
@@ -2625,9 +2633,9 @@
     if (estimated < _wdProgress.dur + 1500) return;
     _wdProgress = null;
 
-    // Tab in background: don't try widget.next/playCustomTrack (SC iframe throttled).
-    // Instead switch to native SC auto_play — self-sustaining, no JS needed.
-    if (document.hidden) { _bgContinuousPlay(); return; }
+    // Tab in background, RAYVER Radio mode only: switch to native SC auto_play.
+    // Custom playlists continue normally — keep-alive AudioContext prevents throttling.
+    if (document.hidden && activeRadioPlaylist === null) { _bgContinuousPlay(); return; }
 
     if (activeRadioPlaylist !== null) {
       const next = _nextCustomIdx();

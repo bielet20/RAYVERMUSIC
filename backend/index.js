@@ -6,6 +6,9 @@ const path = require('path');
 const crypto = require('crypto');
 const https = require('https');
 const nodemailer = require('nodemailer');
+const { execFile } = require('child_process');
+const { promisify } = require('util');
+const execFileAsync = promisify(execFile);
 
 // ── EMAIL ────────────────────────────────────────────────────────
 function _buildMailer() {
@@ -2251,6 +2254,171 @@ app.post('/api/admin/ambient/upload/track', authMiddleware, uploadAudio.single('
 app.post('/api/admin/ambient/upload/cover', authMiddleware, uploadCover.single('cover'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No se recibió archivo' });
   res.json({ filename: req.file.filename, url: `/api/ambient/covers/${req.file.filename}` });
+});
+
+// ── ADMIN: Audio analysis helpers ───────────────────────────────
+
+async function _ffprobeAudio(filePath) {
+  try {
+    const { stdout } = await execFileAsync('ffprobe', [
+      '-v', 'quiet', '-print_format', 'json', '-show_streams', '-show_format', filePath
+    ], { maxBuffer: 2 * 1024 * 1024 });
+    const data = JSON.parse(stdout);
+    const audio = (data.streams || []).find(s => s.codec_type === 'audio');
+    const tags = { ...(data.format?.tags || {}), ...(audio?.tags || {}) };
+    const bpmRaw = tags.BPM || tags.TBPM || tags.bpm || tags.tbpm || '';
+    return {
+      bpm: parseInt(bpmRaw) || null,
+      duration: parseFloat(data.format?.duration) || null,
+    };
+  } catch(e) { return {}; }
+}
+
+async function _ffmpegLoudness(filePath) {
+  try {
+    // ffmpeg writes stats to stderr; the process exits 0 on success
+    const result = await execFileAsync('ffmpeg', [
+      '-i', filePath, '-af', 'volumedetect', '-vn', '-sn', '-dn', '-f', 'null', '/dev/null'
+    ], { maxBuffer: 2 * 1024 * 1024 }).catch(err => err); // stderr is on the error object when exit!=0
+    const stderr = result?.stderr || result?.message || '';
+    const m = stderr.match(/mean_volume:\s*([-\d.]+)\s*dB/);
+    if (!m) return null;
+    const db = parseFloat(m[1]);
+    return db > -14 ? 'high' : db > -23 ? 'medium' : 'low';
+  } catch(e) { return null; }
+}
+
+async function _claudeAnalyzeAmbientBatch(items) {
+  const key = process.env.ANTHROPIC_API_KEY;
+  if (!key || !items.length) return null;
+  const list = items.map((it, i) => {
+    let line = `${i + 1}. título="${it.title || ''}" carpeta="${it.folderName || ''}" tags="${(it.tags || []).join(', ')}"`;
+    if (it.energy) line += ` loudness_medido="${it.energy}"`;
+    if (it.bpm)    line += ` bpm_etiqueta=${it.bpm}`;
+    return line;
+  }).join('\n');
+  const MOODS = 'chill, focus, energetic, lounge, nature, dark, romantic, corporate, binaural, deep';
+  try {
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 2048,
+        messages: [{ role: 'user', content:
+          `Eres un clasificador de música ambiente profesional. Para cada pista devuelve:\n` +
+          `- mood: exactamente uno de [${MOODS}]\n` +
+          `- energy: uno de [low, medium, high] (usa loudness_medido si se proporciona, ajusta según contexto)\n` +
+          `- bpm: entero estimado o null (prioriza bpm_etiqueta si existe)\n` +
+          `- tags: array 1-3 etiquetas de estilo en español\n` +
+          `Responde SOLO JSON válido: {"results":[{"idx":1,"mood":"...","energy":"...","bpm":null,"tags":["..."]}]}\n\nPistas:\n` + list
+        }]
+      })
+    });
+    const d = await r.json();
+    const text = d.content?.[0]?.text || '';
+    const m = text.match(/\{[\s\S]*\}/);
+    if (!m) return null;
+    return JSON.parse(m[0]).results;
+  } catch(e) {
+    console.error('[analyze] Claude error:', e.message);
+    return null;
+  }
+}
+
+// ── ADMIN: Analyze tracks (SSE stream) ──────────────────────────
+app.post('/api/admin/ambient/analyze', authMiddleware, async (req, res) => {
+  const { ids, overwrite = false } = req.body || {};
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  const sse = (event, data) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+
+  const allTracks = db.ambientTracks || [];
+  let tracks = Array.isArray(ids) && ids.length
+    ? allTracks.filter(t => ids.includes(t.id))
+    : allTracks.filter(t => overwrite || !t.mood);
+
+  if (!tracks.length) {
+    sse('done', { total: 0, message: 'No hay tracks para analizar (todos tienen mood o la lista está vacía)' });
+    return res.end();
+  }
+
+  sse('start', { total: tracks.length });
+
+  // Step 1: audio analysis for local files (parallel, capped at 8 concurrent)
+  const audioFeatures = {};
+  const localTracks = tracks.filter(t => t.source?.type === 'file' && t.source?.file);
+  const AUDIO_CONCURRENCY = 8;
+  for (let i = 0; i < localTracks.length; i += AUDIO_CONCURRENCY) {
+    const chunk = localTracks.slice(i, i + AUDIO_CONCURRENCY);
+    await Promise.all(chunk.map(async t => {
+      const fp = path.join(AMBIENT_TRACKS_DIR, path.basename(t.source.file));
+      if (!fs.existsSync(fp)) return;
+      const [probe, loudness] = await Promise.all([_ffprobeAudio(fp), _ffmpegLoudness(fp)]);
+      audioFeatures[t.id] = { bpm: probe?.bpm || null, energy: loudness || null };
+    }));
+    sse('audio_progress', { done: Math.min(i + AUDIO_CONCURRENCY, localTracks.length), total: localTracks.length });
+  }
+
+  // Step 2: Claude classification in batches of 8
+  const BATCH = 8;
+  for (let i = 0; i < tracks.length; i += BATCH) {
+    const batch = tracks.slice(i, i + BATCH);
+    const items = batch.map((t, bi) => ({
+      idx: bi + 1,
+      title: t.title || '',
+      tags: t.tags || [],
+      folderName: t.importedFrom ? path.basename(path.dirname(t.importedFrom)) : '',
+      ...(audioFeatures[t.id] || {}),
+    }));
+    const aiResults = await _claudeAnalyzeAmbientBatch(items);
+    for (let j = 0; j < batch.length; j++) {
+      const t = batch[j];
+      const ai = aiResults?.find(r => r.idx === j + 1);
+      const af = audioFeatures[t.id] || {};
+      const suggested = {
+        mood:   ai?.mood   || _ambInferMood(t.title, '') || null,
+        energy: af.energy  || ai?.energy || null,
+        bpm:    af.bpm     || (ai?.bpm ? Number(ai.bpm) : null) || null,
+        tags:   ai?.tags   || [],
+      };
+      sse('result', {
+        id: t.id, title: t.title,
+        current: { mood: t.mood || null, energy: t.energy || null, bpm: t.bpm || null },
+        suggested,
+      });
+    }
+    sse('batch_done', { done: Math.min(i + BATCH, tracks.length), total: tracks.length });
+  }
+
+  sse('done', { total: tracks.length });
+  res.end();
+});
+
+app.post('/api/admin/ambient/analyze/apply', authMiddleware, (req, res) => {
+  const { approved } = req.body || {};
+  if (!Array.isArray(approved) || !approved.length)
+    return res.status(400).json({ error: 'approved requerido' });
+  let updated = 0;
+  for (const { id, mood, energy, bpm, tags } of approved) {
+    const idx = (db.ambientTracks || []).findIndex(t => t.id === id);
+    if (idx < 0) continue;
+    if (mood   !== undefined) db.ambientTracks[idx].mood   = mood   || null;
+    if (energy !== undefined) db.ambientTracks[idx].energy = energy || null;
+    if (bpm    !== undefined) db.ambientTracks[idx].bpm    = bpm ? Number(bpm) : null;
+    if (Array.isArray(tags) && tags.length) {
+      const cur = new Set(db.ambientTracks[idx].tags || []);
+      tags.forEach(tg => cur.add(tg));
+      db.ambientTracks[idx].tags = [...cur];
+    }
+    updated++;
+  }
+  if (updated) saveDB(db);
+  res.json({ ok: true, updated });
 });
 
 // ── ADMIN: Tracks CRUD ──────────────────────────────────────────

@@ -6,7 +6,7 @@ RUN npm install --omit=dev
 
 # Stage 2: contenedor único nginx + node
 FROM nginx:alpine
-RUN apk add --no-cache nodejs
+RUN apk add --no-cache nodejs ffmpeg
 
 # Frontend estático — todos los archivos html y assets
 COPY index.html gracias.html admin.html styles.css script.js radio.js \

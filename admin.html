@@ -578,6 +578,7 @@ body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--text);min-
                 </select>
                 <button id="amb-view-table-btn" class="btn btn-p btn-sm" onclick="ambSetViewMode('table')" title="Vista tabla"><i class="fas fa-list"></i></button>
                 <button id="amb-view-cat-btn" class="btn btn-g btn-sm" onclick="ambSetViewMode('grouped')" title="Vista por categoría"><i class="fas fa-layer-group"></i></button>
+                <button class="btn btn-sm" onclick="ambOpenAnalyzer()" title="Analizar y clasificar tracks con IA + audio"><i class="fas fa-microscope"></i> Analizar</button>
                 <button class="btn btn-p btn-sm" onclick="ambOpenTrackModal()"><i class="fas fa-plus"></i> Nuevo</button>
               </div>
             </div>
@@ -864,6 +865,77 @@ body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--text);min-
       </div>
 
       <!-- Modal: Track -->
+      <!-- Modal: Analizador IA + Audio -->
+      <div id="amb-analyzer-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this&&!_ambAnalyzing)ambCloseAnalyzer()">
+        <div class="modal-box glass" style="max-width:860px;width:96vw;max-height:92vh;display:flex;flex-direction:column;padding:24px;gap:16px">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
+            <div style="font-size:1.1rem;font-weight:700"><i class="fas fa-microscope" style="color:#a855f7;margin-right:8px"></i>Analizador de estilos</div>
+            <button class="btn btn-sm" onclick="ambCloseAnalyzer()" id="amb-az-close-btn"><i class="fas fa-times"></i></button>
+          </div>
+
+          <!-- Opciones -->
+          <div id="amb-az-options" style="display:flex;flex-direction:column;gap:12px;flex-shrink:0">
+            <p style="font-size:13px;color:var(--muted);margin:0">
+              Analiza los archivos de audio locales con <strong>ffprobe/ffmpeg</strong> (BPM, loudness) y clasifica automáticamente con <strong>Claude IA</strong> (mood, energía, estilo). Solo procesa tracks sin mood por defecto.
+            </p>
+            <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center">
+              <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+                <input type="checkbox" id="amb-az-overwrite" style="width:14px;height:14px;accent-color:#a855f7">
+                Reanalizar también tracks que ya tienen mood
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+                <input type="checkbox" id="amb-az-only-selected" style="width:14px;height:14px;accent-color:#a855f7">
+                Solo los tracks seleccionados (<span id="amb-az-sel-count">0</span>)
+              </label>
+            </div>
+            <div style="display:flex;gap:10px">
+              <button class="btn btn-p" onclick="ambStartAnalysis()" id="amb-az-start-btn"><i class="fas fa-play"></i> Iniciar análisis</button>
+            </div>
+          </div>
+
+          <!-- Progreso -->
+          <div id="amb-az-progress" style="display:none;flex-shrink:0">
+            <div style="display:flex;justify-content:space-between;margin-bottom:6px;font-size:12px;color:var(--muted)">
+              <span id="amb-az-progress-label">Analizando audio…</span>
+              <span id="amb-az-progress-count"></span>
+            </div>
+            <div style="background:var(--gb);border-radius:4px;height:6px">
+              <div id="amb-az-bar" style="background:linear-gradient(90deg,#a855f7,#6366f1);height:6px;border-radius:4px;width:0;transition:width .3s"></div>
+            </div>
+          </div>
+
+          <!-- Tabla de resultados -->
+          <div id="amb-az-results-wrap" style="display:none;flex:1;min-height:0;overflow-y:auto">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-shrink:0">
+              <div style="font-size:13px;font-weight:600">Resultados <span id="amb-az-result-count" style="color:#c084fc"></span></div>
+              <div style="display:flex;gap:8px">
+                <button class="btn btn-sm" onclick="ambAzSelectAll(true)"><i class="fas fa-check-double"></i> Todos</button>
+                <button class="btn btn-sm" onclick="ambAzSelectAll(false)"><i class="fas fa-minus"></i> Ninguno</button>
+              </div>
+            </div>
+            <table id="amb-az-table" style="width:100%;border-collapse:collapse;font-size:12px">
+              <thead>
+                <tr style="color:var(--muted);border-bottom:1px solid var(--gb);position:sticky;top:0;background:var(--bg2)">
+                  <th style="padding:6px 4px;text-align:left;width:28px"></th>
+                  <th style="padding:6px 8px;text-align:left">Track</th>
+                  <th style="padding:6px 8px;text-align:left">Mood actual → sugerido</th>
+                  <th style="padding:6px 8px;text-align:left">Energía</th>
+                  <th style="padding:6px 8px;text-align:left">BPM</th>
+                  <th style="padding:6px 8px;text-align:left">Tags nuevos</th>
+                </tr>
+              </thead>
+              <tbody id="amb-az-tbody"></tbody>
+            </table>
+          </div>
+
+          <!-- Footer de acciones -->
+          <div id="amb-az-footer" style="display:none;display:flex;gap:10px;align-items:center;flex-shrink:0;padding-top:8px;border-top:1px solid var(--gb)">
+            <button class="btn btn-p" onclick="ambApplyAnalysis()" id="amb-az-apply-btn"><i class="fas fa-save"></i> Aplicar seleccionados</button>
+            <span id="amb-az-apply-status" style="font-size:13px;color:var(--muted)"></span>
+          </div>
+        </div>
+      </div>
+
       <div id="amb-track-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)ambCloseTrackModal()">
         <div class="modal-box glass" style="max-width:560px;padding:28px;display:block;overflow-y:auto;max-height:90vh">
           <button class="modal-close" onclick="ambCloseTrackModal()"><i class="fas fa-times"></i></button>
@@ -4163,6 +4235,202 @@ async function ambAutoOrgApply() {
   } finally {
     applyBtn.disabled = false;
     previewBtn.disabled = false;
+  }
+}
+
+// ── Analizador IA + Audio ────────────────────────────────────────
+let _ambAnalyzing = false;
+let _ambAzResults = []; // { id, title, current, suggested, approved }
+
+function ambOpenAnalyzer() {
+  _ambAzResults = [];
+  _ambAnalyzing = false;
+  document.getElementById('amb-az-options').style.display = '';
+  document.getElementById('amb-az-progress').style.display = 'none';
+  document.getElementById('amb-az-results-wrap').style.display = 'none';
+  document.getElementById('amb-az-footer').style.display = 'none';
+  document.getElementById('amb-az-start-btn').disabled = false;
+  document.getElementById('amb-az-close-btn').disabled = false;
+  document.getElementById('amb-az-tbody').innerHTML = '';
+  document.getElementById('amb-az-overwrite').checked = false;
+  document.getElementById('amb-az-only-selected').checked = _ambSelected.size > 0;
+  document.getElementById('amb-az-sel-count').textContent = _ambSelected.size;
+  document.getElementById('amb-az-apply-status').textContent = '';
+  document.getElementById('amb-analyzer-modal').style.display = 'flex';
+}
+
+function ambCloseAnalyzer() {
+  if (_ambAnalyzing) return;
+  document.getElementById('amb-analyzer-modal').style.display = 'none';
+}
+
+async function ambStartAnalysis() {
+  const overwrite    = document.getElementById('amb-az-overwrite').checked;
+  const onlySelected = document.getElementById('amb-az-only-selected').checked;
+  const ids = onlySelected ? [..._ambSelected] : [];
+
+  _ambAnalyzing = true;
+  _ambAzResults = [];
+  document.getElementById('amb-az-start-btn').disabled = true;
+  document.getElementById('amb-az-close-btn').disabled = true;
+  document.getElementById('amb-az-options').style.display = 'none';
+  document.getElementById('amb-az-progress').style.display = '';
+  document.getElementById('amb-az-results-wrap').style.display = 'none';
+  document.getElementById('amb-az-footer').style.display = 'none';
+  document.getElementById('amb-az-tbody').innerHTML = '';
+
+  const progressLabel = document.getElementById('amb-az-progress-label');
+  const progressCount = document.getElementById('amb-az-progress-count');
+  const bar           = document.getElementById('amb-az-bar');
+
+  try {
+    const resp = await fetch(API + '/admin/ambient/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TOKEN },
+      body: JSON.stringify({ ids, overwrite }),
+    });
+
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.error || 'Error iniciando análisis');
+    }
+
+    const reader  = resp.body.getReader();
+    const dec     = new TextDecoder();
+    let buf = '';
+    let total = 0;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const parts = buf.split('\n\n');
+      buf = parts.pop();
+      for (const chunk of parts) {
+        const lines  = chunk.split('\n');
+        const eName  = (lines.find(l => l.startsWith('event:')) || '').slice(6).trim();
+        const dLine  = lines.find(l => l.startsWith('data:'));
+        if (!dLine) continue;
+        const data = JSON.parse(dLine.slice(5));
+
+        if (eName === 'start') {
+          total = data.total;
+          progressLabel.textContent = `Analizando audio de archivos locales…`;
+          progressCount.textContent = `0 / ${total}`;
+          bar.style.width = '5%';
+          document.getElementById('amb-az-results-wrap').style.display = '';
+          document.getElementById('amb-az-result-count').textContent = '';
+        } else if (eName === 'audio_progress') {
+          progressLabel.textContent = `Audio: ${data.done} / ${data.total} archivos…`;
+          bar.style.width = Math.round(data.done / Math.max(data.total, 1) * 40) + '%';
+        } else if (eName === 'batch_done') {
+          progressLabel.textContent = `IA clasificando: ${data.done} / ${data.total} tracks…`;
+          progressCount.textContent = `${data.done} / ${total}`;
+          bar.style.width = Math.round(40 + data.done / Math.max(data.total, 1) * 60) + '%';
+        } else if (eName === 'result') {
+          const row = { ...data, approved: true };
+          _ambAzResults.push(row);
+          _ambAzAppendRow(row, _ambAzResults.length - 1);
+          document.getElementById('amb-az-result-count').textContent = `(${_ambAzResults.length})`;
+        } else if (eName === 'done') {
+          bar.style.width = '100%';
+          progressLabel.textContent = data.message || `Análisis completado — ${total} tracks procesados`;
+          progressCount.textContent = '';
+        }
+      }
+    }
+  } catch(e) {
+    document.getElementById('amb-az-progress-label').textContent = '❌ ' + e.message;
+  } finally {
+    _ambAnalyzing = false;
+    document.getElementById('amb-az-close-btn').disabled = false;
+    if (_ambAzResults.length) {
+      document.getElementById('amb-az-footer').style.display = 'flex';
+    }
+  }
+}
+
+const _MOOD_COLORS = {
+  chill:'#0ea5e9', focus:'#8b5cf6', energetic:'#ef4444', lounge:'#a855f7',
+  nature:'#10b981', dark:'#6b7280', romantic:'#ec4899', corporate:'#6366f1',
+  binaural:'#f59e0b', deep:'#1e40af',
+};
+const _ENERGY_LABELS = { low:'Baja', medium:'Media', high:'Alta' };
+
+function _ambAzMoodBadge(mood, isNew) {
+  if (!mood) return '<span style="color:var(--muted)">—</span>';
+  const c = _MOOD_COLORS[mood] || '#a855f7';
+  const extra = isNew ? `border:1px solid ${c};font-weight:700` : 'opacity:.6';
+  return `<span style="background:${c}22;color:${c};padding:1px 7px;border-radius:999px;font-size:11px;${extra}">${_esc(mood)}</span>`;
+}
+
+function _ambAzAppendRow(row, idx) {
+  const tbody = document.getElementById('amb-az-tbody');
+  const tr = document.createElement('tr');
+  tr.id = `amb-az-row-${idx}`;
+  tr.style.cssText = 'border-bottom:1px solid rgba(255,255,255,.04)';
+  const moodChanged = row.suggested.mood && row.suggested.mood !== row.current.mood;
+  const energyChanged = row.suggested.energy && row.suggested.energy !== row.current.energy;
+  const bpmNew = row.suggested.bpm && !row.current.bpm;
+  tr.innerHTML = `
+    <td style="padding:7px 4px 7px 8px">
+      <input type="checkbox" ${row.approved ? 'checked' : ''} onchange="_ambAzToggle(${idx},this.checked)"
+        style="width:15px;height:15px;accent-color:#a855f7;cursor:pointer">
+    </td>
+    <td style="padding:7px 8px;font-weight:500;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_esc(row.title)}</td>
+    <td style="padding:7px 8px">
+      ${moodChanged
+        ? `${_ambAzMoodBadge(row.current.mood, false)} → ${_ambAzMoodBadge(row.suggested.mood, true)}`
+        : row.suggested.mood
+          ? _ambAzMoodBadge(row.suggested.mood, false) + ' <span style="font-size:10px;color:var(--muted)">(sin cambio)</span>'
+          : '<span style="color:var(--muted)">—</span>'}
+    </td>
+    <td style="padding:7px 8px;font-size:12px">
+      ${row.suggested.energy
+        ? `<span style="color:${energyChanged ? '#c084fc' : 'var(--muted)'}">${_ENERGY_LABELS[row.suggested.energy] || row.suggested.energy}</span>`
+        : '<span style="color:var(--muted)">—</span>'}
+    </td>
+    <td style="padding:7px 8px;font-size:12px">
+      ${row.suggested.bpm
+        ? `<span style="color:${bpmNew ? '#86efac' : 'var(--muted)'}">${row.suggested.bpm}</span>`
+        : '<span style="color:var(--muted)">—</span>'}
+    </td>
+    <td style="padding:7px 8px;font-size:11px;color:#c084fc">
+      ${(row.suggested.tags || []).map(tg => `<span style="background:rgba(168,85,247,.1);padding:1px 6px;border-radius:999px;margin-right:2px">${_esc(tg)}</span>`).join('')}
+    </td>`;
+  tbody.appendChild(tr);
+}
+
+function _ambAzToggle(idx, checked) {
+  if (_ambAzResults[idx]) _ambAzResults[idx].approved = checked;
+}
+
+function ambAzSelectAll(checked) {
+  _ambAzResults.forEach((r, i) => {
+    r.approved = checked;
+    const cb = document.querySelector(`#amb-az-row-${i} input[type=checkbox]`);
+    if (cb) cb.checked = checked;
+  });
+}
+
+async function ambApplyAnalysis() {
+  const approved = _ambAzResults
+    .filter(r => r.approved)
+    .map(r => ({ id: r.id, mood: r.suggested.mood, energy: r.suggested.energy, bpm: r.suggested.bpm, tags: r.suggested.tags }));
+  if (!approved.length) {
+    document.getElementById('amb-az-apply-status').textContent = 'Selecciona al menos un track';
+    return;
+  }
+  const btn = document.getElementById('amb-az-apply-btn');
+  btn.disabled = true;
+  document.getElementById('amb-az-apply-status').textContent = 'Guardando…';
+  try {
+    const r = await _ambApi('POST', '/admin/ambient/analyze/apply', { approved });
+    document.getElementById('amb-az-apply-status').textContent = `✓ ${r.updated} tracks actualizados`;
+    await ambLoadTracks();
+  } catch(e) {
+    document.getElementById('amb-az-apply-status').textContent = '❌ ' + e.message;
+    btn.disabled = false;
   }
 }
 

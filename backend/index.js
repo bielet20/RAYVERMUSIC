@@ -1795,15 +1795,22 @@ if (!db.ambientPlans) {
 }
 if (!db.ambientChannels) {
   db.ambientChannels = [
-    { id: 'ch_chill',  name: 'Chill Lounge',  description: 'Relajación y vibras suaves',          style: 'chill',  icon: 'fa-cloud',      color: '#0ea5e9', trackIds: [], active: true, order: 0, createdAt: new Date().toISOString() },
-    { id: 'ch_focus',  name: 'Deep Focus',    description: 'Concentración y productividad',        style: 'focus',  icon: 'fa-brain',      color: '#8b5cf6', trackIds: [], active: true, order: 1, createdAt: new Date().toISOString() },
-    { id: 'ch_jazz',   name: 'Jazz & Soul',   description: 'Calidez y groove para tu espacio',    style: 'jazz',   icon: 'fa-music',      color: '#f59e0b', trackIds: [], active: true, order: 2, createdAt: new Date().toISOString() },
-    { id: 'ch_nature', name: 'Naturaleza',    description: 'Sonidos naturales y paisajes sonoros', style: 'nature', icon: 'fa-leaf',       color: '#10b981', trackIds: [], active: true, order: 3, createdAt: new Date().toISOString() },
-    { id: 'ch_lounge', name: 'Lounge & Cafés',description: 'Ambiente para locales y cafeterías',  style: 'lounge', icon: 'fa-coffee',     color: '#a855f7', trackIds: [], active: true, order: 4, createdAt: new Date().toISOString() },
-    { id: 'ch_deep',   name: 'Deep House',    description: 'Beats electrónicos profundos',         style: 'deep',   icon: 'fa-headphones', color: '#ec4899', trackIds: [], active: true, order: 5, createdAt: new Date().toISOString() },
+    { id: 'ch_chill',     name: 'Chill Lounge',   description: 'Relajación y vibras suaves',          style: 'chill',     icon: 'fa-cloud',      color: '#0ea5e9', trackIds: [], active: true, order: 0, moods: ['chill'],                    zoneIds: ['hotel','spa','cafe','retail'], createdAt: new Date().toISOString() },
+    { id: 'ch_focus',     name: 'Deep Focus',      description: 'Concentración y productividad',        style: 'focus',     icon: 'fa-brain',      color: '#8b5cf6', trackIds: [], active: true, order: 1, moods: ['focus','corporate'],         zoneIds: ['office'], createdAt: new Date().toISOString() },
+    { id: 'ch_jazz',      name: 'Jazz & Soul',     description: 'Calidez y groove para tu espacio',    style: 'jazz',      icon: 'fa-music',      color: '#f59e0b', trackIds: [], active: true, order: 2, moods: ['lounge','romantic'],         zoneIds: ['restaurant','hotel','cafe'], createdAt: new Date().toISOString() },
+    { id: 'ch_nature',    name: 'Naturaleza',       description: 'Sonidos naturales y paisajes sonoros', style: 'nature',    icon: 'fa-leaf',       color: '#10b981', trackIds: [], active: true, order: 3, moods: ['nature','binaural'],         zoneIds: ['spa','hotel'], createdAt: new Date().toISOString() },
+    { id: 'ch_lounge',    name: 'Lounge & Cafés',  description: 'Ambiente para locales y cafeterías',  style: 'lounge',    icon: 'fa-coffee',     color: '#a855f7', trackIds: [], active: true, order: 4, moods: ['lounge','chill'],            zoneIds: ['cafe','restaurant','retail'], createdAt: new Date().toISOString() },
+    { id: 'ch_deep',      name: 'Deep House',       description: 'Beats electrónicos profundos',         style: 'deep',      icon: 'fa-headphones', color: '#ec4899', trackIds: [], active: true, order: 5, moods: ['deep','dark','energetic'],  zoneIds: ['club','gym'], createdAt: new Date().toISOString() },
   ];
   saveDB(db);
 }
+// Migrar canales existentes: añadir moods/zoneIds si no los tienen
+let _chMigrated = false;
+for (const ch of (db.ambientChannels || [])) {
+  if (!Array.isArray(ch.moods))   { ch.moods   = []; _chMigrated = true; }
+  if (!Array.isArray(ch.zoneIds)) { ch.zoneIds = []; _chMigrated = true; }
+}
+if (_chMigrated) saveDB(db);
 
 // Multer: audio (500MB) y covers (5MB)
 const _audioStorage = multer.diskStorage({
@@ -2205,18 +2212,23 @@ app.post('/api/admin/ambient/scan', authMiddleware, async (req, res) => {
     const isInternal = resolved.startsWith(path.resolve(AMBIENT_TRACKS_DIR));
     const sourceFile = isInternal ? path.basename(filePath) : filePath;
 
+    const _folderName = path.basename(path.dirname(filePath));
     const track = {
       id:          uid(),
       title:       meta.title,
       description: [meta.artist, meta.album, meta.year].filter(Boolean).join(' · '),
       cover:       meta.cover || null,
       tags:        meta.genre || [],
+      mood:        _ambInferMood(meta.title || path.basename(filePath), _folderName),
+      energy:      null,
+      bpm:         null,
       duration:    meta.duration,
       packId:      packId || null,
       previewUrl:  null,
       source:      { type: 'file', file: sourceFile },
       order:       (db.ambientTracks || []).length + results.imported,
       active:      autoActive !== false,
+      zones:       [],
       createdAt:   new Date().toISOString(),
       importedFrom: filePath,
     };
@@ -2281,12 +2293,16 @@ app.post('/api/admin/ambient/tracks/auto-tag', authMiddleware, async (req, res) 
       const idx = db.ambientTracks.findIndex(x => x.id === t.id);
       if (idx < 0) continue;
       db.ambientTracks[idx].tags = tags;
-      updated.push({ id: t.id, title: t.title, tags });
+      const inferredMood = _ambInferMood(t.title || '', '');
+      if (inferredMood && (overwrite || !db.ambientTracks[idx].mood)) {
+        db.ambientTracks[idx].mood = inferredMood;
+      }
+      updated.push({ id: t.id, title: t.title, tags, mood: db.ambientTracks[idx].mood });
     }
     if (updated.length) saveDB(db);
   } else {
     for (const { t, tags } of candidates) {
-      updated.push({ id: t.id, title: t.title, tags });
+      updated.push({ id: t.id, title: t.title, tags, mood: _ambInferMood(t.title || '', '') });
     }
   }
 
@@ -2294,13 +2310,16 @@ app.post('/api/admin/ambient/tracks/auto-tag', authMiddleware, async (req, res) 
 });
 
 app.post('/api/admin/ambient/tracks/bulk-update', authMiddleware, (req, res) => {
-  const { ids, packId, zones, zonesMode } = req.body || {};
+  const { ids, packId, zones, zonesMode, mood, energy, bpm } = req.body || {};
   if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids requerido' });
   let updated = 0;
   for (const id of ids) {
     const idx = (db.ambientTracks || []).findIndex(t => t.id === id);
     if (idx < 0) continue;
     if (packId !== undefined) db.ambientTracks[idx].packId = packId || null;
+    if (mood !== undefined) db.ambientTracks[idx].mood = mood || null;
+    if (energy !== undefined) db.ambientTracks[idx].energy = energy || null;
+    if (bpm !== undefined) db.ambientTracks[idx].bpm = bpm ? Number(bpm) : null;
     if (Array.isArray(zones)) {
       if (zonesMode === 'add') {
         const cur = new Set(db.ambientTracks[idx].zones || []);
@@ -2321,11 +2340,12 @@ app.post('/api/admin/ambient/tracks/bulk-update', authMiddleware, (req, res) => 
 });
 
 app.post('/api/admin/ambient/tracks', authMiddleware, (req, res) => {
-  const { title, description, cover, tags, duration, packId, previewUrl, source, order, zones } = req.body || {};
+  const { title, description, cover, tags, mood, energy, bpm, duration, packId, previewUrl, source, order, zones } = req.body || {};
   if (!title) return res.status(400).json({ error: 'Título requerido' });
   const track = {
     id: uid(), title, description: description || '', cover: cover || null,
-    tags: tags || [], duration: duration || 0, packId: packId || null,
+    tags: tags || [], mood: mood || null, energy: energy || null, bpm: bpm ? Number(bpm) : null,
+    duration: duration || 0, packId: packId || null,
     previewUrl: previewUrl || null, source: source || { type: 'url', url: '' },
     order: order ?? (db.ambientTracks || []).length,
     active: true, zones: zones || [], createdAt: new Date().toISOString(),
@@ -2357,6 +2377,41 @@ app.delete('/api/admin/ambient/tracks/:id', authMiddleware, (req, res) => {
 
 // ── ADMIN: Google Drive folder batch import ────────────────────
 // ── Helpers de auto-clasificación ambient ────────────────────────
+// Mood enum: 10 categorías estructuradas que reemplazan los tags libres como clasificador primario
+const AMB_MOODS = {
+  chill:     { label: 'Chill',       icon: 'fa-cloud',       color: '#0ea5e9' },
+  focus:     { label: 'Focus',       icon: 'fa-brain',       color: '#8b5cf6' },
+  energetic: { label: 'Energético',  icon: 'fa-bolt',        color: '#ef4444' },
+  lounge:    { label: 'Lounge',      icon: 'fa-cocktail',    color: '#a855f7' },
+  nature:    { label: 'Naturaleza',  icon: 'fa-leaf',        color: '#10b981' },
+  dark:      { label: 'Dark',        icon: 'fa-moon',        color: '#6b7280' },
+  romantic:  { label: 'Romántico',   icon: 'fa-heart',       color: '#ec4899' },
+  corporate: { label: 'Corporativo', icon: 'fa-briefcase',   color: '#6366f1' },
+  binaural:  { label: 'Binaural',    icon: 'fa-wave-square', color: '#f59e0b' },
+  deep:      { label: 'Deep',        icon: 'fa-headphones',  color: '#1e40af' },
+};
+
+const _AMB_MOOD_KEYWORDS = [
+  [/lo[\s-]?fi|chill\b|relax|soft\b|gentle/i,                               'chill'],
+  [/focus|concentra|study|estudio|produc|work\b|brain|trabajo/i,             'focus'],
+  [/energet|gym|workout|power|upbeat|intense|fiesta|party/i,                 'energetic'],
+  [/jazz|bossa|café|coffee|social|cocktail|lounge|bistro/i,                  'lounge'],
+  [/nature|naturaleza|rain|lluvia|forest|bosque|ocean|mar\b|river|río|birds|pájaros|stream/i, 'nature'],
+  [/dark\b|oscuro|noir|cinematic|thriller|tense|dramatic/i,                  'dark'],
+  [/roman|love\b|intimate|sexy|sensual|passion|soul\b/i,                     'romantic'],
+  [/corporate|office|business|formal|meeting|cowork|empresa/i,               'corporate'],
+  [/binaural|meditat|zen|yoga|sleep|sueño|mindful|healing/i,                 'binaural'],
+  [/deep\b|underground|bass|techno|\bhouse\b|club\b|tribal/i,                'deep'],
+];
+
+function _ambInferMood(filename, folderName) {
+  const haystack = ((folderName || '') + ' ' + (filename || '')).toLowerCase();
+  for (const [re, mood] of _AMB_MOOD_KEYWORDS) {
+    if (re.test(haystack)) return mood;
+  }
+  return null;
+}
+
 const _AMB_STYLE_KEYWORDS = [
   [/lo[\s-]?fi/i,           'Lo-Fi'],
   [/jazz/i,                 'Jazz'],
@@ -2539,12 +2594,16 @@ app.post('/api/admin/ambient/gdrive-folder-import', authMiddleware, async (req, 
         description: '',
         cover: null,
         tags: merged,
+        mood: _ambInferMood(f.name, f._folderName),
+        energy: null,
+        bpm: null,
         duration: 0,
         packId: packId || null,
         previewUrl: null,
         source: { type: 'gdrive', fileId: f.id },
         order: (db.ambientTracks || []).length,
         active: true,
+        zones: [],
         createdAt: new Date().toISOString(),
       };
       db.ambientTracks = [...(db.ambientTracks || []), track];
@@ -2608,11 +2667,13 @@ app.put('/api/admin/ambient/plans/:id', authMiddleware, (req, res) => {
 app.get('/api/admin/ambient/channels', authMiddleware, (req, res) => res.json({ channels: db.ambientChannels || [] }));
 
 app.post('/api/admin/ambient/channels', authMiddleware, (req, res) => {
-  const { name, description, style, icon, color, cover } = req.body || {};
+  const { name, description, style, icon, color, cover, moods, zoneIds } = req.body || {};
   if (!name) return res.status(400).json({ error: 'Nombre requerido' });
   const ch = {
     id: uid(), name, description: description || '', style: style || '',
     icon: icon || 'fa-music', color: color || '#a855f7', cover: cover || null,
+    moods: Array.isArray(moods) ? moods : [],
+    zoneIds: Array.isArray(zoneIds) ? zoneIds : [],
     trackIds: [], active: true, order: (db.ambientChannels || []).length,
     createdAt: new Date().toISOString(),
   };
@@ -2773,6 +2834,55 @@ app.post('/api/admin/ambient/channels/auto-organize', authMiddleware, (req, res)
 
   if (created.length || assigned.length) saveDB(db);
   res.json({ created, assigned });
+});
+
+// ── ADMIN: Auto-assign tracks to channels by mood ───────────────
+function _autoAssignPreview() {
+  const tracks = (db.ambientTracks || []).filter(t => t.active !== false && t.mood);
+  const channels = db.ambientChannels || [];
+
+  // mood → channel mapping: pick first channel whose moods[] includes the mood
+  const moodToChannel = {};
+  for (const mood of Object.keys(AMB_MOODS)) {
+    const ch = channels.find(c => Array.isArray(c.moods) && c.moods.includes(mood));
+    if (ch) moodToChannel[mood] = ch;
+  }
+
+  const assignments = [];
+  for (const t of tracks) {
+    const ch = moodToChannel[t.mood];
+    if (!ch) continue;
+    const alreadyIn = (ch.trackIds || []).includes(t.id);
+    assignments.push({ trackId: t.id, trackTitle: t.title, mood: t.mood, channelId: ch.id, channelName: ch.name, alreadyIn });
+  }
+  const unmatched = tracks.filter(t => !moodToChannel[t.mood]).map(t => ({ trackId: t.id, trackTitle: t.title, mood: t.mood }));
+  return { assignments, unmatched, moodToChannel: Object.fromEntries(Object.entries(moodToChannel).map(([m, c]) => [m, { id: c.id, name: c.name }])) };
+}
+
+app.get('/api/admin/ambient/auto-assign/preview', authMiddleware, (req, res) => {
+  res.json(_autoAssignPreview());
+});
+
+app.post('/api/admin/ambient/auto-assign', authMiddleware, (req, res) => {
+  const preview = _autoAssignPreview();
+  const toAdd = preview.assignments.filter(a => !a.alreadyIn);
+  if (!toAdd.length) return res.json({ ok: true, added: 0, channels: [] });
+
+  const byChannel = {};
+  for (const a of toAdd) {
+    (byChannel[a.channelId] = byChannel[a.channelId] || []).push(a.trackId);
+  }
+
+  const result = [];
+  for (const [channelId, trackIds] of Object.entries(byChannel)) {
+    const ch = (db.ambientChannels || []).find(c => c.id === channelId);
+    if (!ch) continue;
+    ch.trackIds = [...new Set([...(ch.trackIds || []), ...trackIds])];
+    result.push({ channelId, channelName: ch.name, added: trackIds.length, total: ch.trackIds.length });
+  }
+
+  if (result.length) saveDB(db);
+  res.json({ ok: true, added: toAdd.length, channels: result });
 });
 
 // ── ADMIN: Access management ────────────────────────────────────

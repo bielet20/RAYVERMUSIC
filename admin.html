@@ -563,6 +563,19 @@ body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--text);min-
                 <select id="amb-filter-zone" onchange="ambRenderTracks()" style="background:rgba(255,255,255,.06);border:1px solid var(--gb);border-radius:8px;padding:4px 10px;color:var(--text);font-size:12px;height:32px">
                   <option value="">Todas las zonas</option>
                 </select>
+                <select id="amb-filter-mood" onchange="ambRenderTracks()" style="background:rgba(255,255,255,.06);border:1px solid var(--gb);border-radius:8px;padding:4px 10px;color:var(--text);font-size:12px;height:32px">
+                  <option value="">Todos los moods</option>
+                  <option value="chill">Chill</option>
+                  <option value="focus">Focus</option>
+                  <option value="energetic">Energético</option>
+                  <option value="lounge">Lounge</option>
+                  <option value="nature">Naturaleza</option>
+                  <option value="dark">Dark</option>
+                  <option value="romantic">Romántico</option>
+                  <option value="corporate">Corporativo</option>
+                  <option value="binaural">Binaural</option>
+                  <option value="deep">Deep</option>
+                </select>
                 <button id="amb-view-table-btn" class="btn btn-p btn-sm" onclick="ambSetViewMode('table')" title="Vista tabla"><i class="fas fa-list"></i></button>
                 <button id="amb-view-cat-btn" class="btn btn-g btn-sm" onclick="ambSetViewMode('grouped')" title="Vista por categoría"><i class="fas fa-layer-group"></i></button>
                 <button class="btn btn-p btn-sm" onclick="ambOpenTrackModal()"><i class="fas fa-plus"></i> Nuevo</button>
@@ -585,6 +598,29 @@ body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--text);min-
                 <option value="remove">Quitar</option>
               </select>
               <button class="btn btn-p btn-sm" onclick="ambBulkZone()"><i class="fas fa-check"></i></button>
+              <span style="font-size:12px;color:var(--muted);margin-left:6px">Mood:</span>
+              <select id="amb-bulk-mood" style="background:rgba(255,255,255,.06);border:1px solid var(--gb);border-radius:8px;padding:4px 10px;color:var(--text);font-size:12px;height:32px">
+                <option value="">— mood —</option>
+                <option value="chill">Chill</option>
+                <option value="focus">Focus</option>
+                <option value="energetic">Energético</option>
+                <option value="lounge">Lounge</option>
+                <option value="nature">Naturaleza</option>
+                <option value="dark">Dark</option>
+                <option value="romantic">Romántico</option>
+                <option value="corporate">Corporativo</option>
+                <option value="binaural">Binaural</option>
+                <option value="deep">Deep</option>
+              </select>
+              <span style="font-size:12px;color:var(--muted)">Energía:</span>
+              <select id="amb-bulk-energy" style="background:rgba(255,255,255,.06);border:1px solid var(--gb);border-radius:8px;padding:4px 10px;color:var(--text);font-size:12px;height:32px">
+                <option value="">— energía —</option>
+                <option value="low">Baja</option>
+                <option value="medium">Media</option>
+                <option value="high">Alta</option>
+              </select>
+              <button class="btn btn-p btn-sm" onclick="ambBulkMood()"><i class="fas fa-tag"></i></button>
+              <button class="btn btn-sm" onclick="ambAutoAssign()" title="Asignar tracks a canales según su mood" style="margin-left:6px"><i class="fas fa-magic"></i> Auto-canal</button>
               <button class="btn btn-g btn-sm" onclick="ambClearSelection()" style="margin-left:6px"><i class="fas fa-times"></i> Cancelar</button>
             </div>
             <div id="amb-tracks-list" style="padding:16px">
@@ -595,6 +631,22 @@ body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--text);min-
 
         <!-- ── CANALES ── -->
         <div id="amb-panel-channels" style="display:none">
+
+          <!-- Auto-asignación por mood -->
+          <div class="gc" style="margin-bottom:16px">
+            <div class="ch"><span class="ct"><i class="fas fa-tag" style="color:#a855f7"></i> Auto-asignar por mood</span></div>
+            <div style="padding:16px;display:flex;flex-direction:column;gap:12px">
+              <p style="font-size:13px;color:var(--muted);margin:0">
+                Asigna automáticamente los tracks a los canales según su <strong>mood</strong>. Cada canal debe tener al menos un mood asignado para recibir tracks.
+              </p>
+              <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+                <button class="btn btn-sm" onclick="ambAutoAssignPreview()" id="amb-aa-preview-btn"><i class="fas fa-search"></i> Vista previa</button>
+                <button class="btn btn-p btn-sm" onclick="ambAutoAssignApply()" id="amb-aa-apply-btn" style="display:none"><i class="fas fa-magic"></i> Aplicar</button>
+                <span id="amb-aa-status" style="font-size:13px;color:var(--muted)"></span>
+              </div>
+              <div id="amb-aa-results" style="display:none;background:rgba(168,85,247,.05);border:1px solid rgba(168,85,247,.15);border-radius:10px;padding:12px;font-size:12px;max-height:260px;overflow-y:auto"></div>
+            </div>
+          </div>
 
           <!-- Auto-organización por estilo -->
           <div class="gc" style="margin-bottom:16px">
@@ -648,6 +700,27 @@ body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--text);min-
             <div class="field"><label>Icono FontAwesome (sin "fa-")</label><input type="text" id="amb-ch-icon" placeholder="Ej: music, cloud, headphones, leaf"></div>
             <div class="field"><label>URL de cover (opcional)</label><input type="text" id="amb-ch-cover" placeholder="https://..."></div>
             <div class="field">
+              <label>Moods asociados <span style="font-size:11px;color:var(--muted)">(para auto-asignación)</span></label>
+              <div id="amb-ch-moods-container" style="display:flex;flex-wrap:wrap;gap:6px;padding:10px;background:rgba(255,255,255,.04);border:1px solid var(--gb);border-radius:8px">
+                <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;padding:3px 8px;border-radius:6px;border:1px solid var(--gb)"><input type="checkbox" value="chill" style="accent-color:#0ea5e9"> Chill</label>
+                <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;padding:3px 8px;border-radius:6px;border:1px solid var(--gb)"><input type="checkbox" value="focus" style="accent-color:#8b5cf6"> Focus</label>
+                <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;padding:3px 8px;border-radius:6px;border:1px solid var(--gb)"><input type="checkbox" value="energetic" style="accent-color:#ef4444"> Energético</label>
+                <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;padding:3px 8px;border-radius:6px;border:1px solid var(--gb)"><input type="checkbox" value="lounge" style="accent-color:#a855f7"> Lounge</label>
+                <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;padding:3px 8px;border-radius:6px;border:1px solid var(--gb)"><input type="checkbox" value="nature" style="accent-color:#10b981"> Naturaleza</label>
+                <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;padding:3px 8px;border-radius:6px;border:1px solid var(--gb)"><input type="checkbox" value="dark" style="accent-color:#6b7280"> Dark</label>
+                <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;padding:3px 8px;border-radius:6px;border:1px solid var(--gb)"><input type="checkbox" value="romantic" style="accent-color:#ec4899"> Romántico</label>
+                <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;padding:3px 8px;border-radius:6px;border:1px solid var(--gb)"><input type="checkbox" value="corporate" style="accent-color:#6366f1"> Corporativo</label>
+                <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;padding:3px 8px;border-radius:6px;border:1px solid var(--gb)"><input type="checkbox" value="binaural" style="accent-color:#f59e0b"> Binaural</label>
+                <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;padding:3px 8px;border-radius:6px;border:1px solid var(--gb)"><input type="checkbox" value="deep" style="accent-color:#1e40af"> Deep</label>
+              </div>
+            </div>
+            <div class="field">
+              <label>Zonas <span style="font-size:11px;color:var(--muted)">(tipos de local donde aplica)</span></label>
+              <div id="amb-ch-zones-container" style="display:flex;flex-wrap:wrap;gap:6px;padding:10px;background:rgba(255,255,255,.04);border:1px solid var(--gb);border-radius:8px;min-height:36px">
+                <span style="color:var(--muted);font-size:12px">Cargando zonas…</span>
+              </div>
+            </div>
+            <div class="field">
               <label>Activo</label>
               <select id="amb-ch-active" style="width:100%;background:rgba(255,255,255,.06);border:1px solid var(--gb);border-radius:8px;padding:10px;color:var(--text)">
                 <option value="true">Sí</option>
@@ -684,6 +757,7 @@ body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--text);min-
               <select id="amb-ch-group-by" onchange="ambRenderChPanels()"
                 style="padding:8px 12px;border-radius:8px;border:1px solid var(--gb);background:rgba(30,30,40,.9);color:var(--text);font-size:12px">
                 <option value="none">Sin agrupar</option>
+                <option value="mood">Mood</option>
                 <option value="style">Estilo / Tag</option>
                 <option value="name">Nombre A–Z</option>
               </select>
@@ -806,6 +880,32 @@ body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--text);min-
             <div class="field"><label>Duración (segundos)</label><input type="number" id="amb-t-duration" placeholder="3600" min="0"></div>
           </div>
           <div class="field"><label>Tags (separados por coma)</label><input type="text" id="amb-t-tags" placeholder="naturaleza, lluvia, meditación"></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
+            <div class="field"><label>Mood</label>
+              <select id="amb-t-mood" style="width:100%;background:rgba(255,255,255,.06);border:1px solid var(--gb);border-radius:8px;padding:10px;color:var(--text);font-family:inherit">
+                <option value="">Sin mood</option>
+                <option value="chill">Chill</option>
+                <option value="focus">Focus</option>
+                <option value="energetic">Energético</option>
+                <option value="lounge">Lounge</option>
+                <option value="nature">Naturaleza</option>
+                <option value="dark">Dark</option>
+                <option value="romantic">Romántico</option>
+                <option value="corporate">Corporativo</option>
+                <option value="binaural">Binaural</option>
+                <option value="deep">Deep</option>
+              </select>
+            </div>
+            <div class="field"><label>Energía</label>
+              <select id="amb-t-energy" style="width:100%;background:rgba(255,255,255,.06);border:1px solid var(--gb);border-radius:8px;padding:10px;color:var(--text);font-family:inherit">
+                <option value="">Sin definir</option>
+                <option value="low">Baja</option>
+                <option value="medium">Media</option>
+                <option value="high">Alta</option>
+              </select>
+            </div>
+            <div class="field"><label>BPM</label><input type="number" id="amb-t-bpm" placeholder="120" min="1" max="300"></div>
+          </div>
 
           <!-- Source type -->
           <div class="field">
@@ -3137,7 +3237,11 @@ function ambRenderChannels() {
       </div>
       <div style="flex:1;min-width:0">
         <div style="font-weight:600">${_esc(ch.name)} ${!ch.active ? '<span style="color:var(--muted);font-size:12px">(inactivo)</span>' : ''}</div>
-        <div style="font-size:12px;color:var(--muted)">${_esc(ch.description || '')} &middot; ${(ch.trackIds||[]).length} tracks</div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:4px">${_esc(ch.description || '')} &middot; ${(ch.trackIds||[]).length} tracks</div>
+        <div style="display:flex;flex-wrap:wrap;gap:3px">
+          ${(ch.moods||[]).map(m => `<span style="background:rgba(168,85,247,.15);color:#c084fc;padding:1px 6px;border-radius:999px;font-size:10px">${_esc(m)}</span>`).join('')}
+          ${(ch.zoneIds||[]).map(zid => { const z = _ambZones.find(x=>x.id===zid); return z ? `<span style="background:${z.color}22;color:${z.color};padding:1px 6px;border-radius:999px;font-size:10px;border:1px solid ${z.color}44">${_esc(z.name)}</span>` : ''; }).join('')}
+        </div>
       </div>
       <div style="display:flex;gap:6px;flex-shrink:0">
         <button class="btn btn-sm" title="Gestionar tracks" onclick="ambOpenChannelTracksModal('${ch.id}')">
@@ -3163,11 +3267,31 @@ function ambOpenChannelModal(id) {
   document.getElementById('amb-ch-icon').value        = (ch?.icon || '').replace('fa-', '');
   document.getElementById('amb-ch-cover').value       = ch?.cover       || '';
   document.getElementById('amb-ch-active').value      = ch ? String(ch.active !== false) : 'true';
+  // Moods checkboxes
+  const selMoods = new Set(ch?.moods || []);
+  document.querySelectorAll('#amb-ch-moods-container input[type=checkbox]').forEach(cb => {
+    cb.checked = selMoods.has(cb.value);
+  });
+  // Zones checkboxes
+  const selZoneIds = new Set(ch?.zoneIds || []);
+  const zc = document.getElementById('amb-ch-zones-container');
+  if (_ambZones.length) {
+    zc.innerHTML = _ambZones.map(z =>
+      `<label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;padding:3px 8px;border-radius:6px;border:1px solid var(--gb)">
+        <input type="checkbox" value="${z.id}" ${selZoneIds.has(z.id) ? 'checked' : ''} style="accent-color:${z.color};width:13px;height:13px">
+        <i class="fas ${z.icon}" style="color:${z.color};font-size:11px"></i>
+        <span>${_esc(z.name)}</span>
+      </label>`).join('');
+  } else {
+    zc.innerHTML = '<span style="color:var(--muted);font-size:12px">No hay zonas creadas aún.</span>';
+  }
   document.getElementById('amb-channel-modal').style.display = 'flex';
 }
 
 async function ambSaveChannel() {
   const id = document.getElementById('amb-ch-id').value;
+  const moods   = [...document.querySelectorAll('#amb-ch-moods-container input[type=checkbox]:checked')].map(cb => cb.value);
+  const zoneIds = [...document.querySelectorAll('#amb-ch-zones-container input[type=checkbox]:checked')].map(cb => cb.value);
   const body = {
     name:        document.getElementById('amb-ch-name').value.trim(),
     description: document.getElementById('amb-ch-description').value.trim(),
@@ -3176,6 +3300,8 @@ async function ambSaveChannel() {
     icon:        'fa-' + document.getElementById('amb-ch-icon').value.trim().replace(/^fa-/, ''),
     cover:       document.getElementById('amb-ch-cover').value.trim() || null,
     active:      document.getElementById('amb-ch-active').value === 'true',
+    moods,
+    zoneIds,
   };
   if (!body.name) { alert('El nombre es obligatorio'); return; }
   const r = id
@@ -3237,7 +3363,8 @@ function _ambChTrackMatchesFilter(t, q) {
   return haystack.includes(q);
 }
 
-function _ambChTagOf(t) {
+function _ambChTagOf(t, groupBy) {
+  if (groupBy === 'mood') return t.mood || 'Sin mood';
   return (t.tags && t.tags[0]) ? t.tags[0] : 'Sin estilo';
 }
 
@@ -3253,9 +3380,9 @@ function ambRenderChPanels() {
   const availEl = document.getElementById('amb-ch-avail-list');
   if (!avail.length) {
     availEl.innerHTML = '<div style="color:var(--muted);text-align:center;padding:24px;font-size:13px">Sin tracks disponibles</div>';
-  } else if (groupBy === 'style') {
+  } else if (groupBy === 'mood' || groupBy === 'style') {
     const groups = {};
-    avail.forEach(t => { const g = _ambChTagOf(t); (groups[g] = groups[g] || []).push(t); });
+    avail.forEach(t => { const g = _ambChTagOf(t, groupBy); (groups[g] = groups[g] || []).push(t); });
     availEl.innerHTML = Object.keys(groups).sort().map(g => `
       <div style="margin-bottom:4px">
         <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 6px;font-size:11px;font-weight:700;color:#a855f7;text-transform:uppercase;letter-spacing:.5px;cursor:pointer"
@@ -3404,6 +3531,7 @@ function ambSetViewMode(mode) {
 function ambRenderTracks() {
   const filterCat  = document.getElementById('amb-filter-cat')?.value  || '';
   const filterZone = document.getElementById('amb-filter-zone')?.value || '';
+  const filterMood = document.getElementById('amb-filter-mood')?.value || '';
   const filterQ    = (document.getElementById('amb-filter-search')?.value || '').toLowerCase().trim();
   const el = document.getElementById('amb-tracks-list');
   if (!_ambTracks.length) { el.innerHTML = '<div class="re-empty"><i class="fas fa-music"></i><p>No hay tracks. Importa o crea el primero.</p></div>'; return; }
@@ -3412,6 +3540,7 @@ function ambRenderTracks() {
   if (filterCat === '__none__')   tracks = tracks.filter(t => !t.packId);
   else if (filterCat)             tracks = tracks.filter(t => t.packId === filterCat);
   if (filterZone)                 tracks = tracks.filter(t => (t.zones || []).includes(filterZone));
+  if (filterMood)                 tracks = tracks.filter(t => t.mood === filterMood);
   if (filterQ)                    tracks = tracks.filter(t =>
     t.title?.toLowerCase().includes(filterQ) ||
     (t.tags || []).some(g => g.toLowerCase().includes(filterQ)));
@@ -3432,7 +3561,7 @@ function _ambTrackRow(t, showCheckbox) {
   return `<tr style="border-bottom:1px solid rgba(255,255,255,.04)">
     ${showCheckbox ? `<td style="padding:8px 4px 8px 12px"><input type="checkbox" data-tid="${t.id}"${checked} onchange="ambToggleTrack('${t.id}',this.checked)" style="width:16px;height:16px;accent-color:#a855f7;cursor:pointer"></td>` : ''}
     <td style="padding:8px">${t.cover ? `<img src="${_esc(t.cover)}" onerror="this.style.display='none'" style="width:36px;height:36px;border-radius:6px;object-fit:cover">` : `<div style="width:36px;height:36px;border-radius:6px;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:16px">🎵</div>`}</td>
-    <td style="padding:8px;font-weight:600;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_esc(t.title)}<br><span style="color:var(--muted);font-size:11px;font-weight:400">${(t.tags||[]).join(', ')}</span></td>
+    <td style="padding:8px;font-weight:600;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_esc(t.title)}<br><span style="color:var(--muted);font-size:11px;font-weight:400">${t.mood ? `<span style="background:rgba(168,85,247,.15);color:#c084fc;padding:1px 6px;border-radius:999px;font-size:10px;margin-right:4px">${_esc(t.mood)}</span>` : ''}${(t.tags||[]).join(', ')}</span></td>
     <td style="padding:8px;color:var(--muted);font-size:12px">${pack ? `<span style="background:rgba(168,85,247,.15);color:#c084fc;padding:2px 8px;border-radius:999px">${_esc(pack.title)}</span>` : '<span style="color:var(--muted)">—</span>'}</td>
     <td style="padding:8px;font-size:12px;max-width:160px"><div style="display:flex;flex-wrap:wrap;gap:3px">${zoneBadges || '<span style="color:var(--muted);font-size:11px">—</span>'}</div></td>
     <td style="padding:8px;font-size:12px">${srcIcon} <span style="color:var(--muted)">${t.source?.type || '—'}</span></td>
@@ -3556,6 +3685,112 @@ async function ambBulkZone() {
   } catch(e) { toast(e.message, 'err'); }
 }
 
+async function ambBulkMood() {
+  const mood   = document.getElementById('amb-bulk-mood').value;
+  const energy = document.getElementById('amb-bulk-energy').value;
+  const ids    = [..._ambSelected];
+  if (!ids.length) { toast('Selecciona tracks primero', 'err'); return; }
+  if (!mood && !energy) { toast('Elige un mood o energía', 'err'); return; }
+  const body = { ids };
+  if (mood)   body.mood   = mood;
+  if (energy) body.energy = energy;
+  try {
+    await _ambApi('POST', '/admin/ambient/tracks/bulk-update', body);
+    const parts = [];
+    if (mood)   parts.push(`mood: ${mood}`);
+    if (energy) parts.push(`energía: ${energy}`);
+    toast(`${ids.length} tracks actualizados — ${parts.join(', ')}`, 'ok');
+    _ambSelected.clear();
+    await ambLoadTracks();
+  } catch(e) { toast(e.message, 'err'); }
+}
+
+let _ambAutoAssignPreviewData = null;
+
+async function ambAutoAssign() {
+  const ids = [..._ambSelected];
+  if (!ids.length) { toast('Selecciona tracks primero', 'err'); return; }
+  const tracks = _ambTracks.filter(t => ids.includes(t.id) && t.mood);
+  if (!tracks.length) { toast('Ningún track seleccionado tiene mood asignado', 'err'); return; }
+  if (!confirm(`¿Asignar ${tracks.length} tracks a canales según su mood?`)) return;
+  try {
+    const r = await _ambApi('POST', '/admin/ambient/auto-assign');
+    if (!r) throw new Error('Sin respuesta');
+    toast(`Auto-canal: ${r.added} asignaciones — ${r.channels?.length || 0} canales actualizados`, 'ok');
+    _ambSelected.clear();
+    await ambLoadChannels();
+    await ambLoadTracks();
+  } catch(e) { toast(e.message || 'Error', 'err'); }
+}
+
+async function ambAutoAssignPreview() {
+  const statusEl  = document.getElementById('amb-aa-status');
+  const resultsEl = document.getElementById('amb-aa-results');
+  const applyBtn  = document.getElementById('amb-aa-apply-btn');
+  const previewBtn= document.getElementById('amb-aa-preview-btn');
+  previewBtn.disabled = true;
+  statusEl.textContent = 'Analizando…';
+  resultsEl.style.display = 'none';
+  applyBtn.style.display = 'none';
+  _ambAutoAssignPreviewData = null;
+  try {
+    const raw = await _ambApi('GET', '/admin/ambient/auto-assign/preview');
+    if (!raw) throw new Error('Sin respuesta');
+    const toAdd = (raw.assignments || []).filter(a => !a.alreadyIn);
+    if (!toAdd.length) {
+      statusEl.textContent = 'Sin cambios — todos los tracks ya están asignados o no tienen canal para su mood.';
+      return;
+    }
+    _ambAutoAssignPreviewData = raw;
+    statusEl.textContent = `${toAdd.length} asignaciones nuevas en ${new Set(toAdd.map(a => a.channelId)).size} canales`;
+    const byChannel = {};
+    toAdd.forEach(a => (byChannel[a.channelId] = byChannel[a.channelId] || { name: a.channelName, tracks: [] }).tracks.push(a));
+    let html = '<div style="font-weight:600;color:#c084fc;margin-bottom:8px">Asignaciones pendientes</div>';
+    html += Object.values(byChannel).map(c =>
+      `<div style="padding:5px 0;border-bottom:1px solid rgba(255,255,255,.05)">
+        <span style="font-weight:500">${_esc(c.name)}</span>
+        <span style="color:var(--muted);font-size:11px;margin-left:8px">+${c.tracks.length} tracks</span>
+        <div style="margin-top:3px;display:flex;flex-wrap:wrap;gap:3px">
+          ${c.tracks.map(a => `<span style="background:rgba(168,85,247,.1);padding:1px 6px;border-radius:999px;font-size:10px">${_esc(a.trackTitle)}</span>`).join('')}
+        </div>
+      </div>`).join('');
+    if (raw.unmatched?.length) {
+      html += `<div style="margin-top:8px;color:var(--muted);font-size:11px">${raw.unmatched.length} tracks sin canal para su mood (${[...new Set(raw.unmatched.map(u=>u.mood))].join(', ')})</div>`;
+    }
+    resultsEl.innerHTML = html;
+    resultsEl.style.display = '';
+    applyBtn.style.display = '';
+  } catch(e) {
+    statusEl.textContent = e.message || 'Error';
+  } finally {
+    previewBtn.disabled = false;
+  }
+}
+
+async function ambAutoAssignApply() {
+  if (!_ambAutoAssignPreviewData) return;
+  const statusEl  = document.getElementById('amb-aa-status');
+  const applyBtn  = document.getElementById('amb-aa-apply-btn');
+  const previewBtn= document.getElementById('amb-aa-preview-btn');
+  applyBtn.disabled = true;
+  previewBtn.disabled = true;
+  statusEl.textContent = 'Aplicando…';
+  try {
+    const raw = await _ambApi('POST', '/admin/ambient/auto-assign');
+    if (!raw) throw new Error('Sin respuesta');
+    statusEl.textContent = `✓ ${raw.added} tracks asignados en ${raw.channels?.length || 0} canales`;
+    document.getElementById('amb-aa-results').style.display = 'none';
+    applyBtn.style.display = 'none';
+    _ambAutoAssignPreviewData = null;
+    ambLoadChannels();
+  } catch(e) {
+    statusEl.textContent = e.message || 'Error al aplicar';
+  } finally {
+    applyBtn.disabled = false;
+    previewBtn.disabled = false;
+  }
+}
+
 function ambOpenTrackModal(id) {
   _ambEditTrack = id ? _ambTracks.find(t => t.id === id) : null;
   document.getElementById('amb-track-modal-title').textContent = _ambEditTrack ? 'Editar track' : 'Nuevo track';
@@ -3563,6 +3798,9 @@ function ambOpenTrackModal(id) {
   document.getElementById('amb-t-title').value      = _ambEditTrack?.title || '';
   document.getElementById('amb-t-desc').value       = _ambEditTrack?.description || '';
   document.getElementById('amb-t-tags').value       = (_ambEditTrack?.tags || []).join(', ');
+  document.getElementById('amb-t-mood').value       = _ambEditTrack?.mood || '';
+  document.getElementById('amb-t-energy').value     = _ambEditTrack?.energy || '';
+  document.getElementById('amb-t-bpm').value        = _ambEditTrack?.bpm || '';
   document.getElementById('amb-t-duration').value   = _ambEditTrack?.duration || '';
   document.getElementById('amb-t-preview').value    = _ambEditTrack?.previewUrl || '';
   document.getElementById('amb-t-cover-url').value  = _ambEditTrack?.cover || '';
@@ -3678,6 +3916,9 @@ async function ambSaveTrack() {
     description: document.getElementById('amb-t-desc').value.trim(),
     cover: document.getElementById('amb-t-cover-url').value.trim() || null,
     tags: document.getElementById('amb-t-tags').value.split(',').map(s => s.trim()).filter(Boolean),
+    mood: document.getElementById('amb-t-mood').value || null,
+    energy: document.getElementById('amb-t-energy').value || null,
+    bpm: parseInt(document.getElementById('amb-t-bpm').value) || null,
     duration: parseInt(document.getElementById('amb-t-duration').value) || 0,
     packId: document.getElementById('amb-t-pack').value || null,
     previewUrl: document.getElementById('amb-t-preview').value.trim() || null,

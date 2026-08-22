@@ -1664,7 +1664,7 @@ body {
 }
 
 #up-controls button {
-  background: rgba(255,255,255,.07);
+  background: var(--surface-mid);
   border: 1px solid var(--glass-b);
   color: var(--muted);
   border-radius: 8px;
@@ -1721,7 +1721,7 @@ body {
 #up-progress {
   flex: 1;
   height: 4px;
-  background: rgba(255,255,255,.12);
+  background: var(--surface-mid);
   border-radius: 2px;
   cursor: pointer;
   position: relative;
@@ -1753,7 +1753,7 @@ body {
 }
 
 #up-mute, #up-playlist-btn, #up-queue-btn, #up-video-btn, #up-min-btn {
-  background: rgba(255,255,255,.07);
+  background: var(--surface-mid);
   border: 1px solid var(--glass-b);
   color: var(--muted);
   border-radius: 8px;
@@ -1779,7 +1779,7 @@ body {
   appearance: none;
   width: 80px;
   height: 4px;
-  background: rgba(255,255,255,.15);
+  background: var(--surface-mid);
   border-radius: 2px;
   outline: none;
   cursor: pointer;
@@ -2017,7 +2017,7 @@ body {
 }
 
 #mini-controls button, #mini-actions button {
-  background: rgba(255,255,255,.07);
+  background: var(--surface-mid);
   border: 1px solid var(--glass-b);
   color: var(--muted);
   border-radius: 8px;
@@ -2115,10 +2115,10 @@ body {
   padding: 8px 14px;
   cursor: pointer;
   transition: background .1s;
-  border-bottom: 1px solid rgba(255,255,255,.04);
+  border-bottom: 1px solid var(--border-faint);
 }
 
-.mini-queue-item:hover { background: rgba(255,255,255,.05); }
+.mini-queue-item:hover { background: var(--surface-hover); }
 .mini-queue-item.mini-queue-active { background: rgba(168,85,247,.12); }
 .mini-queue-item.mini-queue-active .mini-queue-title { color: var(--primary-2); }
 
@@ -2175,7 +2175,7 @@ body {
 .mini-pl-new:hover { background: rgba(168,85,247,.2); }
 
 .mini-pl-item {
-  border-bottom: 1px solid rgba(255,255,255,.04);
+  border-bottom: 1px solid var(--border-faint);
 }
 
 .mini-pl-header {
@@ -2222,7 +2222,7 @@ body {
   transition: all .15s;
 }
 
-.mini-pl-btns button:hover { color: var(--text); background: rgba(255,255,255,.08); }
+.mini-pl-btns button:hover { color: var(--text); background: var(--surface-mid); }
 
 .mini-pl-videos {
   padding: 0 14px 8px 28px;
@@ -2278,7 +2278,7 @@ body {
 
 .track-sheet {
   position: fixed; bottom: 0; left: 0; right: 0; z-index: 8001;
-  background: rgba(14,14,22,.97) !important;
+  background: var(--bg2) !important;
   border-top: 1px solid rgba(168,85,247,.25);
   border-radius: 22px 22px 0 0;
   padding: 0 0 env(safe-area-inset-bottom,0);
@@ -2291,7 +2291,7 @@ body {
 
 .ts-handle {
   width: 40px; height: 4px;
-  background: rgba(255,255,255,.18); border-radius: 2px;
+  background: var(--border-mid); border-radius: 2px;
   margin: 12px auto 4px; flex-shrink: 0;
 }
 
@@ -2311,12 +2311,12 @@ body {
 }
 .ts-track-artist { font-size: 13px; color: var(--muted); margin-top: 2px; }
 .ts-close-btn {
-  background: rgba(255,255,255,.08); border: 1px solid var(--glass-b);
+  background: var(--surface-mid); border: 1px solid var(--glass-b);
   color: var(--muted); border-radius: 50%; width: 32px; height: 32px;
   cursor: pointer; display: flex; align-items: center; justify-content: center;
   font-size: 13px; flex-shrink: 0; transition: all .13s;
 }
-.ts-close-btn:hover { background: rgba(255,255,255,.15); color: var(--text); }
+.ts-close-btn:hover { background: var(--surface-active); color: var(--text); }
 
 /* Play button */
 .ts-play-btn {
@@ -2345,7 +2345,7 @@ body {
 }
 .ts-new-icon { color: var(--primary-2); font-size: 18px; flex-shrink: 0; }
 .ts-new-input {
-  flex: 1; background: rgba(255,255,255,.07);
+  flex: 1; background: var(--surface-input);
   border: 1px solid var(--glass-b); border-radius: 10px;
   color: var(--text); font-family: 'Outfit', sans-serif; font-size: 14px;
   padding: 10px 12px; outline: none; transition: border .15s;

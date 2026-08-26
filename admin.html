@@ -2119,8 +2119,8 @@ function videoDragEnd(e) {
 }
 
 async function saveVideoOrder() {
-  const ids = videos.map(v => v.id);
-  const r = await apiFetch('PATCH', '/videos/reorder', { ids });
+  const orderedIds = videos.map(v => v.id);
+  const r = await apiFetch('PATCH', '/videos/reorder', { orderedIds });
   if (r.ok) toast('Orden guardado ✓');
   else toast('Error guardando orden', 'err');
 }

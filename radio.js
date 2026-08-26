@@ -923,11 +923,13 @@
       stopYtProgress();
     } else if (e.data === 0) { // ENDED
       stopYtProgress();
+      // stopVideo() limpia la pantalla de vídeos relacionados de YouTube inmediatamente
+      try { ytPlayer.stopVideo(); } catch(_) {}
       youtubeActive = false;
       if (activeRadioPlaylist !== null) {
         const next = shuffle ? _nextCustomIdx() : customCurrentIdx + 1;
-        if (customTrackList[next]) setTimeout(() => window.playCustomTrack(next), 400);
-        else if (loopPlaylist)     setTimeout(() => window.playCustomTrack(0), 400);
+        if (customTrackList[next]) setTimeout(() => window.playCustomTrack(next), 50);
+        else if (loopPlaylist)     setTimeout(() => window.playCustomTrack(0), 50);
         else if (!_restorePrevState()) setPlaying(false);
       }
     }
@@ -1095,9 +1097,9 @@
       renderCustomTracklist(prev.list);
       const nextIdx = prev.idx + 1;
       if (nextIdx < prev.list.length) {
-        setTimeout(() => window.playCustomTrack(nextIdx), 400);
+        setTimeout(() => window.playCustomTrack(nextIdx), 50);
       } else if (prev.loop) {
-        setTimeout(() => window.playCustomTrack(0), 400);
+        setTimeout(() => window.playCustomTrack(0), 50);
       } else {
         showCustomTrack(0);
         setPlaying(false);

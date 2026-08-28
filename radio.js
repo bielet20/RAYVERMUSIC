@@ -1315,9 +1315,12 @@
   function bindWidget() {
     widget = SC.Widget(iframe);
 
-    function loadSounds(onDone) {
+    function loadSounds(onDone, _retry) {
       widget.getSounds(sounds => {
-        if (!sounds?.length) return;
+        if (!sounds?.length) {
+          if ((_retry || 0) < 10) setTimeout(() => loadSounds(onDone, (_retry || 0) + 1), 300);
+          return;
+        }
         scSounds = sounds;
         buildEnriched();
         // Solo actualizar la lista visual cuando estamos en modo SC Widget puro
@@ -1432,6 +1435,7 @@
       if (finTitle) window.TRACKER?.onTrackFinish(finTitle);
       // Modo lista personalizada: avanzar al siguiente track de la lista
       if (activeRadioPlaylist !== null) {
+        if (repeat === 'one') { window.playCustomTrack(customCurrentIdx); return; }
         const next = _nextCustomIdx();
         const withinBounds = shuffle ? true : next < customTrackList.length;
         if (withinBounds && customTrackList[next]) {
@@ -1472,23 +1476,24 @@
 
     widget.bind(SC.Widget.Events.PLAY_PROGRESS, d => {
       if (!d) return;
-      const pos = d.currentPosition || 0, dur = d.duration || 1;
-      if (fillEl) fillEl.style.width = Math.min((pos/dur)*100, 100) + '%';
+      const pos = d.currentPosition || 0, dur = d.duration || 0;
+      const displayDur = dur || 1;
+      if (fillEl) fillEl.style.width = Math.min((pos/displayDur)*100, 100) + '%';
       if (curEl)  curEl.textContent  = fmt(pos);
-      if (durEl)  durEl.textContent  = fmt(dur);
+      if (durEl && dur > 0)  durEl.textContent = fmt(dur);
       _syncUpProgress(pos, dur);
       // Watchdog: snapshot of current position + wall-clock time so we can detect
       // a stalled track even if FINISH never arrives (background tab throttle)
-      if (dur > 5000) _wdProgress = { pos, dur, ts: Date.now() };
+      if (dur > 1000) _wdProgress = { pos, dur, ts: Date.now() };
 
       // AUTOMIX: solo en modo lista personalizada con SC (no YouTube)
-      if (automixEnabled && activeRadioPlaylist !== null && !youtubeActive && dur > 5000) {
+      if (automixEnabled && activeRadioPlaylist !== null && !youtubeActive && dur > 1000) {
         const remaining = dur - pos;
         if (getNextCustomIdx() >= 0) {
           // Precargar en RAM cuando quedan (crossfadeDuration + 4s)
           if (remaining < crossfadeDuration + 4000) doPreloadNext();
           // Iniciar fade-out cuando quedan crossfadeDuration ms
-          if (remaining < crossfadeDuration && remaining > 0) startFadeOut();
+          if (remaining <= crossfadeDuration && remaining > 0) startFadeOut();
         }
       }
     });
@@ -1586,7 +1591,7 @@
       return;
     }
     // Modo RAYVER Radio (SC Widget directo)
-    if (!widgetRdy) { pendingPlay = true; return; }
+    if (!widgetRdy || !scSounds.length) { pendingPlay = true; return; }
     if (playing) {
       widget.pause();
       iframe.style.height = '0px';
@@ -1606,7 +1611,7 @@
       return;
     }
     if (!widgetRdy) return;
-    if (shuffle) doShuffle(); else widget.prev();
+    if (shuffle) { doShuffle(); } else { widget.prev(); setTimeout(() => { if (widgetRdy) widget.seekTo(0); }, 400); }
   }
 
   function _doPlayNext() {
@@ -1618,7 +1623,9 @@
       return;
     }
     if (!widgetRdy) return;
-    if (shuffle) doShuffle(); else widget.next();
+    if (repeat === 'one') { widget.seekTo(0); widget.play(); }
+    else if (shuffle) { doShuffle(); }
+    else { widget.next(); }
   }
 
   playBtn && playBtn.addEventListener('click', _doTogglePlay);
@@ -1708,8 +1715,11 @@
       const v = parseInt(upVolEl.value, 10);
       if (!muted && widget && widgetRdy) widget.setVolume(v);
       if (!muted && youtubeActive && ytPlayer?.setVolume) try { ytPlayer.setVolume(v); } catch(_) {}
-      if (upVolIcon) upVolIcon.className = v === 0 ? 'fas fa-volume-mute' : v < 50 ? 'fas fa-volume-down' : 'fas fa-volume-up';
-      if (volEl) { volEl.value = v; volEl.dispatchEvent(new Event('input')); }
+      if (!muted && ambientAudioActive && audioEl) audioEl.volume = v / 100;
+      const ico = v === 0 ? 'fas fa-volume-mute' : v < 50 ? 'fas fa-volume-down' : 'fas fa-volume-up';
+      if (upVolIcon) upVolIcon.className = ico;
+      if (volIco)   volIco.className    = ico;
+      if (volEl)    volEl.value = v;
     });
 
     upProgress && upProgress.addEventListener('click', e => {

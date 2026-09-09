@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  # Sintaxis de TODO el JS del repo (backend + frontend vanilla). Sin dependencias.
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: node --check de todos los .js
+        run: |
+          set -e
+          files=$(git ls-files '*.js' | grep -vE '^(node_modules/|backend/node_modules/)')
+          for f in $files; do node --check "$f"; done
+          echo "sintaxis OK ($(echo "$files" | wc -l) ficheros)"
+
+  # Tests de integración del backend (arranca index.js como subproceso).
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Instalar dependencias del backend
+        working-directory: backend
+        run: npm ci
+      - name: npm test
+        working-directory: backend
+        run: npm test

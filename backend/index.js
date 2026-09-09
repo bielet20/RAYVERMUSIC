@@ -3786,4 +3786,6 @@ app.get('/api/music/available', authMiddleware, (req, res) => {
   res.json({ available });
 });
 
-app.listen(PORT, () => console.log('Backend escuchando en :' + PORT));
+const server = app.listen(PORT, () => {
+  console.log('Backend escuchando en :' + server.address().port);
+});

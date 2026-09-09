@@ -17,15 +17,38 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     restart: unless-stopped
+    # Todos los valores salen del .env local (o del entorno). NUNCA poner aquí un
+    # secreto por defecto: este fichero está en git. Si TOKEN_SECRET va vacío, el
+    # backend genera uno aleatorio efímero y avisa por log.
     environment:
       BACKEND_PORT: ${BACKEND_PORT:-3001}
+      DATA_DIR: /app/data
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost}
+      # Auth
+      TOKEN_SECRET: ${TOKEN_SECRET:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      # Pagos
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      SITE_URL: ${SITE_URL:-http://localhost}
+      # APIs externas
       SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID:-}
       SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET:-}
+      SPOTIFY_ARTIST_IDS: ${SPOTIFY_ARTIST_IDS:-}
       YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}
       YOUTUBE_CHANNEL_IDS: ${YOUTUBE_CHANNEL_IDS:-}
-      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-*}
-      TOKEN_SECRET: ${TOKEN_SECRET:-rayver-secret-2025-change-me}
-      DATA_DIR: /app/data
+      SC_CLIENT_ID: ${SC_CLIENT_ID:-}
+      SC_CLIENT_SECRET: ${SC_CLIENT_SECRET:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GOAPI_KEY: ${GOAPI_KEY:-}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      # Generación de música self-hosted (GPU)
+      ACE_STEP_URL: ${ACE_STEP_URL:-}
+      YUE_URL: ${YUE_URL:-}
+      # Email (avisos de caducidad de suscripción)
+      EMAIL_USER: ${EMAIL_USER:-}
+      EMAIL_PASS: ${EMAIL_PASS:-}
+      EMAIL_FROM: ${EMAIL_FROM:-}
     # Sin volumen aquí — Coolify gestiona /app/data desde la pestaña Storages.
     # Tener volumen aquí Y en Coolify Storages causa conflicto: el de compose
     # se borra en cada redeploy y sobreescribe el persistente de Coolify.

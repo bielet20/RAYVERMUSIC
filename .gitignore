@@ -1,3 +1,16 @@
 .DS_Store
 *.log
 node_modules/
+
+# Secretos / entorno
+.env
+.env.*
+!.env.example
+local-studio/config.json
+
+# Base de datos y datos de producción (usuarios, órdenes, hashes) — NUNCA al repo
+backend/data/db.json
+backend/data/db.json.bak
+backend/data/*.db
+backend/data/uploads/
+backend/uploads/

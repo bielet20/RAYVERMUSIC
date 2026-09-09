@@ -58,6 +58,26 @@ const PORT = process.env.BACKEND_PORT || 3001;
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const DATA_FILE = path.join(DATA_DIR, 'db.json');
 
+// ── SECRETOS DE AUTENTICACIÓN ────────────────────────────────────
+// Valores que NUNCA deben usarse como secreto: son públicos (estaban
+// hardcodeados en el repo) o triviales.
+const _INSECURE_SECRETS = new Set([
+  'rayver-secret-2025-change-me', 'rayver2025', 'change-me', 'changeme', 'secret', 'password',
+]);
+
+// AUTH_SECRET firma TODOS los tokens HMAC (admin y usuario). Si TOKEN_SECRET no
+// está en el entorno (o trae un valor inseguro conocido) se genera uno aleatorio
+// en cada arranque: los tokens se invalidan al reiniciar, pero jamás son
+// forjables con un secreto público. Define TOKEN_SECRET en Coolify para que los
+// tokens sobrevivan a los redeploys.
+let AUTH_SECRET = (process.env.TOKEN_SECRET || '').trim();
+if (!AUTH_SECRET || _INSECURE_SECRETS.has(AUTH_SECRET)) {
+  AUTH_SECRET = crypto.randomBytes(32).toString('hex');
+  console.warn('[SEC] TOKEN_SECRET ausente o inseguro — usando un secreto aleatorio '
+    + 'EFÍMERO (los tokens de admin/usuario se invalidarán en el próximo reinicio). '
+    + 'Define TOKEN_SECRET en las variables de entorno.');
+}
+
 // ── DIAGNÓSTICO DE ARRANQUE ──────────────────────────────────────
 function bootDiag() {
   console.log('=== RAYVER BOOT DIAG ===');
@@ -128,7 +148,13 @@ function loadDB() {
         return bak;
       } catch (e) { console.warn('[DB] Backup corrupto, creando DB nueva:', e.message); }
     }
-    const defaultPass = process.env.ADMIN_PASSWORD || 'rayver2025';
+    let defaultPass = (process.env.ADMIN_PASSWORD || '').trim();
+    if (!defaultPass || _INSECURE_SECRETS.has(defaultPass)) {
+      defaultPass = crypto.randomBytes(9).toString('base64url');
+      console.warn('[SEC] DB nueva sin ADMIN_PASSWORD válido — contraseña de admin '
+        + 'generada al azar:\n\n    ' + defaultPass + '\n\n'
+        + 'Anótala AHORA y define ADMIN_PASSWORD en el entorno.');
+    }
     const initial = {
       tracks: [], albums: [], videos: [], products: [], members: [], orders: [],
       password_hash: crypto.createHash('sha256').update(defaultPass).digest('hex'),
@@ -164,7 +190,7 @@ console.log(`[DB] Archivo: ${DATA_FILE} | Usuarios: ${(db.users||[]).length} | L
 
 // Si ADMIN_PASSWORD está definida en el entorno, aplicarla siempre al arrancar.
 // Esto permite resetear la contraseña desde Coolify sin perder datos.
-if (process.env.ADMIN_PASSWORD) {
+if (process.env.ADMIN_PASSWORD && !_INSECURE_SECRETS.has(process.env.ADMIN_PASSWORD.trim())) {
   const envHash = crypto.createHash('sha256').update(process.env.ADMIN_PASSWORD).digest('hex');
   if (db.password_hash !== envHash) {
     db.password_hash = envHash;
@@ -208,7 +234,7 @@ if (!db.radioPlaylist) { db.radioPlaylist = []; saveDB(db); }
 
 // ───────────────────────── Auth (admin) ─────────────────────────
 // Token HMAC stateless — sobrevive reinicios del servidor
-const ADMIN_SECRET = process.env.TOKEN_SECRET || 'rayver-secret-2025-change-me';
+const ADMIN_SECRET = AUTH_SECRET;
 const ADMIN_MARKER = 'admin';
 
 function createAdminToken() {
@@ -959,7 +985,7 @@ app.post('/api/admin/ambient/plans/:id/stripe-price', authMiddleware, async (req
 
 // ───────────────────────── USUARIOS & PLAYLISTS ─────────────────────────
 // Tokens HMAC firmados — stateless, sobreviven reinicios del servidor
-const TOKEN_SECRET = process.env.TOKEN_SECRET || 'rayver-secret-2025-change-me';
+const TOKEN_SECRET = AUTH_SECRET;
 
 function createUserToken(userId) {
   const ts  = Date.now().toString(36);

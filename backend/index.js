@@ -1903,6 +1903,10 @@ app.get('/api/public/ambient/tracks', (req, res) => {
 });
 
 app.get('/api/public/ambient/plans', (req, res) => {
+  // Por defecto no exponemos precios ni IDs de Stripe en público.
+  if (process.env.SHOW_PUBLIC_AMBIENT_PLANS !== 'true') {
+    return res.json({ plans: [] });
+  }
   res.json({ plans: (db.ambientPlans || []).filter(p => p.active !== false).sort((a, b) => (a.order ?? 999) - (b.order ?? 999)) });
 });
 

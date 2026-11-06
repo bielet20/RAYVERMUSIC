@@ -1360,6 +1360,8 @@ document.addEventListener('DOMContentLoaded', () => {
 // MÓDULO MÚSICA AMBIENTE (frontend público)
 // ══════════════════════════════════════════════════════════════
 let _ambData = { packs: [], plans: [], tracks: [], zones: [], channels: [], access: null };
+// False = no mostrar precios ni botón de suscripción en la web pública.
+const SHOW_AMBIENT_SUBSCRIPTION = false;
 
 async function _ambFetch(path) {
   const tok = AUTH.token || getToken();
@@ -1410,7 +1412,9 @@ function _fmtDuration(sec) {
 
 function renderAmbientPlans() {
   const el = document.getElementById('ambient-plans-wrap');
-  if (!el || !_ambData.plans.length) { if (el) el.style.display = 'none'; return; }
+  if (!el) return;
+  if (!SHOW_AMBIENT_SUBSCRIPTION || !_ambData.plans.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.style.display = '';
   el.innerHTML = _ambData.plans.map(p => {
     const featured = p.badge;
     return `<div class="ambient-plan-card${featured ? ' featured' : ''}">
@@ -1737,13 +1741,17 @@ function renderAmbientTracks() {
     if (ctaEl) {
       ctaEl.style.display = '';
       ctaEl.innerHTML = AUTH.user
-        ? `<i class="fas fa-lock" style="font-size:32px;color:var(--ambient-accent);margin-bottom:12px;display:block"></i>
+        ? (SHOW_AMBIENT_SUBSCRIPTION
+           ? `<i class="fas fa-lock" style="font-size:32px;color:var(--ambient-accent);margin-bottom:12px;display:block"></i>
            <div style="font-size:1.1rem;font-weight:700;margin-bottom:8px">Necesitas un plan o pack activo</div>
            <p style="color:var(--muted);font-size:14px;margin-bottom:20px">Elige un plan arriba para desbloquear toda la biblioteca.</p>
            <button class="btn btn-primary" onclick="document.getElementById('ambient-plans-wrap').scrollIntoView({behavior:'smooth'})"><i class="fas fa-star"></i> Ver planes</button>`
+           : `<i class="fas fa-lock" style="font-size:32px;color:var(--ambient-accent);margin-bottom:12px;display:block"></i>
+           <div style="font-size:1.1rem;font-weight:700;margin-bottom:8px">Biblioteca con acceso</div>
+           <p style="color:var(--muted);font-size:14px;margin-bottom:20px">La contratación pública está oculta por ahora.</p>`)
         : `<i class="fas fa-lock" style="font-size:32px;color:var(--ambient-accent);margin-bottom:12px;display:block"></i>
            <div style="font-size:1.1rem;font-weight:700;margin-bottom:8px">Acceso exclusivo</div>
-           <p style="color:var(--muted);font-size:14px;margin-bottom:20px">Inicia sesión para activar tu plan y acceder a la biblioteca.</p>
+           <p style="color:var(--muted);font-size:14px;margin-bottom:20px">Inicia sesión para acceder a la biblioteca.</p>
            <button class="btn btn-primary" onclick="openAuthModal()"><i class="fas fa-user"></i> Iniciar sesión</button>`;
     }
     return;
